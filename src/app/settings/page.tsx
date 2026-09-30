@@ -23,6 +23,7 @@ import {
   FolderOpen,
   Sliders,
   Database,
+  Server,
 } from "lucide-react";
 import { useTheme, type ColorMode, type ColorPalette } from "@/lib/theme";
 import { detectDeviceCapabilities, type DeviceAiCapabilities } from "@/lib/deviceIntelligence";
@@ -35,15 +36,17 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("appearance");
   const { mode, palette, setMode, setPalette } = useTheme();
 
-  // OpenRouter & AI state
+  // Engine & AI state
+  const [activeEngine, setActiveEngine] = useState<"openrouter" | "ollama">("openrouter");
   const [openRouterInfo, setOpenRouterInfo] = useState<any>(null);
+  const [ollamaInfo, setOllamaInfo] = useState<any>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState("google/gemini-2.0-flash-001");
-  const [customModelInput, setCustomModelInput] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
-  const [testingAi, setTestingAi] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testingJev, setTestingJev] = useState(false);
+  const [testingOllama, setTestingOllama] = useState(false);
+  const [jevResult, setJevResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [ollamaResult, setOllamaResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Device AI capabilities
   const [deviceCaps, setDeviceCaps] = useState<DeviceAiCapabilities | null>(null);
@@ -60,10 +63,11 @@ export default function SettingsPage() {
     fetch("/api/v1/settings")
       .then((r) => r.json())
       .then((d) => {
-        setOpenRouterInfo(d?.openrouter || d?.jev || null);
-        if (d?.openrouter?.model) {
-          setSelectedModel(d.openrouter.model);
+        if (d?.engine) {
+          setActiveEngine(d.engine === "ollama" ? "ollama" : "openrouter");
         }
+        setOpenRouterInfo(d?.openrouter || null);
+        setOllamaInfo(d?.ollama || null);
       })
       .catch(() => {});
   };
@@ -99,23 +103,34 @@ export default function SettingsPage() {
     detectDeviceCapabilities().then(setDeviceCaps);
   }, []);
 
-  const saveOpenRouterConfig = async (e?: React.FormEvent) => {
+  const selectEngine = async (engine: "openrouter" | "ollama") => {
+    setActiveEngine(engine);
+    try {
+      await fetch("/api/v1/settings/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ engine }),
+      });
+      fetchSettings();
+    } catch {}
+  };
+
+  const saveApiKey = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (!apiKeyInput.trim()) return;
     setSavingKey(true);
     try {
-      const modelToSave = selectedModel === "custom" ? customModelInput.trim() : selectedModel;
-      const keyToSend = apiKeyInput.trim() || "KEEP_EXISTING_KEY";
       const res = await fetch("/api/v1/settings/key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: keyToSend, model: modelToSave }),
+        body: JSON.stringify({ key: apiKeyInput.trim() }),
       });
       if (res.ok) {
         setApiKeyInput("");
         fetchSettings();
-        setTestResult({
+        setJevResult({
           success: true,
-          message: `Configuration saved (Model: ${modelToSave}).`,
+          message: "OpenRouter API key saved successfully.",
         });
       }
     } finally {
@@ -126,23 +141,40 @@ export default function SettingsPage() {
   const removeApiKey = async () => {
     await fetch("/api/v1/settings/key", { method: "DELETE" });
     fetchSettings();
-    setTestResult(null);
+    setJevResult(null);
   };
 
-  const testConnection = async () => {
-    setTestingAi(true);
-    setTestResult(null);
+  const testJevConnection = async () => {
+    setTestingJev(true);
+    setJevResult(null);
     try {
       const res = await fetch("/api/v1/settings/test-jev", { method: "POST" });
       const data = await res.json();
-      setTestResult({
+      setJevResult({
         success: data.success,
-        message: data.message || (data.success ? "OpenRouter connected successfully" : "Connection failed"),
+        message: data.message || (data.success ? "OpenRouter Jev Latest connected successfully" : "Connection failed"),
       });
     } catch {
-      setTestResult({ success: false, message: "Network error connecting to OpenRouter" });
+      setJevResult({ success: false, message: "Network error connecting to OpenRouter" });
     } finally {
-      setTestingAi(false);
+      setTestingJev(false);
+    }
+  };
+
+  const testOllamaConnection = async () => {
+    setTestingOllama(true);
+    setOllamaResult(null);
+    try {
+      const res = await fetch("/api/v1/settings/test-ollama", { method: "POST" });
+      const data = await res.json();
+      setOllamaResult({
+        success: data.success,
+        message: data.message || (data.success ? "Ollama Gemma connected successfully" : "Connection failed"),
+      });
+    } catch {
+      setOllamaResult({ success: false, message: "Network error connecting to Ollama" });
+    } finally {
+      setTestingOllama(false);
     }
   };
 
@@ -377,91 +409,119 @@ export default function SettingsPage() {
               <div>
                 <h2 className="text-lg font-semibold text-foreground">AI & Intelligence Engines</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Configure cloud models via OpenRouter or check on-device Pixel hardware capabilities.
+                  Select between OpenRouter (Jev Latest) for cloud intelligence or local Gemma via Ollama.
                 </p>
               </div>
 
-              {/* 1. Cloud AI & API Key (OpenRouter Exclusive) */}
+              {/* Active Engine Toggle Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Option 1: OpenRouter (Jev) */}
+                <button
+                  type="button"
+                  onClick={() => selectEngine("openrouter")}
+                  className={cn(
+                    "flex flex-col items-start gap-2.5 p-4 rounded-2xl border text-start transition-all cursor-pointer",
+                    activeEngine === "openrouter"
+                      ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                      : "border-border bg-card hover:bg-secondary/40"
+                  )}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-2">
+                      <Key className="size-4.5 text-primary" />
+                      <span className="text-sm font-semibold text-foreground">OpenRouter</span>
+                    </div>
+                    {activeEngine === "openrouter" && (
+                      <span className="flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        <Check className="size-3" /> Active
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-medium text-foreground bg-secondary/80 px-2 py-0.5 rounded-md">
+                        jev-latest
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                          openRouterInfo?.hasKey
+                            ? "bg-emerald-500/10 text-emerald-600"
+                            : "bg-amber-500/10 text-amber-600"
+                        )}
+                      >
+                        {openRouterInfo?.hasKey ? "Key Configured" : "Key Required"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                      TypeSafe Jev System One engine. Structured intent classification and entity parsing.
+                    </p>
+                  </div>
+                </button>
+
+                {/* Option 2: Ollama (Gemma) */}
+                <button
+                  type="button"
+                  onClick={() => selectEngine("ollama")}
+                  className={cn(
+                    "flex flex-col items-start gap-2.5 p-4 rounded-2xl border text-start transition-all cursor-pointer",
+                    activeEngine === "ollama"
+                      ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                      : "border-border bg-card hover:bg-secondary/40"
+                  )}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-2">
+                      <Server className="size-4.5 text-primary" />
+                      <span className="text-sm font-semibold text-foreground">Local Ollama</span>
+                    </div>
+                    {activeEngine === "ollama" && (
+                      <span className="flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        <Check className="size-3" /> Active
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-medium text-foreground bg-secondary/80 px-2 py-0.5 rounded-md">
+                        {ollamaInfo?.gemmaModel || "gemma"}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                          ollamaInfo?.available
+                            ? "bg-emerald-500/10 text-emerald-600"
+                            : "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {ollamaInfo?.available ? "Host Online" : "Host Offline"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                      Runs 100% on local server hardware. Zero cloud egress and zero API cost.
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Engine 1 Details: OpenRouter Jev */}
               <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-2xs">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Key className="size-4.5 text-primary" />
-                    <span className="text-sm font-semibold text-foreground">OpenRouter Cloud Intelligence</span>
+                    <span className="text-sm font-semibold text-foreground">OpenRouter (Jev Latest)</span>
                   </div>
-                  <span
-                    className={cn(
-                      "rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase",
-                      openRouterInfo?.hasKey
-                        ? "bg-emerald-500/10 text-emerald-600"
-                        : "bg-amber-500/10 text-amber-600"
-                    )}
-                  >
-                    {openRouterInfo?.hasKey ? `Online (${openRouterInfo.model})` : "Offline (Local Heuristic)"}
+                  <span className="text-xs font-mono text-muted-foreground">
+                    model: jev-latest
                   </span>
                 </div>
 
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  BrainSpace uses OpenRouter for intent classification and card structuring. Select your preferred model and enter your key below.
+                  BrainSpace routes intent classification through OpenRouter using TypeSafe&apos;s Jev model. Enter your OpenRouter API key below.
                 </p>
 
-                {/* Model Selector */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-foreground">Selected Model</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {[
-                      { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash", desc: "Fastest response & economical (Recommended)" },
-                      { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B", desc: "High performance open-weights workhorse" },
-                      { id: "deepseek/deepseek-chat", name: "DeepSeek V3", desc: "Advanced reasoning & knowledge" },
-                      { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", desc: "Highest instruction adherence" },
-                      { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", desc: "Fast & concise compact model" },
-                      { id: "custom", name: "Custom Model", desc: "Specify any OpenRouter model identifier" },
-                    ].map((m) => {
-                      const isSelected = selectedModel === m.id || (m.id === "custom" && !["google/gemini-2.0-flash-001", "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat", "anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini"].includes(selectedModel));
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => {
-                            if (m.id === "custom") {
-                              setSelectedModel("custom");
-                            } else {
-                              setSelectedModel(m.id);
-                            }
-                          }}
-                          className={cn(
-                            "flex flex-col items-start gap-1 p-3 rounded-xl border text-xs text-start transition-all",
-                            isSelected
-                              ? "border-primary bg-primary/10 shadow-2xs font-semibold"
-                              : "border-border bg-secondary/30 text-muted-foreground hover:bg-secondary"
-                          )}
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <span className="font-semibold text-foreground">{m.name}</span>
-                            {isSelected && <Check className="size-3.5 text-primary" />}
-                          </div>
-                          <span className="text-[11px] text-muted-foreground">{m.desc}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Custom Model Input */}
-                  {(selectedModel === "custom" || !["google/gemini-2.0-flash-001", "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat", "anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini"].includes(selectedModel)) && (
-                    <div className="mt-1 flex flex-col gap-1">
-                      <label className="text-[11px] text-muted-foreground">Custom OpenRouter Model Identifier</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. mistralai/mistral-large-2411 or qwen/qwen-2.5-72b-instruct"
-                        value={customModelInput || (selectedModel !== "custom" ? selectedModel : "")}
-                        onChange={(e) => setCustomModelInput(e.target.value)}
-                        className="w-full rounded-xl border border-border bg-secondary/40 py-2 px-3 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                    </div>
-                  )}
-                </div>
-
                 {/* API Key Form */}
-                <form onSubmit={saveOpenRouterConfig} className="flex flex-col gap-3 mt-1">
+                <form onSubmit={saveApiKey} className="flex flex-col gap-3">
                   <label className="text-xs font-semibold text-foreground">OpenRouter API Key</label>
                   <div className="relative flex items-center">
                     <input
@@ -482,7 +542,7 @@ export default function SettingsPage() {
 
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-muted-foreground">
-                      {openRouterInfo?.keySource ? `Key stored via ${openRouterInfo.keySource}` : "Using local offline heuristic engine"}
+                      {openRouterInfo?.keySource ? `Key stored via ${openRouterInfo.keySource}` : "No key configured"}
                     </span>
                     <div className="flex items-center gap-2">
                       {openRouterInfo?.hasKey && (
@@ -496,36 +556,36 @@ export default function SettingsPage() {
                       )}
                       <button
                         type="submit"
-                        disabled={savingKey}
+                        disabled={savingKey || !apiKeyInput.trim()}
                         className="rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-all shadow-2xs"
                       >
-                        {savingKey ? "Saving..." : "Save Configuration"}
+                        {savingKey ? "Saving..." : "Save Key"}
                       </button>
                     </div>
                   </div>
                 </form>
 
-                {/* Connection Ping Test */}
+                {/* Test Jev Ping */}
                 <div className="mt-2 pt-3 border-t border-border/40 flex items-center justify-between">
                   <button
                     type="button"
-                    onClick={testConnection}
-                    disabled={testingAi}
+                    onClick={testJevConnection}
+                    disabled={testingJev}
                     className="flex items-center gap-2 rounded-lg bg-secondary px-3.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/80 disabled:opacity-50 transition-all"
                   >
-                    {testingAi ? (
+                    {testingJev ? (
                       <>
                         <Loader2 className="size-3.5 animate-spin" />
-                        <span>Testing OpenRouter...</span>
+                        <span>Testing Jev on OpenRouter...</span>
                       </>
                     ) : (
-                      <span>Test Live Ping</span>
+                      <span>Test Jev Ping</span>
                     )}
                   </button>
 
-                  {testResult && (
+                  {jevResult && (
                     <div className="flex items-center gap-1.5 text-xs">
-                      {testResult.success ? (
+                      {jevResult.success ? (
                         <>
                           <CheckCircle2 className="size-4 text-emerald-500" />
                           <span className="text-emerald-600 font-medium">Validated</span>
@@ -540,9 +600,89 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {testResult && (
-                  <p className="text-xs text-muted-foreground bg-secondary/40 p-3 rounded-xl">
-                    {testResult.message}
+                {jevResult && (
+                  <p className="text-xs text-muted-foreground bg-secondary/40 p-3 rounded-xl font-mono">
+                    {jevResult.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Engine 2 Details: Ollama Gemma */}
+              <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Server className="size-4.5 text-primary" />
+                    <span className="text-sm font-semibold text-foreground">Local Ollama (Gemma)</span>
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase",
+                      ollamaInfo?.available
+                        ? "bg-emerald-500/10 text-emerald-600"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {ollamaInfo?.available ? "Host Online" : "Host Offline"}
+                  </span>
+                </div>
+
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  BrainSpace connects to your home server Ollama instance at <code className="font-mono text-foreground bg-secondary px-1.5 py-0.5 rounded text-[11px]">{ollamaInfo?.host || "http://host.docker.internal:11434"}</code>. Uses local Google Gemma for private intent classification.
+                </p>
+
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-secondary/30 border border-border/50 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Detected Gemma Model:</span>
+                    <span className="font-mono font-medium text-foreground">
+                      {ollamaInfo?.gemmaModel || "None found (pull with: ollama run gemma4:e4b)"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Endpoint:</span>
+                    <span className="font-mono text-muted-foreground">
+                      {ollamaInfo?.host || "http://localhost:11434"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Test Ollama Ping */}
+                <div className="mt-1 pt-3 border-t border-border/40 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={testOllamaConnection}
+                    disabled={testingOllama}
+                    className="flex items-center gap-2 rounded-lg bg-secondary px-3.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/80 disabled:opacity-50 transition-all"
+                  >
+                    {testingOllama ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        <span>Testing Gemma on Ollama...</span>
+                      </>
+                    ) : (
+                      <span>Test Ollama Ping</span>
+                    )}
+                  </button>
+
+                  {ollamaResult && (
+                    <div className="flex items-center gap-1.5 text-xs">
+                      {ollamaResult.success ? (
+                        <>
+                          <CheckCircle2 className="size-4 text-emerald-500" />
+                          <span className="text-emerald-600 font-medium">Validated</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="size-4 text-destructive" />
+                          <span className="text-destructive font-medium">Failed</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {ollamaResult && (
+                  <p className="text-xs text-muted-foreground bg-secondary/40 p-3 rounded-xl font-mono">
+                    {ollamaResult.message}
                   </p>
                 )}
               </div>

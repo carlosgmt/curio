@@ -22,12 +22,15 @@ export function getEffectiveKey(): { key: string | undefined; source: string | n
   if (looksLikeKey(runtimeKey)) {
     return { key: runtimeKey, source: "runtime" };
   }
+  if (looksLikeKey(process.env.OPENROUTER_API_KEY)) {
+    return { key: process.env.OPENROUTER_API_KEY, source: "env" };
+  }
   if (looksLikeKey(process.env.TYPESAFE_API_KEY)) {
     return { key: process.env.TYPESAFE_API_KEY, source: "env" };
   }
   try {
     const { sqlite } = require("../../db");
-    const row = sqlite.prepare("SELECT value FROM app_settings WHERE key = 'typesafe_api_key'").get() as { value?: string } | undefined;
+    const row = sqlite.prepare("SELECT value FROM app_settings WHERE key IN ('openrouter_api_key', 'typesafe_api_key') ORDER BY updated_at DESC LIMIT 1").get() as { value?: string } | undefined;
     if (looksLikeKey(row?.value)) {
       return { key: row.value, source: "database" };
     }
@@ -44,14 +47,14 @@ export function getEffectiveKey(): { key: string | undefined; source: string | n
 export function classifierMode(): { mode: "online" | "offline"; reason: string; keySource?: string } {
   if (process.env.NEXT_PUBLIC_USE_MOCK === "true") return { mode: "offline", reason: "NEXT_PUBLIC_USE_MOCK=true" };
   const { key, source } = getEffectiveKey();
-  if (!looksLikeKey(key)) return { mode: "offline", reason: "no TYPESAFE_API_KEY set" };
-  return { mode: "online", reason: `using ${process.env.JEV_MODEL || "jev-latest"}`, keySource: source || undefined };
+  if (!looksLikeKey(key)) return { mode: "offline", reason: "no API key set" };
+  return { mode: "online", reason: "using jev-latest on OpenRouter", keySource: source || undefined };
 }
 
 export function warnMockOnce(reason: string) {
   if (warned) return;
   warned = true;
-  console.info(`[shapeshift] Offline classifier (jev-offline): ${reason}. Add a TypeSafe key in Settings to go online.`);
+  console.info(`[shapeshift] Offline classifier (jev-offline): ${reason}. Add an OpenRouter key in Settings to use Jev online.`);
 }
 
 function getClient() {
@@ -59,10 +62,11 @@ function getClient() {
   if (!client) {
     client = new TypeSafeClient({
       apiKey: key,
-      defaultModel: process.env.JEV_MODEL || "jev-latest",
+      baseURL: "https://openrouter.ai/api",
+      defaultModel: "jev-latest",
       // One fast attempt: a stale answer is worse than falling back to the mock.
       retry: { maxRetries: 0 },
-      timeout: 2500,
+      timeout: 3000,
     });
   }
   return client;

@@ -99,7 +99,7 @@ export const intentResultSchema = z.object({
   model: z.string(),
   cached: z.boolean().optional(),
   error: z.boolean().optional(),
-  source: z.enum(["jev", "mock", "openrouter"]).optional(),
+  source: z.enum(["jev", "mock", "openrouter", "ollama"]).optional(),
 });
 export type IntentResult = z.infer<typeof intentResultSchema>;
 

@@ -96,6 +96,15 @@ function intentScores(raw: string): Scores {
   if (has(DATE_WORDS, t)) add("event", gather || words.length <= 6 ? 2.5 : 1);
   if (gather) add("event", 3);
   if (has(/\b(on|over|via) (zoom|meet|teams|facetime)\b/, t)) add("event", 2);
+  if (has(/\b(recipe|ingredients|serves\s*\d|cook\s*time|bake\s*at|tablespoon|tsp|tbsp)\b/i, t)) add("recipe", 6);
+  if (has(/\b(book|reading|novel|pages|author)\b/i, t) && has(/\b(by|\d+\s*pp|pages|stars)\b/i, t)) add("book", 5.5);
+  if (has(/\b(movie|film|directed by|cinema|watch (a )?movie)\b/i, t)) add("movie", 5.5);
+  if (has(/\b(outfit|wardrobe|wearing|pieces|chinos|sneakers|blazer)\b/i, t)) add("outfit", 5);
+  if (has(/\b(artwork|painting|sculpture|canvas|oil on canvas)\b/i, t)) add("artwork", 5.5);
+  if (has(/\b(song|track|album|listen to|playlist)\b/i, t)) add("music", 5);
+  if (has(/\b(cafe|restaurant|bistro|place to visit|visit [a-z]+|hotel at)\b/i, t)) add("place", 4.5);
+  if (has(/^(idea:?|thought:?)\b|\b(startup idea|app idea)\b/i, t) || has(/#\w+/, t)) add("idea", 5);
+  if (has(/^(quote:?)\b|[“”—]/, t)) add("quote", 5.5);
   if (has(/\b(i think|i feel|felt|feeling|thinking|wonder|realized|idea|thought|maybe we)\b/, t)) add("note", 2);
   if (words.length >= 8) add("note", 3);
   else if (words.length >= 5) add("note", 2.2);

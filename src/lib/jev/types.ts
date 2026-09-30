@@ -20,6 +20,15 @@ export const INTENT_KEYS = [
   "random",
   "goal",
   "note",
+  "book",
+  "recipe",
+  "outfit",
+  "artwork",
+  "movie",
+  "music",
+  "place",
+  "idea",
+  "quote",
   "none",
 ] as const;
 export type IntentKey = (typeof INTENT_KEYS)[number];

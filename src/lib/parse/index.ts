@@ -18,6 +18,15 @@ import { completeCountdown, parseCountdown, type CountdownData } from "./countdo
 import { completeTimezone, parseTimezone, type TimezoneData } from "./timezone";
 import { completeRandom, parseRandom, type RandomData } from "./random";
 import { completeGoal, parseGoal, type GoalData } from "./goal";
+import { parseRecipe, type ParsedRecipe } from "./recipe";
+import { parseBook, type ParsedBook } from "./book";
+import { parseMovie, type ParsedMovie } from "./movie";
+import { parseOutfit, type ParsedOutfit } from "./outfit";
+import { parseArtwork, type ParsedArtwork } from "./artwork";
+import { parseMusic, type ParsedMusic } from "./music";
+import { parsePlace, type ParsedPlace } from "./place";
+import { parseIdea, type ParsedIdea } from "./idea";
+import { parseQuote, type ParsedQuote } from "./quote";
 
 export type ParsedMap = {
   event: EventData;
@@ -39,6 +48,15 @@ export type ParsedMap = {
   random: RandomData;
   goal: GoalData;
   note: NoteData;
+  book: ParsedBook;
+  recipe: ParsedRecipe;
+  outfit: ParsedOutfit;
+  artwork: ParsedArtwork;
+  movie: ParsedMovie;
+  music: ParsedMusic;
+  place: ParsedPlace;
+  idea: ParsedIdea;
+  quote: ParsedQuote;
 };
 
 export type ParseContext = { ref?: Date; colorMood?: ColorMood | null };
@@ -68,6 +86,15 @@ export const parsers: { [K in CardIntent]: Parser<K> } = {
   random: { parse: (t) => parseRandom(t), complete: completeRandom },
   goal: { parse: (t) => parseGoal(t), complete: completeGoal },
   note: { parse: (t) => parseNote(t), complete: completeNote },
+  book: { parse: (t) => parseBook(t), complete: (d) => (d.title ? 1 : 0.5) },
+  recipe: { parse: (t) => parseRecipe(t), complete: (d) => (d.ingredients.length > 0 ? 1 : 0.6) },
+  outfit: { parse: (t) => parseOutfit(t), complete: (d) => (d.pieces.length > 0 ? 1 : 0.5) },
+  artwork: { parse: (t) => parseArtwork(t), complete: (d) => (d.title ? 1 : 0.5) },
+  movie: { parse: (t) => parseMovie(t), complete: (d) => (d.title ? 1 : 0.5) },
+  music: { parse: (t) => parseMusic(t), complete: (d) => (d.title ? 1 : 0.5) },
+  place: { parse: (t) => parsePlace(t), complete: (d) => (d.name ? 1 : 0.5) },
+  idea: { parse: (t) => parseIdea(t), complete: (d) => (d.title ? 1 : 0.5) },
+  quote: { parse: (t) => parseQuote(t), complete: (d) => (d.quote ? 1 : 0.5) },
 };
 
 export function parseFor<K extends CardIntent>(intent: K, text: string, ctx: ParseContext = {}): ParsedMap[K] {

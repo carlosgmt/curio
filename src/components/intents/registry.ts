@@ -24,6 +24,15 @@ import {
   Users,
   Vote,
   Wallet,
+  BookOpen,
+  ChefHat,
+  Shirt,
+  Image as ImageIcon,
+  Film,
+  Music as MusicIcon,
+  MapPin,
+  Lightbulb,
+  Quote as QuoteIcon,
 } from "lucide-react";
 import type { CardIntent } from "@/lib/jev/types";
 import { formatAmount } from "@/lib/parse/common";
@@ -32,6 +41,7 @@ import { formatClock } from "@/lib/parse/timer";
 import { describeRandom } from "@/lib/parse/random";
 import { formatIn } from "@/lib/parse/timezone";
 import type { GatedSignals } from "@/lib/signals";
+import { BlockCard } from "@/components/blocks/BlockCard";
 import { CalcCard } from "./CalcCard";
 import { CountdownCard } from "./CountdownCard";
 import { GoalCard } from "./GoalCard";
@@ -255,6 +265,78 @@ export const registry: Registry = {
     edge: (s) => (s.tone ? TONE_EDGE[s.tone] : null),
     summary: (d) => d.title,
     Component: NoteCard,
+  },
+  book: {
+    label: "Book",
+    example: "1984 by George Orwell, 328 pages",
+    icon: BookOpen,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
+  },
+  recipe: {
+    label: "Recipe",
+    example: "chicken tikka masala, serves 4",
+    icon: ChefHat,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
+  },
+  outfit: {
+    label: "Outfit",
+    example: "black linen shirt, olive chinos, white sneakers",
+    icon: Shirt,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
+  },
+  artwork: {
+    label: "Artwork",
+    example: "Starry Night by Vincent van Gogh (1889)",
+    icon: ImageIcon,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
+  },
+  movie: {
+    label: "Movie",
+    example: "Inception (2010) directed by Christopher Nolan",
+    icon: Film,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
+  },
+  music: {
+    label: "Music",
+    example: "Bohemian Rhapsody by Queen",
+    icon: MusicIcon,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
+  },
+  place: {
+    label: "Place",
+    example: "Blue Bottle Coffee, 315 Linden St",
+    icon: MapPin,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
+  },
+  idea: {
+    label: "Idea",
+    example: "personal finance app that auto-categorizes brain dumps #startup",
+    icon: Lightbulb,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
+  },
+  quote: {
+    label: "Quote",
+    example: "Simplicity is prerequisite for reliability — Edsger W. Dijkstra",
+    icon: QuoteIcon,
+    signals: [],
+    summary: (d) => d.summary,
+    Component: BlockCard as any,
   },
 };
 

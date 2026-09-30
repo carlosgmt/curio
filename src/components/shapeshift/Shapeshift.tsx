@@ -409,7 +409,7 @@ export function Shapeshift() {
   return (
     <MotionConfig reducedMotion="user">
       <main id="main" className="mx-auto w-full max-w-[560px] px-4 pt-[14vh] pb-24 sm:px-0 sm:pt-[22vh]">
-        <h1 className="sr-only">Shapeshift</h1>
+        <h1 className="sr-only">BrainSpace</h1>
         <MorphContainer readiness={readiness} edge={ghost ? null : (meta?.edge ?? null)}>
           <motion.div layout="position" className="relative flex h-[72px] items-center px-5">
             <input

@@ -1,7 +1,7 @@
 services:
-  morphe:
+  brainspace:
     build: .
-    container_name: morphe
+    container_name: brainspace
     environment:
       DATABASE_PATH: /data/memory.db
       MEDIA_PATH: /data/media
@@ -18,7 +18,7 @@ services:
       - ./data:/data
       - ./litestream.yml:/etc/litestream.yml
     command: replicate
-    depends_on: [morphe]
+    depends_on: [brainspace]
 
   whisper:
     profiles: ["voice"]

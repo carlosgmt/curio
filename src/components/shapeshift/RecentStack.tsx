@@ -7,7 +7,6 @@ import {
   Archive,
   ArchiveRestore,
   LayoutGrid,
-  List as ListIcon,
   Kanban,
   CalendarRange,
   Clock,
@@ -75,7 +74,7 @@ export function RecentStack({
   const [activeList, setActiveList] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"active" | "archived" | "all">("active");
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"list" | "grid" | "board" | "timeline">("list");
+  const [viewMode, setViewMode] = useState<"cards" | "board" | "timeline">("cards");
   const [lists, setLists] = useState<Array<{ id: string; name: string }>>([
     { id: "all", name: "All" },
     { id: "inbox", name: "Inbox" },
@@ -267,24 +266,12 @@ export function RecentStack({
             <div className="flex items-center rounded-lg bg-secondary/70 p-0.5 text-muted-foreground">
               <button
                 type="button"
-                onClick={() => setViewMode("list")}
-                aria-label="List view"
-                title="List view"
+                onClick={() => setViewMode("cards")}
+                aria-label="Cards view"
+                title="Cards view"
                 className={cn(
                   "rounded-md p-1 transition-colors",
-                  viewMode === "list" ? "bg-card text-foreground shadow-2xs" : "hover:text-foreground"
-                )}
-              >
-                <ListIcon className="size-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("grid")}
-                aria-label="Grid view"
-                title="Grid view"
-                className={cn(
-                  "rounded-md p-1 transition-colors",
-                  viewMode === "grid" ? "bg-card text-foreground shadow-2xs" : "hover:text-foreground"
+                  viewMode === "cards" ? "bg-card text-foreground shadow-2xs" : "hover:text-foreground"
                 )}
               >
                 <LayoutGrid className="size-4" />
@@ -477,24 +464,23 @@ export function RecentStack({
           })}
         </div>
       ) : (
-        /* ── LIST / GRID VIEW ──────────────────────────────────── */
-        <div
-          className={cn(
-            viewMode === "grid"
-              ? "grid grid-cols-1 sm:grid-cols-2 gap-2"
-              : "flex flex-col gap-0.5"
-          )}
-        >
+        /* ── CARDS VIEW (DEFAULT) ──────────────────────────────── */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <AnimatePresence initial={false}>
             {filteredItems.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                {searchQuery ? `No cards match "${searchQuery}"` : activeList !== "all" ? `No cards in ${activeList}` : "Your BrainSpace is empty. Type a thought or paste a brain dump above."}
+              <div className="col-span-full py-12 text-center text-sm text-muted-foreground">
+                {searchQuery
+                  ? `No cards match "${searchQuery}"`
+                  : activeList !== "all"
+                  ? `No cards in ${activeList}`
+                  : "Your BrainSpace is empty. Type a thought or paste a brain dump above."}
               </div>
             ) : (
               filteredItems.map((item, i) => {
                 const def = registry[item.intent];
-                const Icon = def.icon;
+                const Icon = def?.icon || StickyNote;
                 const isArchived = item.status === "archived";
+                const childNotes = childrenByParentId.get(String(item.id)) || [];
 
                 return (
                   <motion.div
@@ -520,106 +506,121 @@ export function RecentStack({
                           }
                     }
                     transition={reduce ? tween.fade : spring.morph}
+                    onClick={() => onOpen(item)}
                     className={cn(
-                      "group relative flex items-center rounded-xl border border-transparent transition-all duration-150 ease-out hover:bg-secondary",
-                      viewMode === "grid" && "border-border/60 bg-secondary/30 p-2.5 flex-col items-start gap-2 min-h-24",
+                      "group relative flex flex-col justify-between rounded-2xl border border-border/70 bg-card p-4 shadow-2xs hover:border-primary/40 hover:bg-secondary/15 hover:shadow-xs transition-all duration-150 ease-out cursor-pointer min-h-[120px]",
                       isArchived && "opacity-60"
                     )}
                   >
-                    <motion.button
-                      type="button"
-                      whileTap={reduce ? undefined : { scale: 0.96 }}
-                      onClick={() => onOpen(item)}
-                      aria-label={`Edit ${def.label.toLowerCase()}: ${item.summary}`}
-                      className={cn(
-                        "flex min-w-0 flex-1 items-center gap-3 rounded-xl py-2 ps-2 pe-16 text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                        viewMode === "grid" && "w-full p-0 flex-col items-start gap-2"
-                      )}
-                    >
-                      <div className="flex items-center gap-2.5 w-full">
-                        <span
-                          className="grid size-9 shrink-0 place-items-center rounded-md bg-secondary text-foreground transition-[opacity,background-color] duration-150 group-hover:bg-card group-hover:opacity-100"
-                          style={{ opacity: Math.max(0.45, 1 - i * 0.1) }}
-                        >
-                          <Icon className="size-4.5" aria-hidden />
+                    {/* Top Row: Intent & Metadata */}
+                    <div className="flex items-center justify-between gap-2 w-full pb-2 border-b border-border/40">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="grid size-6 shrink-0 place-items-center rounded-md bg-primary/10 text-primary shadow-2xs">
+                          <Icon className="size-3.5" aria-hidden />
                         </span>
-                        <span className="shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">
-                          {def.label}
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/90 truncate">
+                          {def?.label || item.intent}
                         </span>
                         {item.listId && item.listId !== "inbox" && (
-                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-foreground border border-border/50">
                             {item.listId}
                           </span>
                         )}
-                        <span className="ms-auto pe-1 text-[11px] font-normal text-muted-foreground/75">
-                          {formatRelativeTime(item.createdAt)}
-                        </span>
+                        {item.subtype && (
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                            {item.subtype}
+                          </span>
+                        )}
                       </div>
 
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-normal text-muted-foreground/75">
+                          {formatRelativeTime(item.createdAt)}
+                        </span>
+                        {/* Actions: Archive/Restore & Delete */}
+                        <div
+                          className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {isArchived ? (
+                            <button
+                              type="button"
+                              onClick={() => onRestore?.(item)}
+                              title="Restore card"
+                              aria-label="Restore card"
+                              className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
+                            >
+                              <ArchiveRestore className="size-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onArchive?.(item)}
+                              title="Archive card"
+                              aria-label="Archive card"
+                              className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
+                            >
+                              <Archive className="size-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onDelete(item)}
+                            title="Delete card"
+                            aria-label={`Delete card`}
+                            className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:text-destructive hover:bg-secondary active:scale-[0.96]"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle: Summary & Body Text */}
+                    <div className="flex flex-col gap-1.5 py-2 flex-1">
                       <span
                         className={cn(
-                          "min-w-0 flex-1 text-[14px] leading-snug text-pretty break-words",
-                          i === 0 ? "text-foreground font-medium" : "text-ink-2",
+                          "text-sm font-semibold text-foreground leading-snug break-words",
                           isArchived && "line-through text-muted-foreground"
                         )}
                       >
                         {item.summary}
                       </span>
+                      {item.text && item.text !== item.summary && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed break-words">
+                          {item.text}
+                        </p>
+                      )}
 
-                      {childrenByParentId.get(String(item.id))?.length ? (
+                      {/* Child notes */}
+                      {childNotes.length > 0 && (
                         <div className="flex flex-col gap-1 w-full pt-1.5 border-t border-border/40 mt-1">
-                          {childrenByParentId.get(String(item.id))!.map((child) => (
+                          {childNotes.map((child) => (
                             <div
                               key={child.id}
-                              className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/50 rounded-md px-2 py-1"
+                              className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/50 rounded-lg px-2 py-0.5"
                             >
                               <CornerDownRight className="size-3 text-primary shrink-0" />
                               <span className="truncate">{child.summary}</span>
                             </div>
                           ))}
                         </div>
-                      ) : null}
-                    </motion.button>
-
-                    {/* Actions: Archive/Restore & Delete */}
-                    <div
-                      className={cn(
-                        "absolute end-1 top-2 flex items-center gap-0.5",
-                        viewMode === "grid" && "end-2 top-2"
                       )}
-                    >
-                      {isArchived ? (
-                        <button
-                          type="button"
-                          onClick={() => onRestore?.(item)}
-                          title="Restore card"
-                          aria-label="Restore card"
-                          className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          <ArchiveRestore className="size-4" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onArchive?.(item)}
-                          title="Archive card"
-                          aria-label="Archive card"
-                          className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          <Archive className="size-4" />
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => onDelete(item)}
-                        title="Delete card"
-                        aria-label={`Delete ${def.label.toLowerCase()}: ${item.summary}`}
-                        className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:text-destructive active:scale-[0.96]"
-                      >
-                        <X className="size-4" />
-                      </button>
                     </div>
+
+                    {/* Bottom: Tags */}
+                    {item.tags && item.tags.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-border/30">
+                        {item.tags.map((t) => (
+                          <span
+                            key={t}
+                            className="rounded-full bg-secondary/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                          >
+                            #{t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 );
               })

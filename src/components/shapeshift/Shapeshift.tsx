@@ -27,7 +27,8 @@ import { notify } from "@/lib/notify";
 import { analyzeSmartInput } from "@/lib/smartInput";
 import { isBrainDump, splitBrainDump } from "@/lib/brainDump";
 import { parseInlineTypeDefinition } from "@/lib/customTypes";
-import { Layers, Sparkles } from "lucide-react";
+import { startVoiceDictation } from "@/lib/deviceIntelligence";
+import { Layers, Mic, MicOff, Sparkles } from "lucide-react";
 
 const subscribeNoop = () => () => {};
 
@@ -89,6 +90,28 @@ export function Shapeshift() {
   const [draftId, setDraftId] = useState<number | string>(newId);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+
+  const [recording, setRecording] = useState(false);
+  const dictationRef = useRef<{ stop: () => void } | null>(null);
+
+  const toggleDictation = () => {
+    if (recording) {
+      dictationRef.current?.stop();
+      setRecording(false);
+    } else {
+      const dict = startVoiceDictation(
+        (transcript: string) => {
+          setText((prev) => (prev ? prev + " " + transcript : transcript));
+        },
+        () => setRecording(false),
+        () => setRecording(false)
+      );
+      if (dict) {
+        dictationRef.current = dict;
+        setRecording(true);
+      }
+    }
+  };
 
   const brainDumpItems = useMemo(() => {
     return isBrainDump(text) ? splitBrainDump(text) : null;
@@ -456,13 +479,18 @@ export function Shapeshift() {
                 <span>{smartTarget.label}</span>
               </span>
             ) : null}
-            <span
-              aria-hidden
+            <button
+              type="button"
+              onClick={toggleDictation}
+              title={recording ? "Stop listening" : "Dictate with voice"}
+              aria-label="Voice dictation"
               className={cn(
-                "absolute end-5 size-1.5 rounded-full bg-brand transition-opacity duration-300 ease-out",
-                status === "thinking" ? "opacity-60" : "opacity-0",
+                "absolute end-3 z-[3] grid size-7 place-items-center rounded-full transition-all",
+                recording ? "bg-red-500 text-white animate-pulse" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
               )}
-            />
+            >
+              {recording ? <MicOff className="size-3.5" /> : <Mic className="size-3.5" />}
+            </button>
           </motion.div>
 
           <AnimatePresence initial={false} mode="popLayout">

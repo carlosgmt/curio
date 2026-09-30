@@ -25,6 +25,15 @@ export function applyTheme(mode: ColorMode, palette: ColorPalette) {
 
   // 2. Palette
   root.setAttribute("data-palette", palette);
+
+  // 3. Android / Pixel Status Bar Dynamic Theming (meta theme-color)
+  let metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (!metaTheme) {
+    metaTheme = document.createElement("meta");
+    metaTheme.setAttribute("name", "theme-color");
+    document.head.appendChild(metaTheme);
+  }
+  metaTheme.setAttribute("content", isDark ? "#09090b" : "#ffffff");
 }
 
 export function useTheme() {

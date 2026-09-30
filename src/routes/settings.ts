@@ -17,7 +17,8 @@ settingsRoutes.get("/", async (c) => {
       mode: modeInfo.mode,
       reason: modeInfo.reason,
       model: process.env.JEV_MODEL || "jev-latest",
-      hasKey: looksLikeKey(process.env.TYPESAFE_API_KEY),
+      hasKey: modeInfo.mode === "online" || Boolean(modeInfo.keySource),
+      keySource: modeInfo.keySource || null,
     },
     counts: {
       lists: listCount,
@@ -59,4 +60,34 @@ settingsRoutes.post("/test-jev", async (c) => {
       message: "Connection test failed. Check your API key.",
     }, 500);
   }
+});
+settingsRoutes.post("/key", async (c) => {
+  const body = await c.req.json();
+  const key = (body.key ?? "").trim();
+  const { sqlite } = await import("../db");
+  const { setRuntimeKey } = await import("../lib/jev/client");
+
+  if (!key) {
+    return c.json({ error: "key is required" }, 400);
+  }
+
+  sqlite.prepare(`
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES ('typesafe_api_key', ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+  `).run(key);
+
+  setRuntimeKey(key);
+
+  return c.json({ success: true, message: "TypeSafe API key saved" });
+});
+
+settingsRoutes.delete("/key", async (c) => {
+  const { sqlite } = await import("../db");
+  const { setRuntimeKey } = await import("../lib/jev/client");
+
+  sqlite.prepare("DELETE FROM app_settings WHERE key = 'typesafe_api_key'").run();
+  setRuntimeKey(null);
+
+  return c.json({ success: true, message: "TypeSafe API key removed" });
 });

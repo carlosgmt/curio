@@ -28,6 +28,8 @@ import {
 import { useTheme, type ColorMode, type ColorPalette } from "@/lib/theme";
 import { NewTypeDialog } from "./NewTypeDialog";
 import { notify } from "@/lib/notify";
+import { detectDeviceCapabilities, type DeviceAiCapabilities } from "@/lib/deviceIntelligence";
+import { Key, Eye, EyeOff, Smartphone, Mic } from "lucide-react";
 
 const PALETTES: { id: ColorPalette; name: string; color: string }[] = [
   { id: "indigo", name: "Indigo", color: "#3b5bdb" },
@@ -149,6 +151,47 @@ export function SettingsModal({
         }),
       ]);
       fetchLists();
+    } catch {}
+  };
+
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
+  const [deviceCaps, setDeviceCaps] = useState<DeviceAiCapabilities | null>(null);
+
+  useEffect(() => {
+    detectDeviceCapabilities().then(setDeviceCaps);
+  }, []);
+
+  const saveApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!apiKeyInput.trim()) return;
+    setSavingKey(true);
+    try {
+      const res = await fetch("/api/v1/settings/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: apiKeyInput.trim() }),
+      });
+      if (res.ok) {
+        setApiKeyInput("");
+        fetchSettings();
+        notify("TypeSafe API Key saved", { id: "key-saved" });
+      } else {
+        notify("Failed to save key", { id: "key-err" });
+      }
+    } catch {
+      notify("Offline: failed to save key", { id: "key-err" });
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const removeApiKey = async () => {
+    try {
+      await fetch("/api/v1/settings/key", { method: "DELETE" });
+      fetchSettings();
+      notify("TypeSafe API Key removed", { id: "key-removed" });
     } catch {}
   };
 
@@ -471,7 +514,109 @@ export function SettingsModal({
 
             {/* ── 4. JEV / AI TAB ── */}
             {activeTab === "jev" && (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-5">
+                {/* 1. Device Intelligence (Pixel / Chrome Built-in AI) */}
+                <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="size-4 text-primary" />
+                    <span className="text-xs font-semibold text-foreground">On-Device Intelligence (Pixel / Chrome)</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    BrainSpace can utilize in-browser AI running directly on your hardware without sending notes to the cloud.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-border/40 text-xs">
+                    <div className="flex flex-col gap-1 p-2 rounded-lg bg-secondary/30">
+                      <span className="text-muted-foreground font-medium">Gemini Nano (window.ai)</span>
+                      <span className={`font-semibold ${
+                        deviceCaps?.geminiNano === "readily" || deviceCaps?.geminiNano === "available"
+                          ? "text-emerald-600"
+                          : "text-muted-foreground/70"
+                      }`}>
+                        {deviceCaps?.geminiNano === "readily"
+                          ? "Ready on Device"
+                          : deviceCaps?.geminiNano === "downloading"
+                          ? "Downloading Model"
+                          : deviceCaps?.geminiNano === "available"
+                          ? "Available"
+                          : "Not detected"}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1 p-2 rounded-lg bg-secondary/30">
+                      <span className="text-muted-foreground font-medium">On-Device Speech-to-Text</span>
+                      <span className={`font-semibold ${
+                        deviceCaps?.speechRecognition ? "text-emerald-600" : "text-muted-foreground/70"
+                      }`}>
+                        {deviceCaps?.speechRecognition ? (deviceCaps?.isPixelOrAndroid ? "Pixel Native Voice" : "Browser Ready") : "Unavailable"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. TypeSafe Jev Cloud Configuration & API Key */}
+                <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Key className="size-4 text-primary" />
+                      <span className="text-xs font-semibold text-foreground">TypeSafe API Key</span>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ${
+                        jevInfo?.jev?.hasKey
+                          ? "bg-emerald-500/10 text-emerald-600"
+                          : "bg-amber-500/10 text-amber-600"
+                      }`}
+                    >
+                      {jevInfo?.jev?.hasKey ? "Key Configured" : "No Key Set (Offline)"}
+                    </span>
+                  </div>
+
+                  <form onSubmit={saveApiKey} className="flex flex-col gap-2 mt-1">
+                    <div className="relative flex items-center">
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        placeholder={jevInfo?.jev?.hasKey ? "Key is set (enter new key to replace)" : "Enter TypeSafe API key (sk-...)"}
+                        value={apiKeyInput}
+                        onChange={(e) => setApiKeyInput(e.target.value)}
+                        className="w-full rounded-lg border border-border bg-secondary/40 py-1.5 ps-3 pe-10 text-xs focus:outline-none focus:ring-1 focus:ring-ring font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute end-2 text-muted-foreground hover:text-foreground p-1"
+                      >
+                        {showApiKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] text-muted-foreground">
+                        {jevInfo?.jev?.keySource ? `Loaded from: ${jevInfo.jev.keySource}` : "Using offline engine by default"}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {jevInfo?.jev?.hasKey && (
+                          <button
+                            type="button"
+                            onClick={removeApiKey}
+                            className="rounded-lg px-2.5 py-1 text-xs text-muted-foreground hover:text-destructive hover:bg-secondary"
+                          >
+                            Remove Key
+                          </button>
+                        )}
+                        <button
+                          type="submit"
+                          disabled={savingKey || !apiKeyInput.trim()}
+                          className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                        >
+                          {savingKey ? "Saving..." : "Save Key"}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                {/* 3. Active Classifier Mode */}
                 <div className="flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-2xs">
                   <div>
                     <span className="text-xs font-semibold text-foreground block">Active Classifier Mode</span>

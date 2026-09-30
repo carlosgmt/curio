@@ -59,6 +59,12 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_cards_list ON cards (list_id);
   CREATE INDEX IF NOT EXISTS idx_cards_created ON cards (created_at);
 
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key text PRIMARY KEY NOT NULL,
+    value text NOT NULL,
+    updated_at text DEFAULT (datetime('now')) NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS custom_types (
     id text PRIMARY KEY NOT NULL,
     name text NOT NULL,

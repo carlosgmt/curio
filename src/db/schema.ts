@@ -140,3 +140,13 @@ export type NewCard = typeof cards.$inferInsert;
 export type List = typeof lists.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type CardEvent = typeof cardEvents.$inferSelect;
+
+// ── App Settings (Key-Value persistent store) ──────────────────────────
+
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});

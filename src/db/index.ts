@@ -59,6 +59,18 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_cards_list ON cards (list_id);
   CREATE INDEX IF NOT EXISTS idx_cards_created ON cards (created_at);
 
+  CREATE TABLE IF NOT EXISTS custom_types (
+    id text PRIMARY KEY NOT NULL,
+    name text NOT NULL,
+    description text,
+    icon text DEFAULT 'Sparkles' NOT NULL,
+    color text DEFAULT 'oklch(0.65 0.18 270)' NOT NULL,
+    fields text DEFAULT '[]' NOT NULL,
+    patterns text DEFAULT '[]' NOT NULL,
+    created_at text DEFAULT (datetime('now')) NOT NULL,
+    updated_at text DEFAULT (datetime('now')) NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS attachments (
     id text PRIMARY KEY NOT NULL,
     card_id text NOT NULL REFERENCES cards(id) ON DELETE CASCADE,

@@ -192,7 +192,7 @@ cardRoutes.post("/smart", async (c) => {
       }
     } else {
       // Append text
-      updatedData.rawAppend = (updatedData.rawAppend ? updatedData.rawAppend + "\n" : "") + action.content;
+          updatedData.rawAppend = (updatedData.rawAppend ? updatedData.rawAppend + "\n" : "") + action.content;
     }
 
     const updatedRow = db
@@ -287,6 +287,192 @@ cardRoutes.post("/smart", async (c) => {
   }
 
   return c.json({ matched: false });
+});
+
+
+// ── Brain Dump / Batch Ingestion ────────────────────────────────────────
+
+cardRoutes.post("/dump", async (c) => {
+  const body = await c.req.json();
+  const rawText = (body.text ?? "").trim();
+  const actor = body.actor ?? "user";
+
+  const { splitBrainDump } = await import("../lib/brainDump");
+  const items: string[] = Array.isArray(body.items) && body.items.length > 0 
+    ? body.items 
+    : splitBrainDump(rawText);
+
+  if (items.length === 0) {
+    return c.json({ error: "No items provided" }, 400);
+  }
+
+  const { analyzeSmartInput } = await import("../lib/smartInput");
+  const { mockClassify } = await import("../lib/jev/mock");
+  const { parseFor } = await import("../lib/parse");
+  const { customTypes } = await import("../db/schema");
+  const { matchCustomType } = await import("../lib/customTypes");
+
+  const [allCards, allLists, customTypesRaw, rules] = await Promise.all([
+    db.select().from(cards).where(eq(cards.status, "active")).all(),
+    db.select().from(lists).all(),
+    db.select().from(customTypes).all(),
+    db.select().from(listRules).all(),
+  ]);
+
+  const ruleMap = new Map(rules.map((r) => [r.intent, r.listId]));
+  const customTypeList = customTypesRaw.map((r) => ({
+    id: r.id,
+    name: r.name,
+    icon: r.icon,
+    color: r.color,
+    fields: JSON.parse(r.fields),
+    patterns: JSON.parse(r.patterns),
+  }));
+
+  const created: any[] = [];
+  const appended: any[] = [];
+
+  for (const itemText of items) {
+    const trimmed = itemText.trim();
+    if (!trimmed) continue;
+
+    const smartAction = analyzeSmartInput(
+      trimmed,
+      allCards.map((c) => ({
+        id: c.id,
+        title: c.title,
+        intent: c.intent,
+        listId: c.listId,
+        data: JSON.parse(c.data),
+      })),
+      allLists
+    );
+
+    if (smartAction?.kind === "append_card" && smartAction.targetId) {
+      const target = allCards.find((c) => c.id === smartAction.targetId);
+      if (target) {
+        const existingData = JSON.parse(target.data);
+        const newItems = smartAction.itemsToAppend || [smartAction.content];
+        let updatedData = { ...existingData };
+        if (Array.isArray(existingData.items)) {
+          const added = newItems.map((it: string, idx: number) => ({
+            id: `item-${Date.now()}-${idx}`,
+            text: it,
+            done: false,
+          }));
+          updatedData.items = [...existingData.items, ...added];
+        } else {
+          updatedData.rawAppend = (updatedData.rawAppend ? updatedData.rawAppend + "\n" : "") + smartAction.content;
+        }
+
+        db.update(cards)
+          .set({ data: JSON.stringify(updatedData), updatedAt: sql`datetime('now')` })
+          .where(eq(cards.id, target.id))
+          .run();
+
+        db.insert(cardEvents)
+          .values({
+            cardId: target.id,
+            actor,
+            action: "appended_via_dump",
+            diff: JSON.stringify({ appended: newItems }),
+          })
+          .run();
+
+        appended.push({ targetId: target.id, targetTitle: target.title, items: newItems });
+        continue;
+      }
+    }
+
+    if (smartAction?.kind === "attach_to_parent" && smartAction.targetId) {
+      const parent = allCards.find((c) => c.id === smartAction.targetId);
+      if (parent) {
+        const newChild = db
+          .insert(cards)
+          .values({
+            listId: parent.listId,
+            parentId: parent.id,
+            subtype: "note",
+            intent: "note",
+            status: "active",
+            title: `Note on ${parent.title}`,
+            rawText: smartAction.content,
+            data: JSON.stringify({ summary: smartAction.content, parentTitle: parent.title }),
+          })
+          .returning()
+          .get();
+
+        db.insert(cardEvents)
+          .values({
+            cardId: parent.id,
+            actor,
+            action: "child_attached_via_dump",
+            diff: JSON.stringify({ childId: newChild.id, text: smartAction.content }),
+          })
+          .run();
+
+        created.push(deserializeCard(newChild));
+        continue;
+      }
+    }
+
+    const customMatch = matchCustomType(trimmed, customTypeList);
+    if (customMatch) {
+      const ct = customMatch.type;
+      const newCard = db
+        .insert(cards)
+        .values({
+          listId: "inbox",
+          intent: "note",
+          subtype: ct.id,
+          status: "active",
+          title: trimmed,
+          rawText: trimmed,
+          data: JSON.stringify({
+            summary: trimmed,
+            customTypeId: ct.id,
+            customTypeName: ct.name,
+          }),
+        })
+        .returning()
+        .get();
+
+      created.push(deserializeCard(newCard));
+      continue;
+    }
+
+    const classified = mockClassify(trimmed);
+    const intentVal = classified.intent.value === "none" ? "note" : classified.intent.value;
+    const intent = intentVal as any;
+    const parsedData = parseFor(intent as any, trimmed);
+    const assignedList = smartAction?.kind === "create_in_list" && smartAction.targetListId
+      ? smartAction.targetListId
+      : ruleMap.get(intentVal) ?? "inbox";
+
+    const newCard = db
+      .insert(cards)
+      .values({
+        listId: assignedList,
+        intent,
+        status: "active",
+        title: trimmed,
+        rawText: trimmed,
+        data: JSON.stringify(parsedData),
+      })
+      .returning()
+      .get();
+
+    created.push(deserializeCard(newCard));
+  }
+
+  return c.json({
+    total: items.length,
+    createdCount: created.length,
+    appendedCount: appended.length,
+    created,
+    appended,
+    message: `Processed ${items.length} items (${created.length} created, ${appended.length} appended)`,
+  });
 });
 
 // ── Get card ───────────────────────────────────────────────────────────

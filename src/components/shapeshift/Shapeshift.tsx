@@ -25,6 +25,9 @@ import { RecentStack } from "./RecentStack";
 import { newId, type SavedItem, savedItems } from "@/lib/savedItems";
 import { notify } from "@/lib/notify";
 import { analyzeSmartInput } from "@/lib/smartInput";
+import { isBrainDump, splitBrainDump } from "@/lib/brainDump";
+import { parseInlineTypeDefinition } from "@/lib/customTypes";
+import { Layers, Sparkles } from "lucide-react";
 
 const subscribeNoop = () => () => {};
 
@@ -86,6 +89,14 @@ export function Shapeshift() {
   const [draftId, setDraftId] = useState<number | string>(newId);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+
+  const brainDumpItems = useMemo(() => {
+    return isBrainDump(text) ? splitBrainDump(text) : null;
+  }, [text]);
+
+  const customTypeDef = useMemo(() => {
+    return parseInlineTypeDefinition(text);
+  }, [text]);
 
   const smartTarget = useMemo(() => {
     return analyzeSmartInput(
@@ -152,6 +163,50 @@ export function Shapeshift() {
   };
 
   const complete = (): boolean => {
+    // 1. If input is inline custom type definition (e.g. "new type: Wine (vintage, rating)")
+    if (editingId === null && customTypeDef) {
+      fetch("/api/v1/types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(customTypeDef),
+      })
+        .then((r) => r.json())
+        .then(() => {
+          notify(`Created type "${customTypeDef.name}" with ${customTypeDef.fields.length} fields`, { id: "custom-type" });
+        })
+        .catch(() => {});
+
+      setAnnouncement(`Created custom type ${customTypeDef.name}`);
+      setText("");
+      setMem(initialMemory);
+      setGated(neutralGated);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return true;
+    }
+
+    // 2. If input is multi-line brain dump
+    if (editingId === null && brainDumpItems) {
+      const dumpText = text;
+      fetch("/api/v1/cards/dump", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: dumpText, items: brainDumpItems }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          savedItems.syncFromBackend();
+          notify(res.message || `Processed ${brainDumpItems.length} items`, { id: "brain-dump" });
+        })
+        .catch(() => {});
+
+      setAnnouncement(`Processing ${brainDumpItems.length} brain dump items`);
+      setText("");
+      setMem(initialMemory);
+      setGated(neutralGated);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return true;
+    }
+
     // If input matches smart action (append to card/list or attach note), execute it directly!
     if (editingId === null && smartTarget) {
       const actionText = text;
@@ -368,6 +423,13 @@ export function Shapeshift() {
                   setGated(neutralGated);
                 }
               }}
+              onPaste={(e) => {
+                const paste = e.clipboardData.getData("text");
+                if (paste && (paste.includes(String.fromCharCode(10)) || paste.includes(String.fromCharCode(13)))) {
+                  e.preventDefault();
+                  setText(paste);
+                }
+              }}
               onKeyDown={onKeyDown}
               aria-label="Type anything"
               aria-describedby="shapeshift-hint"
@@ -378,12 +440,22 @@ export function Shapeshift() {
               className="relative z-[1] h-8 w-full bg-transparent pe-6 text-[22px] leading-8 font-[450] tracking-[-0.01em] text-foreground caret-brand outline-none"
             />
             {text === "" && <CyclingPlaceholder />}
-            {smartTarget && (
+            {customTypeDef ? (
+              <span className="absolute end-10 top-2 z-[2] flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+                <Sparkles className="size-3 animate-pulse text-primary" />
+                <span>Create type "{customTypeDef.name}" ({customTypeDef.fields.length} fields)</span>
+              </span>
+            ) : brainDumpItems ? (
+              <span className="absolute end-10 top-2 z-[2] flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+                <Layers className="size-3 animate-pulse text-primary" />
+                <span>Brain dump: {brainDumpItems.length} items</span>
+              </span>
+            ) : smartTarget ? (
               <span className="absolute end-10 top-2 z-[2] flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-0.5 text-[11px] font-semibold text-brand">
                 <span className="size-1.5 rounded-full bg-brand animate-pulse" />
                 <span>{smartTarget.label}</span>
               </span>
-            )}
+            ) : null}
             <span
               aria-hidden
               className={cn(

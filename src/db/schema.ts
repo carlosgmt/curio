@@ -89,6 +89,27 @@ export const cardEvents = sqliteTable(
   (t) => [index("idx_events_card").on(t.cardId)]
 );
 
+// ── Custom Types (Dynamic User-defined Schemas) ────────────────────────
+
+export const customTypes = sqliteTable("custom_types", {
+  id: text("id").primaryKey(), // slug, e.g. 'wine', 'workout'
+  name: text("name").notNull(),
+  description: text("description"),
+  icon: text("icon").notNull().default("Sparkles"),
+  color: text("color").notNull().default("oklch(0.65 0.18 270)"),
+  fields: text("fields").notNull().default("[]"), // JSON array of CustomTypeField
+  patterns: text("patterns").notNull().default("[]"), // JSON array of string keywords/regex
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export type CustomType = typeof customTypes.$inferSelect;
+export type NewCustomType = typeof customTypes.$inferInsert;
+
 // ── Attachments ────────────────────────────────────────────────────────
 
 export const attachments = sqliteTable(

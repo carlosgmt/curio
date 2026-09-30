@@ -1,3 +1,4 @@
+import { typeRoutes } from "@/routes/types";
 import { Hono } from "hono";
 import { cardRoutes } from "@/routes/cards";
 import { listRoutes } from "@/routes/lists";
@@ -11,6 +12,7 @@ const app = new Hono().basePath("/api/v1");
 app.route("/cards", cardRoutes);
 app.route("/lists", listRoutes);
 app.route("/search", searchRoutes);
+app.route("/types", typeRoutes);
 app.get("/stats", async (c) => {
   const byIntent = db
     .select({ intent: cards.intent, count: sql<number>`count(*)` })

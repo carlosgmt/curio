@@ -1,0 +1,31 @@
+services:
+  morphe:
+    build: .
+    container_name: morphe
+    environment:
+      DATABASE_PATH: /data/memory.db
+      MEDIA_PATH: /data/media
+      PORT: "8080"
+    volumes: ["./data:/data"]
+    ports: ["8080:8080"]
+    restart: unless-stopped
+
+  litestream:
+    image: litestream/litestream
+    profiles: ["backup"]
+    volumes:
+      - ./data:/data
+      - ./litestream.yml:/etc/litestream.yml
+    command: replicate
+    depends_on: [morphe]
+
+  whisper:
+    profiles: ["voice"]
+    image: ghcr.io/ggerganov/whisper.cpp:main
+    volumes: ["./models:/models"]
+
+  vision:
+    profiles: ["vision"]
+    image: ollama/ollama
+    volumes: ["./models:/root/.ollama"]
+    ports: ["11434:11434"]

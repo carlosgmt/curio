@@ -1,23 +1,42 @@
-FROM oven/bun:1.2-alpine AS base
+FROM node:22-alpine AS builder
 WORKDIR /app
+RUN apk add --no-cache python3 make g++
 
-# Install deps
+# Install Bun for fast package installation
+RUN npm install -g bun@1.4.2
+
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile 2>/dev/null || bun install
 
-# Copy source + drizzle migrations
-COPY src/ src/
-COPY drizzle/ drizzle/
-COPY tsconfig.json drizzle.config.ts ./
+COPY . .
 
-# Create data dir
-RUN mkdir -p /data
+# Run Next.js production build (generates .next/standalone)
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN bun run build
 
+# ── Runner ─────────────────────────────────────────────────────────────
+FROM node:22-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
 ENV DATABASE_PATH=/data/memory.db
 ENV MEDIA_PATH=/data/media
-ENV PORT=8080
 
-EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/api/health || exit 1
+RUN apk add --no-cache libc6-compat
 
-CMD ["bun", "run", "src/index.ts"]
+# Copy standalone build output, native bindings, and static assets
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public* ./public/
+
+RUN mkdir -p /data
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://localhost:3000/api/health || exit 1
+
+CMD ["node", "server.js"]

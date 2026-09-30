@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { compress } from "hono/compress";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { db, sqlite } from "./db";
 import { cards } from "./db/schema";
 import { seed } from "./db/seed";
@@ -78,19 +78,18 @@ app.get("/api/v1/stats", async (c) => {
 // ── Card expiry scheduler ──────────────────────────────────────────────
 
 setInterval(() => {
-  const result = db
-    .update(cards)
-    .set({ status: "expired", updatedAt: sql`datetime('now')` })
-    .where(
-      and(
-        eq(cards.status, "active"),
-        isNotNull(cards.dueAt),
-        lt(cards.dueAt, sql`datetime('now')`)
+  try {
+    const res = sqlite
+      .prepare(
+        `UPDATE cards SET status = 'expired', updated_at = datetime('now')
+         WHERE status = 'active' AND due_at IS NOT NULL AND due_at < datetime('now')`
       )
-    )
-    .run();
-  if (result.changes > 0) {
-    console.log(`Expired ${result.changes} card(s)`);
+      .run();
+    if (res.changes > 0) {
+      console.log(`Expired ${res.changes} card(s)`);
+    }
+  } catch (err) {
+    console.error("Scheduler error:", err);
   }
 }, 60_000);
 

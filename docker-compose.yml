@@ -5,9 +5,10 @@ services:
     environment:
       DATABASE_PATH: /data/memory.db
       MEDIA_PATH: /data/media
-      PORT: "8080"
+      PORT: "3000"
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
     volumes: ["./data:/data"]
-    ports: ["8080:8080"]
+    ports: ["3000:3000"]
     restart: unless-stopped
 
   litestream:

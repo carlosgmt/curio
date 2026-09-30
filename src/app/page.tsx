@@ -1,11 +1,11 @@
 import { Shapeshift } from "@/components/shapeshift/Shapeshift";
-import { SiteChrome } from "@/components/shapeshift/SiteChrome";
+import { BrainSpaceHeader } from "@/components/shapeshift/BrainSpaceHeader";
 
 export default function Home() {
   return (
     <>
+      <BrainSpaceHeader />
       <Shapeshift />
-      <SiteChrome />
     </>
   );
 }

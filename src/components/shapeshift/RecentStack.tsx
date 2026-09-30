@@ -139,7 +139,6 @@ export function RecentStack({
     return map;
   }, [items]);
 
-  if (items.length === 0 && !searchQuery) return null;
 
   return (
     <motion.section
@@ -422,7 +421,7 @@ export function RecentStack({
           <AnimatePresence initial={false}>
             {filteredItems.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                {searchQuery ? `No cards match "${searchQuery}"` : "No cards in this list"}
+                {searchQuery ? `No cards match "${searchQuery}"` : activeList !== "all" ? `No cards in ${activeList}` : "Your BrainSpace is empty. Type a thought or paste a brain dump above."}
               </div>
             ) : (
               filteredItems.map((item, i) => {

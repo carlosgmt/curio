@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Plus, Brain, Settings } from "lucide-react";
 import { SettingsModal } from "./SettingsModal";
 import { NewTypeDialog } from "./NewTypeDialog";
@@ -34,15 +35,14 @@ export function BrainSpaceHeader() {
             <span>New Type</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
+          <Link
+            href="/settings"
             className="grid size-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground shadow-2xs hover:text-foreground hover:bg-secondary transition-all active:scale-[0.97]"
             title="Settings"
             aria-label="Settings"
           >
             <Settings className="size-4" />
-          </button>
+          </Link>
         </div>
       </header>
 

@@ -1,5 +1,5 @@
-const CACHE_NAME = "brainspace-v1";
-const PRECACHE_ASSETS = ["/", "/manifest.json", "/icon.png"];
+const CACHE_NAME = "brainspace-v2";
+const PRECACHE_ASSETS = ["/", "/manifest.json", "/icon.png", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

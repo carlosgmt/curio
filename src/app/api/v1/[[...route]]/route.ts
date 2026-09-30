@@ -1,5 +1,6 @@
 import { settingsRoutes } from "@/routes/settings";
 import { typeRoutes } from "@/routes/types";
+import { attachmentRoutes } from "@/routes/attachments";
 import { Hono } from "hono";
 import { cardRoutes } from "@/routes/cards";
 import { listRoutes } from "@/routes/lists";
@@ -15,6 +16,8 @@ app.route("/lists", listRoutes);
 app.route("/search", searchRoutes);
 app.route("/types", typeRoutes);
 app.route("/settings", settingsRoutes);
+app.route("/attachments", attachmentRoutes);
+app.route("/", attachmentRoutes); // For /share-target matching manifest.json
 app.get("/stats", async (c) => {
   const byIntent = db
     .select({ intent: cards.intent, count: sql<number>`count(*)` })

@@ -38,8 +38,43 @@ settingsRoutes.post("/test-jev", async (c) => {
     return c.json({
       success: true,
       mode: "offline",
-      message: "Offline classifier is active (no TYPESAFE_API_KEY required). Instant heuristic matching enabled.",
+      message: "Offline classifier is active (no API key required). Instant heuristic matching enabled.",
     });
+  }
+
+  const { getEffectiveKey } = await import("../lib/jev/client");
+  const { key } = getEffectiveKey();
+
+  if (key && key.startsWith("sk-or-v1-")) {
+    try {
+      const start = performance.now();
+      const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      const latencyMs = Math.round(performance.now() - start);
+      if (res.ok) {
+        const keyData = await res.json();
+        return c.json({
+          success: true,
+          mode: "online",
+          provider: "openrouter",
+          latencyMs,
+          message: `Connected to OpenRouter successfully (${latencyMs}ms latency). Limit: $${keyData?.data?.limit ?? "Unlimited"}.`,
+        });
+      } else {
+        return c.json({
+          success: false,
+          error: "Unauthorized",
+          message: "OpenRouter authorization failed. Check your API key.",
+        }, 400);
+      }
+    } catch (err: any) {
+      return c.json({
+        success: false,
+        error: err?.message || "Failed to reach OpenRouter",
+        message: "Failed to connect to OpenRouter.",
+      }, 500);
+    }
   }
 
   try {
@@ -48,10 +83,11 @@ settingsRoutes.post("/test-jev", async (c) => {
     return c.json({
       success: true,
       mode: "online",
+      provider: "typesafe",
       latencyMs: result.latencyMs,
       intent: result.intent.value,
       confidence: result.intent.confidence,
-      message: `Connected to TypeSafe Jev successfully (\${result.latencyMs}ms latency).`,
+      message: `Connected to TypeSafe Jev successfully (${result.latencyMs}ms latency).`,
     });
   } catch (err: any) {
     return c.json({

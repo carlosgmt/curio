@@ -28,7 +28,7 @@ import { analyzeSmartInput } from "@/lib/smartInput";
 import { isBrainDump, splitBrainDump } from "@/lib/brainDump";
 import { parseInlineTypeDefinition } from "@/lib/customTypes";
 import { startVoiceDictation } from "@/lib/deviceIntelligence";
-import { Layers, Mic, MicOff, Sparkles, X } from "lucide-react";
+import { ImagePlus, Layers, Mic, MicOff, Sparkles, X } from "lucide-react";
 
 const subscribeNoop = () => () => {};
 
@@ -93,6 +93,25 @@ export function Shapeshift() {
 
   const [recording, setRecording] = useState(false);
   const dictationRef = useRef<{ stop: () => void } | null>(null);
+
+  const [attachedImages, setAttachedImages] = useState<Array<{ id: string; url: string; filename: string }>>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadImageFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await fetch("/api/v1/attachments/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAttachedImages((prev) => [...prev, data]);
+        notify(`Attached ${file.name}`, { id: "attach" });
+      }
+    } catch {}
+  };
 
   const toggleDictation = () => {
     if (recording) {
@@ -176,6 +195,7 @@ export function Shapeshift() {
   /** Clear the input. When editing a saved item, it returns to the list unchanged. */
   const reset = () => {
     setText("");
+    setAttachedImages([]);
     setMem(initialMemory);
     setGated(neutralGated);
     if (editingId !== null) {
@@ -454,6 +474,18 @@ export function Shapeshift() {
                     setGated(neutralGated);
                   }
                 }}
+                onPaste={(e) => {
+                  const files = e.clipboardData.files;
+                  if (files && files.length > 0) {
+                    for (let i = 0; i < files.length; i++) {
+                      const f = files[i];
+                      if (f.type.startsWith("image/")) {
+                        e.preventDefault();
+                        uploadImageFile(f);
+                      }
+                    }
+                  }
+                }}
                 onKeyDown={onKeyDown}
                 aria-label="Type anything"
                 spellCheck={false}
@@ -472,6 +504,16 @@ export function Shapeshift() {
                   }
                 }}
                 onPaste={(e) => {
+                  const files = e.clipboardData.files;
+                  if (files && files.length > 0) {
+                    for (let i = 0; i < files.length; i++) {
+                      const f = files[i];
+                      if (f.type.startsWith("image/")) {
+                        e.preventDefault();
+                        uploadImageFile(f);
+                      }
+                    }
+                  }
                   const paste = e.clipboardData.getData("text");
                   if (paste && (paste.includes(String.fromCharCode(10)) || paste.includes(String.fromCharCode(13)))) {
                     e.preventDefault();
@@ -491,7 +533,7 @@ export function Shapeshift() {
 
             {text === "" && <CyclingPlaceholder />}
 
-            {/* Input Controls: Clear & Voice Dictation */}
+            {/* Input Controls: Clear, Image Upload & Voice Dictation */}
             <div className="flex items-center gap-1.5 ms-2 shrink-0 z-[3]">
               {text.length > 0 && (
                 <button
@@ -504,6 +546,29 @@ export function Shapeshift() {
                   <X className="size-4" />
                 </button>
               )}
+
+              {/* Attach Image Button */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach photo or image"
+                aria-label="Attach photo"
+                className="grid size-7 place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all"
+              >
+                <ImagePlus className="size-3.5" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadImageFile(file);
+                  e.target.value = "";
+                }}
+              />
+
               <button
                 type="button"
                 onClick={toggleDictation}
@@ -518,6 +583,31 @@ export function Shapeshift() {
               </button>
             </div>
           </motion.div>
+
+          {/* Attached Images Thumbnail Preview Strip */}
+          {attachedImages.length > 0 && (
+            <div className="flex items-center gap-2 px-5 py-2.5 overflow-x-auto border-t border-border/30 bg-secondary/20">
+              {attachedImages.map((img) => (
+                <div key={img.id} className="relative group shrink-0">
+                  <img
+                    src={img.url}
+                    alt={img.filename}
+                    className="size-14 rounded-lg object-cover border border-border shadow-2xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAttachedImages((prev) => prev.filter((x) => x.id !== img.id))}
+                    className="absolute -top-1.5 -end-1.5 size-4 rounded-full bg-destructive text-white grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity shadow-xs"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </div>
+              ))}
+              <span className="text-[11px] text-muted-foreground">
+                {attachedImages.length} image{attachedImages.length === 1 ? "" : "s"} attached
+              </span>
+            </div>
+          )}
 
           {/* Context / Smart Detection Action Strip */}
           {(customTypeDef || brainDumpItems || smartTarget) && (

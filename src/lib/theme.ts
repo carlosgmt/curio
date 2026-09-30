@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 
 export type ColorMode = "light" | "dark" | "system";
-export type ColorPalette = "indigo" | "emerald" | "amber" | "violet" | "rose" | "slate";
+export type ColorPalette = "indigo" | "emerald" | "amber" | "violet" | "rose" | "slate" | "dynamic";
 
 const THEME_KEY = "brainspace:theme";
 const PALETTE_KEY = "brainspace:palette";

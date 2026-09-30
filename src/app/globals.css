@@ -234,57 +234,108 @@ body.demo-idle * {
   color-scheme: dark;
 }
 
+[data-palette="indigo"] {
+  --brand: #4f46e5;
+  --brand-soft: #eef2ff;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --ring: #4f46e5;
+}
+.dark[data-palette="indigo"], [data-palette="indigo"].dark, html.dark[data-palette="indigo"] {
+  --brand: #6366f1;
+  --brand-soft: #1e1b4b;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --ring: #6366f1;
+}
+
 [data-palette="emerald"] {
   --brand: #059669;
   --brand-soft: #ecfdf5;
+  --primary: #059669;
+  --primary-foreground: #ffffff;
   --ring: #059669;
 }
 .dark[data-palette="emerald"], [data-palette="emerald"].dark, html.dark[data-palette="emerald"] {
   --brand: #10b981;
   --brand-soft: #064e3b;
+  --primary: #10b981;
+  --primary-foreground: #ffffff;
   --ring: #10b981;
 }
 
 [data-palette="amber"] {
   --brand: #d97706;
   --brand-soft: #fffbeb;
+  --primary: #d97706;
+  --primary-foreground: #ffffff;
   --ring: #d97706;
 }
 .dark[data-palette="amber"], [data-palette="amber"].dark, html.dark[data-palette="amber"] {
   --brand: #f59e0b;
   --brand-soft: #451a03;
+  --primary: #f59e0b;
+  --primary-foreground: #ffffff;
   --ring: #f59e0b;
 }
 
 [data-palette="violet"] {
   --brand: #7c3aed;
   --brand-soft: #f5f3ff;
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
   --ring: #7c3aed;
 }
 .dark[data-palette="violet"], [data-palette="violet"].dark, html.dark[data-palette="violet"] {
   --brand: #8b5cf6;
   --brand-soft: #2e1065;
+  --primary: #8b5cf6;
+  --primary-foreground: #ffffff;
   --ring: #8b5cf6;
 }
 
 [data-palette="rose"] {
   --brand: #e11d48;
   --brand-soft: #fff1f2;
+  --primary: #e11d48;
+  --primary-foreground: #ffffff;
   --ring: #e11d48;
 }
 .dark[data-palette="rose"], [data-palette="rose"].dark, html.dark[data-palette="rose"] {
   --brand: #f43f5e;
   --brand-soft: #4c0519;
+  --primary: #f43f5e;
+  --primary-foreground: #ffffff;
   --ring: #f43f5e;
 }
 
 [data-palette="slate"] {
   --brand: #475569;
   --brand-soft: #f8fafc;
+  --primary: #475569;
+  --primary-foreground: #ffffff;
   --ring: #475569;
 }
 .dark[data-palette="slate"], [data-palette="slate"].dark, html.dark[data-palette="slate"] {
   --brand: #94a3b8;
   --brand-soft: #1e293b;
+  --primary: #94a3b8;
+  --primary-foreground: #ffffff;
   --ring: #94a3b8;
+}
+
+/* Material You / Android Dynamic System Accent */
+[data-palette="dynamic"] {
+  --brand: AccentColor;
+  --brand-soft: color-mix(in srgb, AccentColor 15%, transparent);
+  --primary: AccentColor;
+  --primary-foreground: #ffffff;
+  --ring: AccentColor;
+}
+.dark[data-palette="dynamic"], [data-palette="dynamic"].dark, html.dark[data-palette="dynamic"] {
+  --brand: AccentColor;
+  --brand-soft: color-mix(in srgb, AccentColor 25%, transparent);
+  --primary: AccentColor;
+  --primary-foreground: #ffffff;
+  --ring: AccentColor;
 }

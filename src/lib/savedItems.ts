@@ -13,6 +13,7 @@ export const savedItemSchema = z.object({
   tags: z.array(z.string()).optional().default([]),
   parentId: z.string().nullable().optional(),
   subtype: z.string().nullable().optional(),
+  data: z.record(z.string(), z.any()).optional().default({}),
 });
 export type SavedItem = z.infer<typeof savedItemSchema>;
 
@@ -106,6 +107,7 @@ export const savedItems = {
         tags: c.tags || [],
         parentId: c.parentId || null,
         subtype: c.subtype || null,
+        data: c.data ? (typeof c.data === "string" ? JSON.parse(c.data) : c.data) : {},
       }));
 
       // If server has items, merge them with local
@@ -129,6 +131,7 @@ export const savedItems = {
           list_id: activeListId && activeListId !== "all" ? activeListId : item.listId,
           status: item.status ?? "active",
           tags: item.tags ?? [],
+          data: item.data ?? {},
         }),
       });
       if (res.ok) {
@@ -158,6 +161,7 @@ export const savedItems = {
           list_id: item.listId,
           status: item.status,
           tags: item.tags,
+          data: item.data ?? {},
         }),
       });
     } catch {

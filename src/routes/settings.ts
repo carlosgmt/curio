@@ -91,11 +91,12 @@ settingsRoutes.post("/test-jev", async (c) => {
       message: `OpenRouter Jev Latest operational (${latencyMs}ms latency). Intent: ${result.intent.value} (${Math.round((result.intent.confidence || 0) * 100)}%).`,
     });
   } catch (err: any) {
+    const errorText = err?.message || "Failed to reach Jev on OpenRouter";
     return c.json({
       success: false,
       latencyMs: Math.round(performance.now() - start),
-      error: err?.message || "Failed to reach Jev on OpenRouter",
-      message: "OpenRouter Jev test failed. Check your API key.",
+      error: errorText,
+      message: errorText,
     }, 400);
   }
 });

@@ -1,3 +1,4 @@
+import { settingsRoutes } from "@/routes/settings";
 import { typeRoutes } from "@/routes/types";
 import { Hono } from "hono";
 import { cardRoutes } from "@/routes/cards";
@@ -13,6 +14,7 @@ app.route("/cards", cardRoutes);
 app.route("/lists", listRoutes);
 app.route("/search", searchRoutes);
 app.route("/types", typeRoutes);
+app.route("/settings", settingsRoutes);
 app.get("/stats", async (c) => {
   const byIntent = db
     .select({ intent: cards.intent, count: sql<number>`count(*)` })

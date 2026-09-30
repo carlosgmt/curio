@@ -1,3 +1,4 @@
+import { PwaRegister } from "@/components/PwaRegister";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
@@ -22,6 +23,12 @@ export const metadata: Metadata = {
     type: "website",
   },
   twitter: { card: "summary_large_image", title: "BrainSpace", description: "An input that becomes what you mean." },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "BrainSpace",
+  },
 };
 
 // viewport-fit=cover lets fixed chrome (HUD, toasts) pad itself away from the home indicator.
@@ -32,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full bg-background font-sans text-foreground">
         <TooltipProvider>{children}</TooltipProvider>
+        <PwaRegister />
         <Toaster />
       </body>
     </html>

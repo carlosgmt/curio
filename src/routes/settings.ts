@@ -1,0 +1,62 @@
+import { Hono } from "hono";
+import { classifierMode, looksLikeKey } from "../lib/jev/client";
+import { db } from "../db";
+import { lists, customTypes, cards } from "../db/schema";
+import { sql } from "drizzle-orm";
+
+export const settingsRoutes = new Hono();
+
+settingsRoutes.get("/", async (c) => {
+  const modeInfo = classifierMode();
+  const listCount = db.select({ count: sql<number>`count(*)` }).from(lists).get()?.count ?? 0;
+  const customTypeCount = db.select({ count: sql<number>`count(*)` }).from(customTypes).get()?.count ?? 0;
+  const totalCards = db.select({ count: sql<number>`count(*)` }).from(cards).get()?.count ?? 0;
+
+  return c.json({
+    jev: {
+      mode: modeInfo.mode,
+      reason: modeInfo.reason,
+      model: process.env.JEV_MODEL || "jev-latest",
+      hasKey: looksLikeKey(process.env.TYPESAFE_API_KEY),
+    },
+    counts: {
+      lists: listCount,
+      customTypes: customTypeCount,
+      totalCards,
+    },
+    app: {
+      name: "BrainSpace",
+      version: "0.1.0",
+    }
+  });
+});
+
+settingsRoutes.post("/test-jev", async (c) => {
+  const modeInfo = classifierMode();
+  if (modeInfo.mode === "offline") {
+    return c.json({
+      success: true,
+      mode: "offline",
+      message: "Offline classifier is active (no TYPESAFE_API_KEY required). Instant heuristic matching enabled.",
+    });
+  }
+
+  try {
+    const { classifyWithJev } = await import("../lib/jev/client");
+    const result = await classifyWithJev("Buy milk and eggs tomorrow");
+    return c.json({
+      success: true,
+      mode: "online",
+      latencyMs: result.latencyMs,
+      intent: result.intent.value,
+      confidence: result.intent.confidence,
+      message: `Connected to TypeSafe Jev successfully (\${result.latencyMs}ms latency).`,
+    });
+  } catch (err: any) {
+    return c.json({
+      success: false,
+      error: err?.message || "Failed to reach TypeSafe API",
+      message: "Connection test failed. Check your API key.",
+    }, 500);
+  }
+});

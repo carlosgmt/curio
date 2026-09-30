@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Sparkles, Brain, LayoutTemplate } from "lucide-react";
+import { Plus, Brain, Settings } from "lucide-react";
+import { SettingsModal } from "./SettingsModal";
 import { NewTypeDialog } from "./NewTypeDialog";
 
 export function BrainSpaceHeader() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [newTypeOpen, setNewTypeOpen] = useState(false);
 
   return (
@@ -31,9 +33,20 @@ export function BrainSpaceHeader() {
             <Plus className="size-3.5 text-primary" />
             <span>New Type</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="grid size-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground shadow-2xs hover:text-foreground hover:bg-secondary transition-all active:scale-[0.97]"
+            title="Settings"
+            aria-label="Settings"
+          >
+            <Settings className="size-4" />
+          </button>
         </div>
       </header>
 
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
       <NewTypeDialog open={newTypeOpen} onOpenChange={setNewTypeOpen} />
     </>
   );

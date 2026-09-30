@@ -12,7 +12,7 @@ export function BrainSpaceHeader() {
 
   return (
     <>
-      <header className="fixed top-0 inset-x-0 z-30 flex items-center justify-between px-4 py-3 bg-background/80 backdrop-blur-md border-b border-border/40">
+      <header className="sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-background/80 backdrop-blur-md border-b border-border/40">
         <div className="flex items-center gap-2">
           <div className="grid size-7 place-items-center rounded-lg bg-primary text-primary-foreground font-semibold shadow-xs">
             <Brain className="size-4" />

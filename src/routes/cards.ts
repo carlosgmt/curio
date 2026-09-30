@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "../db";
-import { cards, listRules, cardEvents } from "../db/schema";
+import { cards, lists, listRules, cardEvents } from "../db/schema";
 import { eq, and, inArray, sql, like, gte, lte, desc, asc } from "drizzle-orm";
 
 export const cardRoutes = new Hono();
@@ -94,6 +94,8 @@ cardRoutes.post("/", async (c) => {
       data: JSON.stringify(body.data ?? {}),
       tags: JSON.stringify(body.tags ?? []),
       listId,
+      parentId: body.parent_id ?? body.parentId ?? null,
+      subtype: body.subtype ?? null,
       dueAt: body.due_at ?? body.dueAt ?? null,
     })
     .returning()
@@ -107,12 +109,204 @@ cardRoutes.post("/", async (c) => {
   return c.json(deserializeCard(row), 201);
 });
 
+// ── Smart Context Action (Append to existing card/list or attach to parent) ──
+
+cardRoutes.post("/smart", async (c) => {
+  const body = await c.req.json();
+  const rawText = (body.text ?? "").trim();
+  const actor = body.actor ?? "user";
+
+  if (!rawText) return c.json({ error: "Missing text" }, 400);
+
+  // Fetch candidate active cards and lists for entity matching
+  const [allCards, allLists] = await Promise.all([
+    db
+      .select({
+        id: cards.id,
+        title: cards.title,
+        intent: cards.intent,
+        listId: cards.listId,
+        data: cards.data,
+      })
+      .from(cards)
+      .where(eq(cards.status, "active"))
+      .all(),
+    db.select({ id: lists.id, name: lists.name }).from(lists).all(),
+  ]);
+
+  const cardsParsed = allCards.map((c) => ({
+    ...c,
+    data: JSON.parse(c.data),
+  }));
+
+  const { analyzeSmartInput } = await import("../lib/smartInput");
+  const action = analyzeSmartInput(rawText, cardsParsed, allLists);
+
+  if (!action) {
+    return c.json({ matched: false });
+  }
+
+  // 1. Append to existing card (e.g. "add milk and eggs to groceries")
+  if (action.kind === "append_card" && action.targetId) {
+    const target = cardsParsed.find((c) => c.id === action.targetId);
+    if (!target) return c.json({ matched: false });
+
+    const existingData = target.data || {};
+    const newItems = action.itemsToAppend || [action.content];
+
+    // Check if target is a TodoList or has items
+    let updatedData = { ...existingData };
+    if (Array.isArray(existingData.items)) {
+      const added = newItems.map((item, idx) => ({
+        id: `item-${Date.now()}-${idx}`,
+        text: item,
+        done: false,
+      }));
+      updatedData.items = [...existingData.items, ...added];
+    } else if (Array.isArray(existingData.blocks)) {
+      // Find checklist block or append new checklist item
+      const blocks = [...existingData.blocks];
+      const checkBlockIdx = blocks.findIndex((b: any) => b.kind === "checklist");
+      if (checkBlockIdx >= 0) {
+        const added = newItems.map((item, idx) => ({
+          id: `item-${Date.now()}-${idx}`,
+          text: item,
+          done: false,
+        }));
+        blocks[checkBlockIdx] = {
+          ...blocks[checkBlockIdx],
+          items: [...(blocks[checkBlockIdx].items || []), ...added],
+        };
+        updatedData.blocks = blocks;
+      } else {
+        blocks.push({
+          kind: "checklist",
+          title: "Added items",
+          items: newItems.map((item, idx) => ({
+            id: `item-${Date.now()}-${idx}`,
+            text: item,
+            done: false,
+          })),
+        });
+        updatedData.blocks = blocks;
+      }
+    } else {
+      // Append text
+      updatedData.rawAppend = (updatedData.rawAppend ? updatedData.rawAppend + "\n" : "") + action.content;
+    }
+
+    const updatedRow = db
+      .update(cards)
+      .set({
+        data: JSON.stringify(updatedData),
+        updatedAt: sql`datetime('now')`,
+      })
+      .where(eq(cards.id, target.id))
+      .returning()
+      .get();
+
+    db.insert(cardEvents)
+      .values({
+        cardId: target.id,
+        actor,
+        action: "appended",
+        diff: JSON.stringify({ appended: newItems }),
+      })
+      .run();
+
+    return c.json({
+      matched: true,
+      kind: "append_card",
+      message: `Appended ${newItems.join(", ")} to "${target.title}"`,
+      card: deserializeCard(updatedRow),
+    });
+  }
+
+  // 2. Attach note/child to parent card (e.g. "I liked the ending of Norwegian Wood")
+  if (action.kind === "attach_to_parent" && action.targetId) {
+    const parent = cardsParsed.find((c) => c.id === action.targetId);
+    if (!parent) return c.json({ matched: false });
+
+    const newChild = db
+      .insert(cards)
+      .values({
+        listId: parent.listId,
+        parentId: parent.id,
+        subtype: "note",
+        intent: "note",
+        status: "active",
+        title: `Note on ${parent.title}`,
+        rawText: action.content,
+        data: JSON.stringify({
+          summary: action.content,
+          parentTitle: parent.title,
+        }),
+      })
+      .returning()
+      .get();
+
+    db.insert(cardEvents)
+      .values({
+        cardId: parent.id,
+        actor,
+        action: "child_attached",
+        diff: JSON.stringify({ childId: newChild.id, text: action.content }),
+      })
+      .run();
+
+    return c.json({
+      matched: true,
+      kind: "attach_to_parent",
+      message: `Attached note to "${parent.title}"`,
+      card: deserializeCard(newChild),
+      parentCard: parent,
+    });
+  }
+
+  // 3. Create in specific list (e.g. "add buy tickets to tasks")
+  if (action.kind === "create_in_list" && action.targetListId) {
+    const newCard = db
+      .insert(cards)
+      .values({
+        listId: action.targetListId,
+        intent: "todo",
+        status: "active",
+        title: action.content,
+        rawText: action.content,
+        data: JSON.stringify({ summary: action.content }),
+      })
+      .returning()
+      .get();
+
+    return c.json({
+      matched: true,
+      kind: "create_in_list",
+      message: `Added "${action.content}" to ${action.targetTitle}`,
+      card: deserializeCard(newCard),
+    });
+  }
+
+  return c.json({ matched: false });
+});
+
 // ── Get card ───────────────────────────────────────────────────────────
 
 cardRoutes.get("/:id", async (c) => {
   const row = db.select().from(cards).where(eq(cards.id, c.req.param("id"))).get();
   if (!row) return c.json({ error: "card not found" }, 404);
   return c.json(deserializeCard(row));
+});
+
+// ── Get child cards attached to a parent ───────────────────────────────
+
+cardRoutes.get("/:id/children", async (c) => {
+  const rows = db
+    .select()
+    .from(cards)
+    .where(and(eq(cards.parentId, c.req.param("id")), eq(cards.status, "active")))
+    .orderBy(desc(cards.createdAt))
+    .all();
+  return c.json(rows.map(deserializeCard));
 });
 
 // ── Update card ────────────────────────────────────────────────────────

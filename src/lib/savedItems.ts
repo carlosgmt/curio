@@ -11,6 +11,8 @@ export const savedItemSchema = z.object({
   listId: z.string().optional().default("inbox"),
   status: z.string().optional().default("active"),
   tags: z.array(z.string()).optional().default([]),
+  parentId: z.string().nullable().optional(),
+  subtype: z.string().nullable().optional(),
 });
 export type SavedItem = z.infer<typeof savedItemSchema>;
 
@@ -102,6 +104,8 @@ export const savedItems = {
         listId: c.listId || "inbox",
         status: c.status || "active",
         tags: c.tags || [],
+        parentId: c.parentId || null,
+        subtype: c.subtype || null,
       }));
 
       // If server has items, merge them with local

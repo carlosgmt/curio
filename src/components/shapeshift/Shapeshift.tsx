@@ -24,6 +24,7 @@ import { MorphContainer } from "./MorphContainer";
 import { RecentStack } from "./RecentStack";
 import { newId, type SavedItem, savedItems } from "@/lib/savedItems";
 import { notify } from "@/lib/notify";
+import { analyzeSmartInput } from "@/lib/smartInput";
 
 const subscribeNoop = () => () => {};
 
@@ -86,6 +87,27 @@ export function Shapeshift() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
 
+  const smartTarget = useMemo(() => {
+    return analyzeSmartInput(
+      text,
+      saved.map((s) => ({
+        id: String(s.id),
+        title: s.summary,
+        intent: s.intent,
+        listId: s.listId || "inbox",
+      })),
+      [
+        { id: "inbox", name: "Inbox" },
+        { id: "tasks", name: "Tasks" },
+        { id: "calendar", name: "Calendar" },
+        { id: "kitchen", name: "Kitchen" },
+        { id: "notes", name: "Notes" },
+        { id: "money", name: "Money" },
+        { id: "style", name: "Style" },
+      ]
+    );
+  }, [text, saved]);
+
   // Fold each new result into the calm UI state (decide + signal gating).
   if (seen !== result) {
     setSeen(result);
@@ -130,6 +152,31 @@ export function Shapeshift() {
   };
 
   const complete = (): boolean => {
+    // If input matches smart action (append to card/list or attach note), execute it directly!
+    if (editingId === null && smartTarget) {
+      const actionText = text;
+      fetch("/api/v1/cards/smart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: actionText }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.matched) {
+            savedItems.syncFromBackend();
+            notify(res.message, { id: "smart-action" });
+          }
+        })
+        .catch(() => {});
+
+      setAnnouncement(smartTarget.label);
+      setText("");
+      setMem(initialMemory);
+      setGated(neutralGated);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return true;
+    }
+
     const target: CardIntent | null =
       ui.kind === "committed" || ui.kind === "ghost" ? ui.intent : ui.kind === "choose" ? ui.options[chip] : null;
     if (!target || !text.trim()) return false;
@@ -331,6 +378,12 @@ export function Shapeshift() {
               className="relative z-[1] h-8 w-full bg-transparent pe-6 text-[22px] leading-8 font-[450] tracking-[-0.01em] text-foreground caret-brand outline-none"
             />
             {text === "" && <CyclingPlaceholder />}
+            {smartTarget && (
+              <span className="absolute end-10 top-2 z-[2] flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-0.5 text-[11px] font-semibold text-brand">
+                <span className="size-1.5 rounded-full bg-brand animate-pulse" />
+                <span>{smartTarget.label}</span>
+              </span>
+            )}
             <span
               aria-hidden
               className={cn(

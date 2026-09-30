@@ -46,6 +46,8 @@ sqlite.exec(`
     raw_text text NOT NULL,
     data text DEFAULT '{}' NOT NULL,
     tags text DEFAULT '[]' NOT NULL,
+    parent_id text REFERENCES cards(id) ON DELETE CASCADE,
+    subtype text,
     due_at text,
     created_at text DEFAULT (datetime('now')) NOT NULL,
     updated_at text DEFAULT (datetime('now')) NOT NULL,
@@ -104,6 +106,10 @@ sqlite.exec(`
     VALUES (new.rowid, new.title, new.raw_text, new.tags);
   END;
 `);
+
+try { sqlite.exec("ALTER TABLE cards ADD COLUMN parent_id text REFERENCES cards(id) ON DELETE CASCADE;"); } catch {}
+try { sqlite.exec("ALTER TABLE cards ADD COLUMN subtype text;"); } catch {}
+try { sqlite.exec("CREATE INDEX IF NOT EXISTS idx_cards_parent ON cards (parent_id);"); } catch {}
 
 export const db = drizzle(sqlite, { schema });
 export { sqlite };

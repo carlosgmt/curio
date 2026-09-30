@@ -16,6 +16,7 @@ import {
   Calendar,
   ChefHat,
   StickyNote,
+  CornerDownRight,
   Wallet,
   Shirt,
   Sparkles,
@@ -33,6 +34,7 @@ const LIST_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   calendar: Calendar,
   kitchen: ChefHat,
   notes: StickyNote,
+  CornerDownRight,
   money: Wallet,
   style: Shirt,
 };
@@ -79,6 +81,19 @@ export function RecentStack({
       })
       .catch(() => {});
   }, []);
+
+  const childrenByParentId = useMemo(() => {
+    const map = new Map<string, SavedItem[]>();
+    for (const item of items) {
+      if (item.parentId) {
+        const pId = String(item.parentId);
+        const list = map.get(pId) || [];
+        list.push(item);
+        map.set(pId, list);
+      }
+    }
+    return map;
+  }, [items]);
 
   // Filter items
   const filteredItems = useMemo(() => {
@@ -481,6 +496,20 @@ export function RecentStack({
                       >
                         {item.summary}
                       </span>
+
+                      {childrenByParentId.get(String(item.id))?.length ? (
+                        <div className="flex flex-col gap-1 w-full pt-1.5 border-t border-border/40 mt-1">
+                          {childrenByParentId.get(String(item.id))!.map((child) => (
+                            <div
+                              key={child.id}
+                              className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/50 rounded-md px-2 py-1"
+                            >
+                              <CornerDownRight className="size-3 text-primary shrink-0" />
+                              <span className="truncate">{child.summary}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </motion.button>
 
                     {/* Actions: Archive/Restore & Delete */}

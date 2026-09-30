@@ -48,6 +48,8 @@ export const cards = sqliteTable(
     rawText: text("raw_text").notNull(),
     data: text("data").notNull().default("{}"),
     tags: text("tags").notNull().default("[]"),
+    parentId: text("parent_id").references((): any => cards.id, { onDelete: "cascade" }),
+    subtype: text("subtype"),
     dueAt: text("due_at"),
     createdAt: text("created_at")
       .notNull()
@@ -61,6 +63,7 @@ export const cards = sqliteTable(
     index("idx_cards_intent").on(t.intent),
     index("idx_cards_status").on(t.status),
     index("idx_cards_list").on(t.listId),
+    index("idx_cards_parent").on(t.parentId),
     index("idx_cards_created").on(t.createdAt),
   ]
 );

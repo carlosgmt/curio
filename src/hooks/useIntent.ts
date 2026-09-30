@@ -91,10 +91,23 @@ export function useIntent(text: string, { debounceMs = 120 }: { debounceMs?: num
       return () => cancelAnimationFrame(raf);
     }
 
+    // Immediate optimistic heuristic: instantaneous feedback so user can save immediately
+    const instant = mockClassify(text);
+    const instantRaf = requestAnimationFrame(() => {
+      if (id === reqId.current) {
+        setState((s) => ({
+          ...s,
+          result: instant,
+          resultText: text,
+          status: "ready",
+          hud: { latency: 0, questions: instant.questionCount, model: "heuristic", cached: false },
+        }));
+      }
+    });
+
     const timer = setTimeout(async () => {
       const ctrl = new AbortController();
       controller.current = ctrl;
-      setState((s) => ({ ...s, status: "thinking" }));
       try {
         const result = await classify(text, ctrl.signal);
         if (id !== reqId.current) return; // stale
@@ -115,7 +128,10 @@ export function useIntent(text: string, { debounceMs = 120 }: { debounceMs?: num
       }
     }, debounceMs);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelAnimationFrame(instantRaf);
+      clearTimeout(timer);
+    };
   }, [text, debounceMs]);
 
   useEffect(() => () => controller.current?.abort(), []);

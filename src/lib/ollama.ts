@@ -94,7 +94,7 @@ export async function classifyWithOllama(text: string, signal?: AbortSignal): Pr
           num_predict: 30,
         },
       }),
-      signal: signal || AbortSignal.timeout(3500),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
     });
 
     const latencyMs = Math.round(performance.now() - start);

@@ -9,6 +9,7 @@ import { activeIntent, type DecideMemory, decide, force, initialMemory, promote 
 import type { CardIntent, IntentResult } from "@/lib/jev/types";
 import { spring, tween } from "@/lib/motion";
 import { parseFor, parsers } from "@/lib/parse";
+import { mockClassify } from "@/lib/jev/mock";
 import { type GatedSignals, gateSignals, neutralGated } from "@/lib/signals";
 import { cn } from "@/lib/utils";
 import { DraftContext } from "@/components/intents/shared";
@@ -297,9 +298,19 @@ export function Shapeshift() {
       return true;
     }
 
-    const target: CardIntent | null =
+    if (!text.trim()) return false;
+
+    let target: CardIntent | null =
       ui.kind === "committed" || ui.kind === "ghost" ? ui.intent : ui.kind === "choose" ? ui.options[chip] : null;
-    if (!target || !text.trim()) return false;
+
+    if (!target) {
+      const instant = mockClassify(text);
+      if (instant.intent.value && instant.intent.value !== "none") {
+        target = instant.intent.value as CardIntent;
+      } else {
+        target = "note";
+      }
+    }
     const { summary } = derive(target, text, gated);
     const parsedData = parseFor(target, text, { colorMood: gated.colorMood }) as Record<string, any>;
     if (editingId !== null) {
@@ -500,7 +511,7 @@ export function Shapeshift() {
         <h1 className="sr-only">BrainSpace</h1>
 
         {/* ── Mode Navigation Bar ── */}
-        <div className="flex items-center justify-between mb-6 sm:mb-8">
+        <div className="flex items-center justify-center mb-6 sm:mb-8">
           <div className="flex items-center gap-1 p-1 rounded-full bg-secondary/60 border border-border/50 text-xs shadow-2xs">
             <button
               type="button"
@@ -509,7 +520,7 @@ export function Shapeshift() {
                 requestAnimationFrame(() => inputRef.current?.focus());
               }}
               className={cn(
-                "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full font-medium transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-4 py-1.5 rounded-full font-medium transition-all cursor-pointer",
                 activePane === "capture"
                   ? "bg-card text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -522,7 +533,7 @@ export function Shapeshift() {
               type="button"
               onClick={() => setActivePane("cards")}
               className={cn(
-                "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full font-medium transition-all cursor-pointer",
+                "flex items-center gap-1.5 px-4 py-1.5 rounded-full font-medium transition-all cursor-pointer",
                 activePane === "cards"
                   ? "bg-card text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -532,29 +543,6 @@ export function Shapeshift() {
               <span>Cards ({saved.length})</span>
             </button>
           </div>
-
-          {activePane === "capture" ? (
-            <button
-              type="button"
-              onClick={() => setActivePane("cards")}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer group"
-            >
-              <span>Browse Memory</span>
-              <ChevronRight className="size-3.5 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setActivePane("capture");
-                requestAnimationFrame(() => inputRef.current?.focus());
-              }}
-              className="flex items-center gap-1 text-xs text-primary font-semibold hover:underline cursor-pointer"
-            >
-              <ArrowLeft className="size-3.5" />
-              <span>New Capture</span>
-            </button>
-          )}
         </div>
 
         {/* ── Pane 1: Zen Capture View (Base View) ── */}

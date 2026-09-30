@@ -38,12 +38,12 @@ export function applyTheme(mode: ColorMode, palette: ColorPalette) {
 
 export function useTheme() {
   const [mode, setMode] = useState<ColorMode>("system");
-  const [palette, setPalette] = useState<ColorPalette>("indigo");
+  const [palette, setPalette] = useState<ColorPalette>("dynamic");
 
   useEffect(() => {
     try {
       const savedMode = (localStorage.getItem(THEME_KEY) as ColorMode) || "system";
-      const savedPalette = (localStorage.getItem(PALETTE_KEY) as ColorPalette) || "indigo";
+      const savedPalette = (localStorage.getItem(PALETTE_KEY) as ColorPalette) || "dynamic";
       setMode(savedMode);
       setPalette(savedPalette);
       applyTheme(savedMode, savedPalette);

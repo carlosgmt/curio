@@ -72,7 +72,7 @@ function IntentCard<K extends CardIntent>(props: {
 export function Shapeshift() {
   const flags = useSearchFlags();
   const reduce = useReducedMotion();
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState("");
   const { result, resultText, status, hud } = useIntent(text);
@@ -402,7 +402,7 @@ export function Shapeshift() {
     [],
   );
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const atEnd = e.currentTarget.selectionStart === text.length;
     if (e.key === "/" && text === "") {
       e.preventDefault();
@@ -456,82 +456,49 @@ export function Shapeshift() {
         <MorphContainer readiness={readiness} edge={ghost ? null : (meta?.edge ?? null)}>
           <motion.div
             layout="position"
-            className={cn(
-              "relative flex items-center px-5",
-              text.includes("\n") ? "min-h-[96px] py-2" : "h-[72px]"
-            )}
+            className="relative flex h-[72px] items-center px-5"
           >
-            {text.includes("\n") ? (
-              <textarea
-                ref={inputRef as any}
-                value={text}
-                rows={Math.min(6, Math.max(3, text.split("\n").length))}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setText(v);
-                  if (!v.trim()) {
-                    setMem(initialMemory);
-                    setGated(neutralGated);
-                  }
-                }}
-                onPaste={(e) => {
-                  const files = e.clipboardData.files;
-                  if (files && files.length > 0) {
-                    for (let i = 0; i < files.length; i++) {
-                      const f = files[i];
-                      if (f.type.startsWith("image/")) {
-                        e.preventDefault();
-                        uploadImageFile(f);
-                      }
+            <input
+              ref={inputRef}
+              value={text}
+              onChange={(e) => {
+                const v = e.target.value;
+                setText(v);
+                if (!v.trim()) {
+                  setMem(initialMemory);
+                  setGated(neutralGated);
+                }
+              }}
+              onPaste={(e) => {
+                const files = e.clipboardData.files;
+                if (files && files.length > 0) {
+                  for (let i = 0; i < files.length; i++) {
+                    const f = files[i];
+                    if (f.type.startsWith("image/")) {
+                      e.preventDefault();
+                      uploadImageFile(f);
                     }
                   }
-                }}
-                onKeyDown={onKeyDown}
-                aria-label="Type anything"
-                spellCheck={false}
-                className="relative z-[1] w-full resize-none bg-transparent py-2 text-[18px] leading-relaxed font-[450] tracking-[-0.01em] text-foreground caret-brand outline-none"
-              />
-            ) : (
-              <input
-                ref={inputRef as any}
-                value={text}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setText(v);
-                  if (!v.trim()) {
-                    setMem(initialMemory);
-                    setGated(neutralGated);
-                  }
-                }}
-                onPaste={(e) => {
-                  const files = e.clipboardData.files;
-                  if (files && files.length > 0) {
-                    for (let i = 0; i < files.length; i++) {
-                      const f = files[i];
-                      if (f.type.startsWith("image/")) {
-                        e.preventDefault();
-                        uploadImageFile(f);
-                      }
-                    }
-                  }
-                  const paste = e.clipboardData.getData("text");
-                  if (paste && (paste.includes(String.fromCharCode(10)) || paste.includes(String.fromCharCode(13)))) {
-                    e.preventDefault();
-                    setText(paste);
-                  }
-                }}
-                onKeyDown={onKeyDown}
-                aria-label="Type anything"
-                aria-describedby="shapeshift-hint"
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck={false}
-                enterKeyHint="done"
-                className="relative z-[1] h-9 w-full bg-transparent pe-2 text-[20px] sm:text-[22px] leading-8 font-[450] tracking-[-0.01em] text-foreground caret-brand outline-none"
-              />
-            )}
+                }
+              }}
+              onKeyDown={onKeyDown}
+              aria-label="Type anything"
+              aria-describedby="shapeshift-hint"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="done"
+              className="relative z-[1] h-8 w-full bg-transparent pe-2 text-[20px] sm:text-[22px] leading-8 font-[450] tracking-[-0.01em] text-foreground caret-brand outline-none"
+            />
 
             {text === "" && <CyclingPlaceholder />}
+            <span
+              aria-hidden
+              className={cn(
+                "absolute end-28 size-1.5 rounded-full bg-brand transition-opacity duration-300 ease-out",
+                status === "thinking" ? "opacity-60" : "opacity-0",
+              )}
+            />
 
             {/* Input Controls: Clear, Image Upload & Voice Dictation */}
             <div className="flex items-center gap-1.5 ms-2 shrink-0 z-[3]">

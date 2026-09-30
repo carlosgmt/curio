@@ -1,24 +1,32 @@
 import { Hono } from "hono";
-import { classifierMode, looksLikeKey } from "../lib/jev/client";
-import { db } from "../db";
+import { getOpenRouterConfig, setRuntimeConfig, testOpenRouterConnection, CURATED_MODELS, DEFAULT_OPENROUTER_MODEL } from "../lib/openrouter";
+import { db, sqlite } from "../db";
 import { lists, customTypes, cards } from "../db/schema";
 import { sql } from "drizzle-orm";
 
 export const settingsRoutes = new Hono();
 
 settingsRoutes.get("/", async (c) => {
-  const modeInfo = classifierMode();
+  const config = getOpenRouterConfig();
   const listCount = db.select({ count: sql<number>`count(*)` }).from(lists).get()?.count ?? 0;
   const customTypeCount = db.select({ count: sql<number>`count(*)` }).from(customTypes).get()?.count ?? 0;
   const totalCards = db.select({ count: sql<number>`count(*)` }).from(cards).get()?.count ?? 0;
 
   return c.json({
+    openrouter: {
+      hasKey: Boolean(config.key),
+      keySource: config.source,
+      model: config.model,
+      models: CURATED_MODELS,
+      defaultModel: DEFAULT_OPENROUTER_MODEL,
+    },
+    // Backwards-compatible jev payload for any existing consumers
     jev: {
-      mode: modeInfo.mode,
-      reason: modeInfo.reason,
-      model: process.env.JEV_MODEL || "jev-latest",
-      hasKey: modeInfo.mode === "online" || Boolean(modeInfo.keySource),
-      keySource: modeInfo.keySource || null,
+      mode: config.key ? "online" : "offline",
+      reason: config.key ? `using ${config.model}` : "offline heuristic matching",
+      model: config.model,
+      hasKey: Boolean(config.key),
+      keySource: config.source,
     },
     counts: {
       lists: listCount,
@@ -33,97 +41,52 @@ settingsRoutes.get("/", async (c) => {
 });
 
 settingsRoutes.post("/test-jev", async (c) => {
-  const modeInfo = classifierMode();
-  if (modeInfo.mode === "offline") {
+  const config = getOpenRouterConfig();
+  if (!config.key) {
     return c.json({
       success: true,
       mode: "offline",
-      message: "Offline classifier is active (no API key required). Instant heuristic matching enabled.",
+      message: "Offline heuristic matching active. Add an OpenRouter key to enable cloud models.",
     });
   }
 
-  const { getEffectiveKey } = await import("../lib/jev/client");
-  const { key } = getEffectiveKey();
-
-  if (key && key.startsWith("sk-or-v1-")) {
-    try {
-      const start = performance.now();
-      const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      const latencyMs = Math.round(performance.now() - start);
-      if (res.ok) {
-        const keyData = await res.json();
-        return c.json({
-          success: true,
-          mode: "online",
-          provider: "openrouter",
-          latencyMs,
-          message: `Connected to OpenRouter successfully (${latencyMs}ms latency). Limit: $${keyData?.data?.limit ?? "Unlimited"}.`,
-        });
-      } else {
-        return c.json({
-          success: false,
-          error: "Unauthorized",
-          message: "OpenRouter authorization failed. Check your API key.",
-        }, 400);
-      }
-    } catch (err: any) {
-      return c.json({
-        success: false,
-        error: err?.message || "Failed to reach OpenRouter",
-        message: "Failed to connect to OpenRouter.",
-      }, 500);
-    }
-  }
-
-  try {
-    const { classifyWithJev } = await import("../lib/jev/client");
-    const result = await classifyWithJev("Buy milk and eggs tomorrow");
-    return c.json({
-      success: true,
-      mode: "online",
-      provider: "typesafe",
-      latencyMs: result.latencyMs,
-      intent: result.intent.value,
-      confidence: result.intent.confidence,
-      message: `Connected to TypeSafe Jev successfully (${result.latencyMs}ms latency).`,
-    });
-  } catch (err: any) {
-    return c.json({
-      success: false,
-      error: err?.message || "Failed to reach TypeSafe API",
-      message: "Connection test failed. Check your API key.",
-    }, 500);
-  }
+  const result = await testOpenRouterConnection(config.key, config.model);
+  return c.json({
+    ...result,
+    provider: "openrouter",
+    model: config.model,
+  }, result.success ? 200 : 400);
 });
+
 settingsRoutes.post("/key", async (c) => {
   const body = await c.req.json();
   const key = (body.key ?? "").trim();
-  const { sqlite } = await import("../db");
-  const { setRuntimeKey } = await import("../lib/jev/client");
+  const model = (body.model ?? "").trim();
 
-  if (!key) {
-    return c.json({ error: "key is required" }, 400);
+  if (key && key !== "KEEP_EXISTING_KEY") {
+    sqlite.prepare(`
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES ('openrouter_api_key', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+    `).run(key);
   }
 
-  sqlite.prepare(`
-    INSERT INTO app_settings (key, value, updated_at)
-    VALUES ('typesafe_api_key', ?, datetime('now'))
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
-  `).run(key);
+  if (model) {
+    sqlite.prepare(`
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES ('openrouter_model', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+    `).run(model);
+  }
 
-  setRuntimeKey(key);
+  setRuntimeConfig(key && key !== "KEEP_EXISTING_KEY" ? key : null, model || undefined);
 
-  return c.json({ success: true, message: "TypeSafe API key saved" });
+  return c.json({ success: true, message: "OpenRouter configuration saved" });
 });
 
 settingsRoutes.delete("/key", async (c) => {
-  const { sqlite } = await import("../db");
-  const { setRuntimeKey } = await import("../lib/jev/client");
+  sqlite.prepare("DELETE FROM app_settings WHERE key = 'openrouter_api_key'").run();
+  setRuntimeConfig(null);
 
-  sqlite.prepare("DELETE FROM app_settings WHERE key = 'typesafe_api_key'").run();
-  setRuntimeKey(null);
-
-  return c.json({ success: true, message: "TypeSafe API key removed" });
+  return c.json({ success: true, message: "OpenRouter key removed" });
 });

@@ -1,4 +1,4 @@
-import { APIUserAbortError, classifierMode, classifyWithJev, warnMockOnce } from "@/lib/jev/client";
+import { classifyWithOpenRouter, getOpenRouterConfig } from "@/lib/openrouter";
 import { mockClassify } from "@/lib/jev/mock";
 import { type IntentResult, intentRequestSchema, noneResult } from "@/lib/jev/types";
 import { LRU, normalizeKey } from "@/lib/lru";
@@ -18,24 +18,23 @@ export async function POST(request: Request) {
   const hit = cache.get(key);
   if (hit) return Response.json({ ...hit, latencyMs: 0, cached: true } satisfies IntentResult);
 
-  const { mode, reason } = classifierMode();
-  if (mode === "offline") {
-    warnMockOnce(reason);
+  const { key: openRouterKey, model } = getOpenRouterConfig();
+
+  // If no cloud key is provided, use instant local heuristic classifier
+  if (!openRouterKey) {
     return Response.json(mockClassify(text));
   }
 
   try {
-    const result = await classifyWithJev(text, request.signal);
-    console.info(`[jev] ${result.model} ${result.latencyMs}ms ${result.questionCount}q "${key.slice(0, 40)}" → ${result.intent.value}`);
+    const result = await classifyWithOpenRouter(text, request.signal);
+    console.info(`[openrouter] ${result.model} ${result.latencyMs}ms "${key.slice(0, 40)}" → ${result.intent.value}`);
     cache.set(key, result);
     return Response.json(result);
-  } catch (err) {
-    if (err instanceof APIUserAbortError || request.signal.aborted) {
+  } catch (err: any) {
+    if (request.signal.aborted) {
       return new Response(null, { status: 499 });
     }
-    const status = typeof err === "object" && err && "status" in err ? (err as { status: number }).status : undefined;
-    console.warn(`[jev] call failed${status ? ` (${status})` : ""}: ${err instanceof Error ? err.message : String(err)}`);
-    // The client falls back to the mock for this keystroke; the UI never flashes.
-    return Response.json(noneResult({ error: true, model: "error" }));
+    console.warn(`[openrouter] classification fallback: ${err?.message || err}`);
+    return Response.json(mockClassify(text));
   }
 }

@@ -28,7 +28,7 @@ import { analyzeSmartInput } from "@/lib/smartInput";
 import { isBrainDump, splitBrainDump } from "@/lib/brainDump";
 import { parseInlineTypeDefinition } from "@/lib/customTypes";
 import { startVoiceDictation } from "@/lib/deviceIntelligence";
-import { Layers, Mic, MicOff, Sparkles } from "lucide-react";
+import { Layers, Mic, MicOff, Sparkles, X } from "lucide-react";
 
 const subscribeNoop = () => () => {};
 
@@ -72,7 +72,7 @@ function IntentCard<K extends CardIntent>(props: {
 export function Shapeshift() {
   const flags = useSearchFlags();
   const reduce = useReducedMotion();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   const [text, setText] = useState("");
   const { result, resultText, status, hud } = useIntent(text);
@@ -382,12 +382,12 @@ export function Shapeshift() {
     [],
   );
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const atEnd = e.currentTarget.selectionStart === text.length;
     if (e.key === "/" && text === "") {
       e.preventDefault();
       setPaletteOpen(true);
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (ui.kind === "choose") pick(ui.options[chip]);
       else complete();
@@ -431,67 +431,119 @@ export function Shapeshift() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <main id="main" className="mx-auto w-full max-w-[560px] px-4 pt-[14vh] pb-24 sm:px-0 sm:pt-[22vh]">
+      <main id="main" className="mx-auto w-full max-w-3xl px-4 pt-8 pb-24 sm:pt-12 sm:px-6">
         <h1 className="sr-only">BrainSpace</h1>
         <MorphContainer readiness={readiness} edge={ghost ? null : (meta?.edge ?? null)}>
-          <motion.div layout="position" className="relative flex h-[72px] items-center px-5">
-            <input
-              ref={inputRef}
-              value={text}
-              onChange={(e) => {
-                const v = e.target.value;
-                setText(v);
-                if (!v.trim()) {
-                  setMem(initialMemory);
-                  setGated(neutralGated);
-                }
-              }}
-              onPaste={(e) => {
-                const paste = e.clipboardData.getData("text");
-                if (paste && (paste.includes(String.fromCharCode(10)) || paste.includes(String.fromCharCode(13)))) {
-                  e.preventDefault();
-                  setText(paste);
-                }
-              }}
-              onKeyDown={onKeyDown}
-              aria-label="Type anything"
-              aria-describedby="shapeshift-hint"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="done"
-              className="relative z-[1] h-8 w-full bg-transparent pe-6 text-[22px] leading-8 font-[450] tracking-[-0.01em] text-foreground caret-brand outline-none"
-            />
+          <motion.div
+            layout="position"
+            className={cn(
+              "relative flex items-center px-5",
+              text.includes("\n") ? "min-h-[96px] py-2" : "h-[72px]"
+            )}
+          >
+            {text.includes("\n") ? (
+              <textarea
+                ref={inputRef as any}
+                value={text}
+                rows={Math.min(6, Math.max(3, text.split("\n").length))}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setText(v);
+                  if (!v.trim()) {
+                    setMem(initialMemory);
+                    setGated(neutralGated);
+                  }
+                }}
+                onKeyDown={onKeyDown}
+                aria-label="Type anything"
+                spellCheck={false}
+                className="relative z-[1] w-full resize-none bg-transparent py-2 text-[18px] leading-relaxed font-[450] tracking-[-0.01em] text-foreground caret-brand outline-none"
+              />
+            ) : (
+              <input
+                ref={inputRef as any}
+                value={text}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setText(v);
+                  if (!v.trim()) {
+                    setMem(initialMemory);
+                    setGated(neutralGated);
+                  }
+                }}
+                onPaste={(e) => {
+                  const paste = e.clipboardData.getData("text");
+                  if (paste && (paste.includes(String.fromCharCode(10)) || paste.includes(String.fromCharCode(13)))) {
+                    e.preventDefault();
+                    setText(paste);
+                  }
+                }}
+                onKeyDown={onKeyDown}
+                aria-label="Type anything"
+                aria-describedby="shapeshift-hint"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="done"
+                className="relative z-[1] h-9 w-full bg-transparent pe-2 text-[20px] sm:text-[22px] leading-8 font-[450] tracking-[-0.01em] text-foreground caret-brand outline-none"
+              />
+            )}
+
             {text === "" && <CyclingPlaceholder />}
-            {customTypeDef ? (
-              <span className="absolute end-10 top-2 z-[2] flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
-                <Sparkles className="size-3 animate-pulse text-primary" />
-                <span>Create type "{customTypeDef.name}" ({customTypeDef.fields.length} fields)</span>
-              </span>
-            ) : brainDumpItems ? (
-              <span className="absolute end-10 top-2 z-[2] flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
-                <Layers className="size-3 animate-pulse text-primary" />
-                <span>Brain dump: {brainDumpItems.length} items</span>
-              </span>
-            ) : smartTarget ? (
-              <span className="absolute end-10 top-2 z-[2] flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-0.5 text-[11px] font-semibold text-brand">
-                <span className="size-1.5 rounded-full bg-brand animate-pulse" />
-                <span>{smartTarget.label}</span>
-              </span>
-            ) : null}
-            <button
-              type="button"
-              onClick={toggleDictation}
-              title={recording ? "Stop listening" : "Dictate with voice"}
-              aria-label="Voice dictation"
-              className={cn(
-                "absolute end-3 z-[3] grid size-7 place-items-center rounded-full transition-all",
-                recording ? "bg-red-500 text-white animate-pulse" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+
+            {/* Input Controls: Clear & Voice Dictation */}
+            <div className="flex items-center gap-1.5 ms-2 shrink-0 z-[3]">
+              {text.length > 0 && (
+                <button
+                  type="button"
+                  onClick={reset}
+                  title="Clear input (Esc)"
+                  aria-label="Clear input"
+                  className="grid size-7 place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground transition-all"
+                >
+                  <X className="size-4" />
+                </button>
               )}
-            >
-              {recording ? <MicOff className="size-3.5" /> : <Mic className="size-3.5" />}
-            </button>
+              <button
+                type="button"
+                onClick={toggleDictation}
+                title={recording ? "Stop listening" : "Dictate with voice"}
+                aria-label="Voice dictation"
+                className={cn(
+                  "grid size-7 place-items-center rounded-full transition-all",
+                  recording ? "bg-red-500 text-white animate-pulse" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                )}
+              >
+                {recording ? <MicOff className="size-3.5" /> : <Mic className="size-3.5" />}
+              </button>
+            </div>
           </motion.div>
+
+          {/* Context / Smart Detection Action Strip */}
+          {(customTypeDef || brainDumpItems || smartTarget) && (
+            <div className="flex items-center justify-between px-5 pb-3 pt-1 text-xs border-t border-border/40">
+              {customTypeDef ? (
+                <span className="flex items-center gap-1.5 font-semibold text-primary">
+                  <Sparkles className="size-3.5 animate-pulse text-primary" />
+                  <span>Create custom type "{customTypeDef.name}" ({customTypeDef.fields.length} fields)</span>
+                </span>
+              ) : brainDumpItems ? (
+                <span className="flex items-center gap-1.5 font-semibold text-primary">
+                  <Layers className="size-3.5 animate-pulse text-primary" />
+                  <span>Brain dump: {brainDumpItems.length} items detected</span>
+                </span>
+              ) : smartTarget ? (
+                <span className="flex items-center gap-1.5 font-semibold text-brand">
+                  <span className="size-1.5 rounded-full bg-brand animate-pulse" />
+                  <span>{smartTarget.label}</span>
+                </span>
+              ) : null}
+
+              <span className="text-[11px] text-muted-foreground">
+                Press <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">Enter</kbd> to save
+              </span>
+            </div>
+          )}
 
           <AnimatePresence initial={false} mode="popLayout">
             {intent && (

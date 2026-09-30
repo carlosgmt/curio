@@ -5,18 +5,16 @@ import { useEffect, useState } from "react";
 import { tween } from "@/lib/motion";
 
 const EXAMPLES = [
-  "dinner with priya friday 8pm",
   "buy milk, eggs, bread and coffee",
-  "25 min focus",
-  "a warm sunset orange",
-  "split 2400 between 3",
-  "5 miles in km",
-  "flight to goa next weekend",
-  "pizza or burgers for friday?",
-  "days until christmas",
-  "3pm pst in ist",
-  "roll 2d6",
-  "minecraft diamond",
+  "dinner with Priya Friday 8pm",
+  "add olive oil to kitchen list",
+  "I liked the character arc in Dune",
+  "new type: Book (author, rating)",
+  "paste a multi-line brain dump...",
+  "25 min focus sprint",
+  "flight to Zurich next weekend",
+  "split 180 CHF between 3",
+  "meditate 15 min every morning",
 ];
 
 export function CyclingPlaceholder() {

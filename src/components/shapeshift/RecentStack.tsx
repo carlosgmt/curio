@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   X,
   Search,
@@ -39,6 +39,22 @@ const LIST_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   style: Shirt,
 };
 
+function formatRelativeTime(timestamp: number | string | undefined): string {
+  if (!timestamp) return "";
+  const time = typeof timestamp === "number" ? timestamp : new Date(timestamp).getTime();
+  if (isNaN(time)) return "";
+  const diffSec = Math.floor((Date.now() - time) / 1000);
+  if (diffSec < 60) return "Just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return new Date(time).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export function RecentStack({
   items,
   flyingId,
@@ -55,6 +71,7 @@ export function RecentStack({
   onRestore?: (item: SavedItem) => void;
 }) {
   const reduce = useReducedMotion();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [activeList, setActiveList] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"active" | "archived" | "all">("active");
   const [searchQuery, setSearchQuery] = useState("");
@@ -69,6 +86,19 @@ export function RecentStack({
     { id: "money", name: "Money" },
     { id: "style", name: "Style" },
   ]);
+
+  // Global Cmd+K / Ctrl+K shortcut to focus search
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Fetch backend lists
   useEffect(() => {
@@ -95,35 +125,42 @@ export function RecentStack({
     return map;
   }, [items]);
 
-  // Filter items
+  // Filter items and SORT BY MOST RECENT (createdAt descending)
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      // Status filter
-      const itemStatus = item.status || "active";
-      if (statusFilter !== "all" && itemStatus !== statusFilter) {
-        return false;
-      }
-
-      // List filter
-      if (activeList !== "all") {
-        const itemList = item.listId || "inbox";
-        if (itemList !== activeList) return false;
-      }
-
-      // Text query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchSummary = item.summary.toLowerCase().includes(q);
-        const matchText = item.text.toLowerCase().includes(q);
-        const matchIntent = item.intent.toLowerCase().includes(q);
-        const matchTags = item.tags?.some((t) => t.toLowerCase().includes(q));
-        if (!matchSummary && !matchText && !matchIntent && !matchTags) {
+    return items
+      .filter((item) => {
+        // Status filter
+        const itemStatus = item.status || "active";
+        if (statusFilter !== "all" && itemStatus !== statusFilter) {
           return false;
         }
-      }
 
-      return true;
-    });
+        // List filter (default shows all)
+        if (activeList !== "all") {
+          const itemList = item.listId || "inbox";
+          if (itemList !== activeList) return false;
+        }
+
+        // Text query
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchSummary = item.summary.toLowerCase().includes(q);
+          const matchText = item.text.toLowerCase().includes(q);
+          const matchIntent = item.intent.toLowerCase().includes(q);
+          const matchTags = item.tags?.some((t) => t.toLowerCase().includes(q));
+          const matchList = item.listId?.toLowerCase().includes(q);
+          if (!matchSummary && !matchText && !matchIntent && !matchTags && !matchList) {
+            return false;
+          }
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        const timeA = typeof a.createdAt === "number" ? a.createdAt : new Date(a.createdAt).getTime();
+        const timeB = typeof b.createdAt === "number" ? b.createdAt : new Date(b.createdAt).getTime();
+        return (timeB || 0) - (timeA || 0); // Newest first
+      });
   }, [items, activeList, statusFilter, searchQuery]);
 
   // Counts per list for active status
@@ -151,38 +188,47 @@ export function RecentStack({
       transition={reduce ? tween.fade : spring.settle}
       className="mt-6 flex flex-col gap-3 rounded-shell border border-border bg-card p-3 shadow-[var(--shadow-rest)]"
     >
-      {/* Header controls: Search & View Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-2">
-        {/* Search Input */}
-        <div className="relative flex flex-1 min-w-[200px] items-center">
-          <Search className="absolute start-3 size-4 text-muted-foreground pointer-events-none" />
+      {/* ── SEARCH & CONTROLS HEADER ── */}
+      <div className="flex flex-col gap-3 border-b border-border/50 pb-3">
+        {/* Search Bar */}
+        <div className="relative flex items-center w-full">
+          <Search className="absolute start-3.5 size-4 text-muted-foreground pointer-events-none" />
           <input
+            ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search cards, tags, contents..."
-            className="w-full rounded-lg bg-secondary/60 py-1.5 ps-9 pe-8 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="Search all cards, notes, tasks, tags..."
+            className="w-full rounded-xl border border-border/70 bg-secondary/40 py-2 ps-10 pe-20 text-sm text-foreground placeholder:text-muted-foreground transition-all focus:border-brand focus:bg-card focus:outline-none focus:ring-2 focus:ring-brand/20"
           />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute end-2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-4" />
-            </button>
-          )}
+          <div className="absolute end-2.5 flex items-center gap-1.5">
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                title="Clear search"
+                className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : (
+              <span className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border/70 bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-2xs">
+                ⌘K
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Status Filter & View Toggle */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center rounded-lg bg-secondary/80 p-0.5 text-xs font-medium">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Status Tabs: Active, Archived, All States */}
+          <div className="flex items-center rounded-lg bg-secondary/70 p-0.5 text-xs font-medium">
             <button
               type="button"
               onClick={() => setStatusFilter("active")}
               className={cn(
-                "rounded-md px-2.5 py-1 transition-colors",
-                statusFilter === "active" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                "rounded-md px-3 py-1 transition-all",
+                statusFilter === "active" ? "bg-card text-foreground shadow-2xs font-semibold" : "text-muted-foreground hover:text-foreground"
               )}
             >
               Active
@@ -191,78 +237,88 @@ export function RecentStack({
               type="button"
               onClick={() => setStatusFilter("archived")}
               className={cn(
-                "rounded-md px-2.5 py-1 transition-colors",
-                statusFilter === "archived" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                "rounded-md px-3 py-1 transition-all",
+                statusFilter === "archived" ? "bg-card text-foreground shadow-2xs font-semibold" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Archive
+              Archived
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter("all")}
               className={cn(
-                "rounded-md px-2.5 py-1 transition-colors",
-                statusFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                "rounded-md px-3 py-1 transition-all",
+                statusFilter === "all" ? "bg-card text-foreground shadow-2xs font-semibold" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              All
+              All States
             </button>
           </div>
 
-          <div className="flex items-center rounded-lg bg-secondary/80 p-0.5 text-muted-foreground">
-            <button
-              type="button"
-              onClick={() => setViewMode("list")}
-              aria-label="List view"
-              title="List view"
-              className={cn(
-                "rounded-md p-1 transition-colors",
-                viewMode === "list" ? "bg-card text-foreground shadow-xs" : "hover:text-foreground"
-              )}
-            >
-              <ListIcon className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("grid")}
-              aria-label="Grid view"
-              title="Grid view"
-              className={cn(
-                "rounded-md p-1 transition-colors",
-                viewMode === "grid" ? "bg-card text-foreground shadow-xs" : "hover:text-foreground"
-              )}
-            >
-              <LayoutGrid className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("board")}
-              aria-label="Board view"
-              title="Board view"
-              className={cn(
-                "rounded-md p-1 transition-colors",
-                viewMode === "board" ? "bg-card text-foreground shadow-xs" : "hover:text-foreground"
-              )}
-            >
-              <Kanban className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("timeline")}
-              aria-label="Timeline view"
-              title="Timeline view"
-              className={cn(
-                "rounded-md p-1 transition-colors",
-                viewMode === "timeline" ? "bg-card text-foreground shadow-xs" : "hover:text-foreground"
-              )}
-            >
-              <CalendarRange className="size-4" />
-            </button>
+          <div className="flex items-center gap-3">
+            {/* Live Count Display */}
+            <span className="text-xs text-muted-foreground font-medium">
+              {searchQuery
+                ? `${filteredItems.length} matching`
+                : `${filteredItems.length} card${filteredItems.length === 1 ? "" : "s"}`}
+            </span>
+
+            {/* View Mode Switcher */}
+            <div className="flex items-center rounded-lg bg-secondary/70 p-0.5 text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                aria-label="List view"
+                title="List view"
+                className={cn(
+                  "rounded-md p-1 transition-colors",
+                  viewMode === "list" ? "bg-card text-foreground shadow-2xs" : "hover:text-foreground"
+                )}
+              >
+                <ListIcon className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                aria-label="Grid view"
+                title="Grid view"
+                className={cn(
+                  "rounded-md p-1 transition-colors",
+                  viewMode === "grid" ? "bg-card text-foreground shadow-2xs" : "hover:text-foreground"
+                )}
+              >
+                <LayoutGrid className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("board")}
+                aria-label="Board view"
+                title="Board view"
+                className={cn(
+                  "rounded-md p-1 transition-colors",
+                  viewMode === "board" ? "bg-card text-foreground shadow-2xs" : "hover:text-foreground"
+                )}
+              >
+                <Kanban className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("timeline")}
+                aria-label="Timeline view"
+                title="Timeline view"
+                className={cn(
+                  "rounded-md p-1 transition-colors",
+                  viewMode === "timeline" ? "bg-card text-foreground shadow-2xs" : "hover:text-foreground"
+                )}
+              >
+                <CalendarRange className="size-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* List Chips Bar (shown in List, Grid, Timeline modes) */}
+      {/* ── LISTS / CATEGORIES FILTER BAR (DEFAULT SHOWS ALL) ── */}
       {viewMode !== "board" && (
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
           {lists.map((l) => {
@@ -275,10 +331,10 @@ export function RecentStack({
                 type="button"
                 onClick={() => setActiveList(l.id)}
                 className={cn(
-                  "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 font-medium transition-all",
+                  "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 font-medium transition-all",
                   isSelected
-                    ? "bg-foreground text-background shadow-xs"
-                    : "bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    ? "bg-foreground text-background shadow-2xs"
+                    : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
                 )}
               >
                 <Icon className="size-3.5" />
@@ -287,7 +343,7 @@ export function RecentStack({
                   <span
                     className={cn(
                       "ms-0.5 rounded-full px-1.5 py-0.2 text-[10px]",
-                      isSelected ? "bg-background/25 text-background" : "bg-muted text-muted-foreground"
+                      isSelected ? "bg-background/25 text-background font-semibold" : "bg-muted text-muted-foreground"
                     )}
                   >
                     {count}
@@ -305,9 +361,15 @@ export function RecentStack({
           {lists
             .filter((l) => l.id !== "all")
             .map((col) => {
-              const colItems = items.filter(
-                (item) => (item.listId || "inbox") === col.id && (statusFilter === "all" || (item.status || "active") === statusFilter)
-              );
+              const colItems = items
+                .filter(
+                  (item) => (item.listId || "inbox") === col.id && (statusFilter === "all" || (item.status || "active") === statusFilter)
+                )
+                .sort((a, b) => {
+                  const timeA = typeof a.createdAt === "number" ? a.createdAt : new Date(a.createdAt).getTime();
+                  const timeB = typeof b.createdAt === "number" ? b.createdAt : new Date(b.createdAt).getTime();
+                  return (timeB || 0) - (timeA || 0); // Most recent first
+                });
               const ColIcon = LIST_ICONS[col.id.toLowerCase()] || Sparkles;
 
               return (
@@ -345,16 +407,21 @@ export function RecentStack({
                                 <ItemIcon className="size-3" />
                                 {def.label}
                               </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDelete(item);
-                                }}
-                                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
-                              >
-                                <X className="size-3" />
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-muted-foreground/70">
+                                  {formatRelativeTime(item.createdAt)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete(item);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
                             </div>
                             <span className="text-xs font-medium text-foreground line-clamp-2 leading-snug">
                               {item.summary}
@@ -484,6 +551,9 @@ export function RecentStack({
                             {item.listId}
                           </span>
                         )}
+                        <span className="ms-auto pe-1 text-[11px] font-normal text-muted-foreground/75">
+                          {formatRelativeTime(item.createdAt)}
+                        </span>
                       </div>
 
                       <span

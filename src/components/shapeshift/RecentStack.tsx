@@ -94,7 +94,12 @@ export function RecentStack({
   const handleToggleCheckItem = (item: SavedItem, index: number) => {
     if (!Array.isArray(item.data?.items)) return;
     const newItems = [...item.data.items];
-    newItems[index] = { ...newItems[index], done: !newItems[index].done };
+    const current = newItems[index];
+    if (typeof current === "string") {
+      newItems[index] = { id: `item-${index}`, text: current, done: true };
+    } else if (current && typeof current === "object") {
+      newItems[index] = { ...current, done: !current.done };
+    }
     const updatedItem: SavedItem = {
       ...item,
       data: { ...item.data, items: newItems },
@@ -676,22 +681,26 @@ export function RecentStack({
                           className="flex flex-col gap-1.5 py-2 border-t border-border/30 mt-1"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {item.data.items.slice(0, 5).map((task: any, idx: number) => (
-                            <label
-                              key={task.id || idx}
-                              className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={!!task.done}
-                                onChange={() => handleToggleCheckItem(item, idx)}
-                                className="size-3.5 rounded border-border accent-primary cursor-pointer"
-                              />
-                              <span className={cn(task.done && "line-through text-muted-foreground")}>
-                                {task.text}
-                              </span>
-                            </label>
-                          ))}
+                          {item.data.items.slice(0, 5).map((task: any, idx: number) => {
+                            const taskText = typeof task === "string" ? task : (task?.text ?? "");
+                            const isDone = typeof task === "object" && task !== null ? !!task.done : false;
+                            return (
+                              <label
+                                key={task?.id || `${idx}-${taskText}`}
+                                className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isDone}
+                                  onChange={() => handleToggleCheckItem(item, idx)}
+                                  className="size-3.5 rounded border-border accent-primary cursor-pointer"
+                                />
+                                <span className={cn(isDone && "line-through text-muted-foreground")}>
+                                  {taskText}
+                                </span>
+                              </label>
+                            );
+                          })}
                           {item.data.items.length > 5 && (
                             <span className="text-[10px] text-muted-foreground italic">
                               +{item.data.items.length - 5} more items

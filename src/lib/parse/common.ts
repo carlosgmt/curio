@@ -14,8 +14,8 @@ export const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 /** Strip dangling connector words left behind after removing a phrase. */
 export function tidy(s: string) {
   let out = collapse(s.replace(/[,;]+\s*$/g, "").replace(/^\s*[,;:-]+/g, ""));
-  const dangling = /\s+(on|at|by|for|with|to|in|and|the|this|next|from|every)$/i;
-  const leading = /^(on|at|by|for|and|the|to)\s+/i;
+  const dangling = /\s+(on|at|by|for|with|to|in|and|the|this|next|from|every|el|la|los|las|de|del|en|para|por|con|a)$/i;
+  const leading = /^(on|at|by|for|and|the|to|el|la|los|las|de|del|en|para|por|con|a)\s+/i;
   for (let i = 0; i < 4; i++) {
     const next = out.replace(dangling, "").replace(leading, "");
     if (next === out) break;
@@ -61,11 +61,18 @@ export type DateHit = {
 };
 
 export function findDate(text: string, ref: Date = new Date()): DateHit | null {
-  const results = chrono.parse(text, ref, { forwardDate: true });
-  if (!results.length) return null;
-  const r = results[0];
-  // chrono is happy to read a bare number as a date; require something date-like.
-  if (/^\d+$/.test(r.text.trim())) return null;
+  const enResults = chrono.parse(text, ref, { forwardDate: true });
+  const esResults = chrono.es ? chrono.es.parse(text, ref, { forwardDate: true }) : [];
+  const allResults = [...enResults, ...esResults].filter(
+    (r) => !/^\d+$/.test(r.text.trim()) && r.text.trim().length >= 3
+  );
+
+  if (!allResults.length) return null;
+
+  // Prioritize longest date match (e.g. "mañana a las 21:00" over "21:00" or accidental substring "Mar")
+  allResults.sort((a, b) => b.text.length - a.text.length);
+  const r = allResults[0];
+
   return {
     start: r.start.date(),
     end: r.end ? r.end.date() : null,

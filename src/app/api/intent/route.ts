@@ -46,6 +46,10 @@ export async function POST(request: Request) {
   if (mode === "online") {
     try {
       const result = await classifyWithJev(text, request.signal);
+      const base = mockClassify(text);
+      if ((result.intent.value === "note" || result.intent.value === "none") && base.intent.value !== "none" && base.intent.value !== "note") {
+        result.intent = base.intent;
+      }
       console.info(`[jev-openrouter] ${result.model} ${result.latencyMs}ms "${key.slice(0, 40)}" → ${result.intent.value}`);
       cache.set(key, result);
       return Response.json(result);

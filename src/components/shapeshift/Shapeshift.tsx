@@ -277,6 +277,33 @@ export function Shapeshift() {
     // If input matches smart action (append to card/list or attach note), execute it directly unless overridden!
     if (editingId === null && smartTarget && !overrideSmart) {
       const actionText = text;
+
+      // Optimistic local update so UI reflects additions instantly
+      if (smartTarget.kind === "append_card" && smartTarget.targetId) {
+        const targetId = smartTarget.targetId;
+        const newItems = smartTarget.itemsToAppend || [smartTarget.content];
+        savedItems.update((list) =>
+          list.map((card) => {
+            if (String(card.id) !== String(targetId)) return card;
+            const existingItems = Array.isArray(card.data?.items) ? card.data.items : [];
+            const hasObjects = existingItems.some((it: any) => typeof it === "object" && it !== null);
+            const appended = hasObjects
+              ? newItems.map((it, idx) => ({ id: `item-${Date.now()}-${idx}`, text: it, done: false }))
+              : newItems;
+            const nextItems = [...existingItems, ...appended];
+            const nextTitle = `${nextItems.length} items · ${nextItems.slice(0, 2).map((it: any) => typeof it === 'string' ? it : it.text).join(", ")}`;
+            return {
+              ...card,
+              summary: card.summary.includes("·") ? nextTitle : card.summary,
+              data: {
+                ...card.data,
+                items: nextItems,
+              },
+            };
+          })
+        );
+      }
+
       fetch("/api/v1/cards/smart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -15,12 +15,15 @@ export function TodoList({ data, interactive }: CardProps<TodoData>) {
 
   return (
     <ul className="flex flex-col">
-      {data.items.map((item, i) => {
-        const checked = Boolean(done[item]);
-        const id = `todo-${i}-${item}`;
+      {data.items.map((rawItem: any, i) => {
+        const itemText = typeof rawItem === "string" ? rawItem : (rawItem?.text ?? "");
+        const isChecked = typeof rawItem === "object" && rawItem?.done !== undefined
+          ? Boolean(done[itemText] ?? rawItem.done)
+          : Boolean(done[itemText]);
+        const id = `todo-${i}-${itemText}`;
         return (
           <motion.li
-            key={item + i}
+            key={(typeof rawItem === "object" && rawItem?.id ? rawItem.id : itemText) + i}
             layout="position"
             initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6, filter: "blur(4px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
@@ -29,17 +32,17 @@ export function TodoList({ data, interactive }: CardProps<TodoData>) {
           >
             <Checkbox
               id={id}
-              checked={checked}
+              checked={isChecked}
               disabled={!interactive}
-              onCheckedChange={(v) => setDone((d) => ({ ...d, [item]: v === true }))}
+              onCheckedChange={(v) => setDone((d) => ({ ...d, [itemText]: v === true }))}
             />
-            <label htmlFor={id} className={cn("relative text-[15px] leading-[22px] transition-colors duration-200", checked && "text-muted-foreground")}>
-              {item}
+            <label htmlFor={id} className={cn("relative text-[15px] leading-[22px] transition-colors duration-200", isChecked && "text-muted-foreground")}>
+              {itemText}
               <motion.span
                 aria-hidden
                 className="absolute top-1/2 right-0 left-0 h-px origin-left bg-current"
                 initial={false}
-                animate={{ scaleX: checked ? 1 : 0 }}
+                animate={{ scaleX: isChecked ? 1 : 0 }}
                 transition={reduce ? { duration: 0 } : { duration: 0.22, ease: easeOut }}
               />
             </label>

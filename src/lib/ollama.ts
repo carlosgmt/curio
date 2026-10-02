@@ -117,12 +117,19 @@ export async function classifyWithOllama(text: string, signal?: AbortSignal): Pr
     const base = mockClassify(text);
     const confidence = typeof parsed.confidence === "number" ? parsed.confidence : 0.92;
 
+    // Preserve deterministic regex/heuristic classification over generic "note"
+    const heuristicIntent = base.intent.value;
+    const finalIntent =
+      validIntent === "note" && heuristicIntent !== "none" && heuristicIntent !== "note"
+        ? (heuristicIntent as CardIntent)
+        : validIntent;
+
     return {
       ...base,
       intent: {
-        value: validIntent,
-        confidence,
-        probabilities: { [validIntent]: confidence },
+        value: finalIntent,
+        confidence: finalIntent === heuristicIntent ? base.intent.confidence : confidence,
+        probabilities: { [finalIntent]: finalIntent === heuristicIntent ? base.intent.confidence : confidence },
       },
       latencyMs,
       model: data.model || "gemma4:e4b",

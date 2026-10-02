@@ -173,14 +173,24 @@ cardRoutes.post("/smart", async (c) => {
     const newItems = action.itemsToAppend || [action.content];
 
     // Check if target is a TodoList or has items
-    let updatedData = { ...existingData };
+    const updatedData = { ...existingData };
+    let updatedTitle = target.title;
     if (Array.isArray(existingData.items)) {
-      const added = newItems.map((item, idx) => ({
-        id: `item-${Date.now()}-${idx}`,
-        text: item,
-        done: false,
-      }));
-      updatedData.items = [...existingData.items, ...added];
+      const hasObjects = existingData.items.some((item: any) => typeof item === "object" && item !== null);
+      if (hasObjects) {
+        const added = newItems.map((item, idx) => ({
+          id: `item-${Date.now()}-${idx}`,
+          text: item,
+          done: false,
+        }));
+        updatedData.items = [...existingData.items, ...added];
+      } else {
+        updatedData.items = [...existingData.items, ...newItems];
+      }
+      if (target.title.includes("·") || target.title.toLowerCase().includes("item")) {
+        const preview = updatedData.items.slice(0, 2).map((it: any) => (typeof it === "string" ? it : it.text)).join(", ");
+        updatedTitle = `${updatedData.items.length} items · ${preview}`;
+      }
     } else if (Array.isArray(existingData.blocks)) {
       // Find checklist block or append new checklist item
       const blocks = [...existingData.blocks];
@@ -210,12 +220,13 @@ cardRoutes.post("/smart", async (c) => {
       }
     } else {
       // Append text
-          updatedData.rawAppend = (updatedData.rawAppend ? updatedData.rawAppend + "\n" : "") + action.content;
+      updatedData.rawAppend = (updatedData.rawAppend ? updatedData.rawAppend + "\n" : "") + action.content;
     }
 
     const updatedRow = db
       .update(cards)
       .set({
+        title: updatedTitle,
         data: JSON.stringify(updatedData),
         updatedAt: sql`datetime('now')`,
       })
@@ -411,20 +422,30 @@ cardRoutes.post("/dump", async (c) => {
       if (target) {
         const existingData = JSON.parse(target.data);
         const newItems = smartAction.itemsToAppend || [smartAction.content];
-        let updatedData = { ...existingData };
+        const updatedData = { ...existingData };
+        let updatedTitle = target.title;
         if (Array.isArray(existingData.items)) {
-          const added = newItems.map((it: string, idx: number) => ({
-            id: `item-${Date.now()}-${idx}`,
-            text: it,
-            done: false,
-          }));
-          updatedData.items = [...existingData.items, ...added];
+          const hasObjects = existingData.items.some((it: any) => typeof it === "object" && it !== null);
+          if (hasObjects) {
+            const added = newItems.map((it: string, idx: number) => ({
+              id: `item-${Date.now()}-${idx}`,
+              text: it,
+              done: false,
+            }));
+            updatedData.items = [...existingData.items, ...added];
+          } else {
+            updatedData.items = [...existingData.items, ...newItems];
+          }
+          if (target.title.includes("·") || target.title.toLowerCase().includes("item")) {
+            const preview = updatedData.items.slice(0, 2).map((it: any) => (typeof it === "string" ? it : it.text)).join(", ");
+            updatedTitle = `${updatedData.items.length} items · ${preview}`;
+          }
         } else {
           updatedData.rawAppend = (updatedData.rawAppend ? updatedData.rawAppend + "\n" : "") + smartAction.content;
         }
 
         db.update(cards)
-          .set({ data: JSON.stringify(updatedData), updatedAt: sql`datetime('now')` })
+          .set({ title: updatedTitle, data: JSON.stringify(updatedData), updatedAt: sql`datetime('now')` })
           .where(eq(cards.id, target.id))
           .run();
 

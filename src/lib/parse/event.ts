@@ -21,7 +21,7 @@ const LINKS: Record<string, string> = {
   whatsapp: "WhatsApp",
 };
 
-const STOP = /\s+(?:on|at|in|for|about|to|from|via|over)\s+.*$/i;
+const STOP = /\s+(?:on|at|in|for|about|to|from|via|over|en|para|el|de|sobre)\s+.*$/i;
 
 export function parseEvent(text: string, ref?: Date): EventData {
   let rest = ` ${collapse(text)} `;
@@ -38,7 +38,7 @@ export function parseEvent(text: string, ref?: Date): EventData {
   }
 
   let location: string | null = null;
-  const locRe = /\s(?:at|in)\s+(?!\d)([a-z][\w' ]{1,40}?)(?=\s+(?:with|on|for)\s|\s*$)/i;
+  const locRe = /\s(?:at|in|en)\s+(?!\d)([a-zñáéíóú][\w' áéíóúñ]{1,40}?)(?=\s+(?:with|con|on|for|el|para)\s|\s*$)/i;
   const loc = rest.match(locRe);
   if (loc && loc.index !== undefined) {
     location = titleCase(loc[1].trim());
@@ -46,14 +46,14 @@ export function parseEvent(text: string, ref?: Date): EventData {
   }
 
   let people: string[] = [];
-  const withRe = /\swith\s+(.+)$/i;
+  const withRe = /\s(?:with|con)\s+(.+)$/i;
   const wm = rest.match(withRe);
   if (wm && wm.index !== undefined) {
     const segment = wm[1].replace(STOP, "");
     people = segment
-      .split(/\s*(?:,|&|\band\b)\s*/i)
+      .split(/\s*(?:,|&|\band\b|\by\b|\be\b)\s*/i)
       .map((p) => p.trim())
-      .filter((p) => p && p.split(" ").length <= 3 && !/^(the|my|a)$/i.test(p))
+      .filter((p) => p && p.split(" ").length <= 3 && !/^(the|my|a|el|la|mi)$/i.test(p))
       .map((p) => titleCase(p));
     rest = rest.slice(0, wm.index) + " " + wm[1].slice(segment.length);
   }

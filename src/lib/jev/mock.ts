@@ -24,18 +24,18 @@ export const MOCK_MODEL = "jev-offline";
 
 const has = (re: RegExp, t: string) => re.test(t);
 
-const DATE_WORDS = /\b(today|tonight|tomorrow|tmrw|mon(day)?|tue(s(day)?)?|wed(nesday)?|thu(rs(day)?)?|fri(day)?|sat(urday)?|sun(day)?|next week|this week|noon|midnight|morning|evening|\d{1,2}\s?(am|pm)|\d{1,2}:\d{2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/;
-const GATHER = /\b(dinner|lunch|breakfast|brunch|coffee|meeting|meet|call|sync|standup|party|drinks|date|catch ?up|interview|appointment|hangout|1:1|session with|with [a-z]+)\b/;
-const UNIT = "(km|kms|kilomet(er|re)s?|mi|miles?|m|met(er|re)s?|cm|mm|ft|feet|foot|in|inch(es)?|yd|yards?|kg|kgs|kilos?|g|grams?|lbs?|pounds?|oz|ounces?|l|lit(er|re)s?|ml|gal(lons?)?|cups?|°?c|°?f|celsius|fahrenheit|kelvin|mph|kph|km/h)";
-const CONVERT_FULL = new RegExp(`\\d\\s*${UNIT}\\s+(to|in|into|as)\\s+${UNIT}\\b`);
-const CONVERT_PART = new RegExp(`\\d\\s*${UNIT}\\b`);
-const COLOR_WORDS = /\b(red|crimson|scarlet|maroon|burgundy|pink|rose|coral|salmon|peach|orange|tangerine|amber|gold|yellow|mustard|lemon|cream|beige|sand|tan|brown|chocolate|olive|lime|green|sage|mint|emerald|forest|teal|turquoise|cyan|sky|blue|navy|cobalt|indigo|violet|purple|lavender|lilac|magenta|plum|grey|gray|slate|charcoal|black|white|ivory)(ish)?\b/;
+const DATE_WORDS = /\b(today|tonight|tomorrow|tmrw|mon(day)?|tue(s(day)?)?|wed(nesday)?|thu(rs(day)?)?|fri(day)?|sat(urday)?|sun(day)?|next week|this week|noon|midnight|morning|evening|hoy|esta noche|mañana|manana|ayer|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|próxima semana|proxima semana|este finde|fin de semana|mediodía|mediodia|medianoche|\d{1,2}\s?(am|pm)|\d{1,2}:\d{2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i;
+const GATHER = /\b(dinner|lunch|breakfast|brunch|coffee|meeting|meet|call|sync|standup|party|drinks|date|catch ?up|interview|appointment|hangout|1:1|session with|with [a-zñáéíóú]+|cena|comida|almuerzo|desayuno|café|cafe|reunión|reunion|llamada|cita|quedada|fiesta|copas|tomar algo|con [a-zñáéíóú]+)\b/i;
+const UNIT = "(km|kms|kilomet(er|re)s?|mi|miles?|m|met(er|re)s?|cm|mm|ft|feet|foot|in|inch(es)?|yd|yards?|kg|kgs|kilos?|g|grams?|lbs?|pounds?|oz|ounces?|l|lit(er|re)s?|ml|gal(lons?)?|cups?|°?c|°?f|celsius|fahrenheit|kelvin|mph|kph|km/h|millas?)";
+const CONVERT_FULL = new RegExp(`\\d\\s*${UNIT}\\s+(to|in|into|as|a|en)\\s+${UNIT}\\b`, "i");
+const CONVERT_PART = new RegExp(`\\d\\s*${UNIT}\\b`, "i");
+const COLOR_WORDS = /\b(red|crimson|scarlet|maroon|burgundy|pink|rose|coral|salmon|peach|orange|tangerine|amber|gold|yellow|mustard|lemon|cream|beige|sand|tan|brown|chocolate|olive|lime|green|sage|mint|emerald|forest|teal|turquoise|cyan|sky|blue|navy|cobalt|indigo|violet|purple|lavender|lilac|magenta|plum|grey|gray|slate|charcoal|black|white|ivory|rojo|azul|verde|amarillo|naranja|rosa|morado|violeta|negro|blanco|gris|marrón|marron)(ish)?\b/i;
 
 /** "minecraft diamond", "tiffany blue", "ruby": specific references that only mean a color. */
 const COLOR_REFERENCE = new RegExp(REFERENCE_RE.source, "i");
 
 const ZONE_WORD = new RegExp(`\\b(${Object.keys(ZONES).sort((a, b) => b.length - a.length).join("|")})\\b`, "g");
-const CLOCK = /\b\d{1,2}(:\d{2})?\s*(am|pm)\b|\b\d{1,2}:\d{2}\b|\b(noon|midnight)\b/;
+const CLOCK = /\b\d{1,2}(:\d{2})?\s*(am|pm)\b|\b\d{1,2}:\d{2}\b|\b(noon|midnight|mediodía|mediodia|medianoche)\b/i;
 
 type Scores = Partial<Record<IntentKey, number>>;
 
@@ -51,53 +51,85 @@ function intentScores(raw: string): Scores {
   if (has(/#[0-9a-f]{1,5}$/, t)) add("color", 3);
   if (has(COLOR_WORDS, t)) add("color", 2.5);
   if (has(COLOR_REFERENCE, t)) add("color", 4.5);
-  if (has(/\b(colou?r|shade|hue) (of|like)\b/, t)) add("color", 3);
+  if (has(/\b(colou?r|shade|hue|color|tono) (of|like|de)\b/, t)) add("color", 3);
   if (has(new RegExp(COLOR_WORDS.source + "\\s*$"), t)) add("color", 1.5);
-  if (has(/\b(colou?r|shade|hue|palette|tone of)\b/, t)) add("color", 2);
+  if (has(/\b(colou?r|shade|hue|palette|tone of|color|gama)\b/, t)) add("color", 2);
   if (has(/[\w.+-]+@[\w-]+\.\w+/, t)) add("contact", 5);
   if (has(/(\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{3,5}/, t)) add("contact", 4);
-  if (has(/\b(remind|reminder|don'?t forget|remember to)\b/, t)) add("reminder", 6);
-  if (has(/\b(split|divide|share)\b/, t)) add("split", num ? 5 : 3);
-  if (has(/\b(between|among)\s+(\d+|two|three|four|five|six)\b/, t) && num) add("split", 2);
-  if (has(/\b(spent|paid|bought|cost|expense)\b/, t)) add("expense", num ? 5 : 3);
-  if (has(/^(₹|rs\.?|\$)\s?\d/, t)) add("expense", 2);
+
+  // Reminders & Task Actions (EN and ES)
+  if (has(/\b(remind|reminder|don'?t forget|remember to|recordar|recuérdame|recuerdame|recordatorio|no olvidar|no te olvides|acordarme de|acordarse de|avísame|avisame)\b/i, t)) add("reminder", 6.5);
+  if (has(/^(alquilar|rent|llamar|call|hacer|pagar|pay|recoger|pick up|reservar|book|limpiar|clean|arreglar|fix|renovar|renew|cambiar|change|enviar|send|mandar|pedir|order|devolver|return|firmar|sign|avisar|revisar|check)\b/i, t)) {
+    const listSeps = (t.match(/,|\band\b|\by\b|\be\b|&|\n/g) ?? []).length;
+    if (listSeps === 0) add("reminder", 5.5);
+  }
+  // Obligation / modal single tasks (EN and ES)
+  if (has(/\b(tengo que|hay que|debo|debería|deberia|he de|me toca|hace falta)\b/i, t) ||
+      has(/\b(have to|need to|must|should|ought to|gotta|supposed to)\b/i, t)) {
+    const listSeps = (t.match(/,|\band\b|\by\b|\be\b|&|\n/g) ?? []).length;
+    if (listSeps === 0) add("reminder", 5.5);
+  }
+
+  // Split (EN and ES)
+  if (has(/\b(split|divide|share|dividir|repartir|a escote)\b/i, t)) add("split", num ? 5 : 3);
+  if (has(/\b(between|among|entre)\s+(\d+|two|three|four|five|six|dos|tres|cuatro|cinco)\b/i, t) && num) add("split", 2.5);
+
+  // Expenses (EN and ES)
+  if (has(/\b(spent|paid|bought|cost|expense|gasté|gaste|gastado|gasto|gastos|pagué|pague|pagado|pago|costó|costo|coste|compré|compre|comprado)\b/i, t)) add("expense", num ? 6 : 3.5);
+  if (has(/^(₹|rs\.?|\$|€)\s?\d|\d\s*(€|\beur(os?)?\b|\$|\busd\b)/i, t)) add("expense", 4.5);
+
   if (has(CONVERT_FULL, t)) add("convert", 7);
   else if (has(CONVERT_PART, t) && !has(/\b(min|mins|minutes?|hours?|hrs?|sec|secs?)\b/, t) && words.length <= 3) add("convert", 2);
-  if (has(/\bconvert\b/, t)) add("convert", 3);
+  if (has(/\b(convert|convertir)\b/i, t)) add("convert", 3);
   if (has(/^[\d\s+\-*/x×÷^().,%]+$/, t) && has(/\d\s*[+\-*/x×÷^%]\s*[\d(]/, t)) add("calc", 7);
-  if (has(/\d\s*%\s*(of|off)\b/, t)) add("calc", 6);
-  if (has(/\b(what'?s|calculate|compute)\b.*\d/, t)) add("calc", 3);
-  if (has(/\b(timer|countdown|stopwatch|pomodoro)\b/, t)) add("timer", 6);
-  if (has(/\b\d+\s*(h|hr|hrs|hours?|m|min|mins|minutes?|s|sec|secs|seconds?)\b/, t)) add("timer", 3);
-  if (has(/\b(focus|break|rest|nap|deep work)\b/, t) && has(/\d/, t)) add("timer", 2.5);
-  if (has(/\b(every\s*day|daily|every (morning|night|evening)|each (day|morning)|\d\s*x\s*a\s*week|times a week|habit|weekly|every (mon|tue|wed|thu|fri|sat|sun))/, t)) add("habit", 5);
-  if (has(/\b(flight|fly|flying|trip|travel|vacation|holiday|train to|bus to|road ?trip|visit|getaway)\b/, t)) add("travel", 5);
-  if (has(/\bto [a-z]+/, t) && has(/\b(next weekend|this weekend|flight|trip)\b/, t)) add("travel", 1);
-  if (has(/\b(or|vs)\b/, t) && t.endsWith("?")) add("poll", 5.5);
-  else if (has(/\b\w+ or \w+/, t)) add("poll", 2);
-  if (has(/\b(poll|vote)\b/, t)) add("poll", 3);
-  // Countdown: "days until christmas", "how long till my birthday on dec 12"
-  if (has(/\b(days?|weeks?|sleeps?)\s+(until|till|til|to go|left|before)\b|\bcount ?down\b|\bhow (many days|long) (until|till|til)\b/, t)) add("countdown", 6.5);
+  if (has(/\d\s*%\s*(of|off|de|menos)\b/i, t)) add("calc", 6);
+  if (has(/\b(what'?s|calculate|compute|cuánto es|cuanto es|calcular)\b/i, t) && num) add("calc", 3);
+  if (has(/\b(timer|countdown|stopwatch|pomodoro|temporizador|cuenta atrás|cuenta atras)\b/i, t)) add("timer", 6);
+  if (has(/\b\d+\s*(h|hr|hrs|hours?|m|min|mins|minutes?|s|sec|secs|seconds?|horas?|minutos?|segundos?)\b/i, t)) add("timer", 3);
+  if (has(/\b(focus|break|rest|nap|deep work|descanso|siesta)\b/i, t) && has(/\d/, t)) add("timer", 2.5);
+  if (has(/\b(every\s*day|daily|every (morning|night|evening)|each (day|morning)|\d\s*x\s*a\s*week|times a week|habit|weekly|every (mon|tue|wed|thu|fri|sat|sun)|cada día|cada dia|todos los días|todos los dias|diario|diariamente|cada mañana|cada noche|\d\s*veces por semana|hábito|habito|semanal)/i, t)) add("habit", 5);
+
+  // Travel (EN and ES)
+  if (has(/\b(flight|fly|flying|trip|travel|vacation|holiday|train to|bus to|road ?trip|visit|getaway|vuelo|volar|viaje|viajar|escapada|vacaciones|tren a|autobús a|autobus a|visitar|hotel en|ir a)\b/i, t)) add("travel", 5.5);
+  if (has(/\b(to|a) [a-zñáéíóú]+/i, t) && has(/\b(next weekend|this weekend|flight|trip|el próximo fin de semana|el proximo finde|próximo finde|proximo finde|vuelo|viaje)\b/i, t)) add("travel", 4);
+
+  // Poll (EN and ES)
+  if (has(/\b(or|vs|o)\b/i, t) && t.endsWith("?")) add("poll", 5.5);
+  else if (has(/\b\w+ (?:or|o) \w+/i, t)) add("poll", 2);
+  if (has(/\b(poll|vote|encuesta|votar)\b/i, t)) add("poll", 3);
+
+  // Countdown (EN and ES)
+  if (has(/\b(days?|weeks?|sleeps?)\s+(until|till|til|to go|left|before)\b|\bcount ?down\b|\bhow (many days|long) (until|till|til)\b|\b(días|dias|semanas)\s+(para|hasta)\b|\bcuánto (falta|queda) (para|hasta)\b|\bcuenta atrás para\b/i, t)) add("countdown", 6.5);
+
   // Time zones: two zones, a clock time plus a zone, or "time in tokyo"
   const zoneHits = t.match(ZONE_WORD)?.length ?? 0;
-  if (zoneHits >= 2 && (has(CLOCK, t) || has(/\b(in|to)\b/, t))) add("timezone", 7);
-  else if (zoneHits === 1 && (has(CLOCK, t) || has(/\btime\b/, t))) add("timezone", 5.5);
+  if (zoneHits >= 2 && (has(CLOCK, t) || has(/\b(in|to|en)\b/i, t))) add("timezone", 7);
+  else if (zoneHits === 1 && (has(CLOCK, t) || has(/\b(time|hora)\b/i, t))) add("timezone", 5.5);
+
   // Random: dice, coins, "random number", "pick one"
-  if (has(/\b(roll|flip|toss)\b|\b\d*d\d+\b|\bcoin\b|\bdice\b|\bdie\b|\brandom\b|\b(pick|choose) (one|a random|for me)\b/, t)) add("random", 6.5);
+  if (has(/\b(roll|flip|toss|tirar|lanzar)\b|\b\d*d\d+\b|\b(coin|moneda)\b|\b(dice|die|dado|dados)\b|\b(random|aleatorio)\b|\b(pick|choose|elegir) (one|a random|for me|uno|por mí)\b/i, t)) add("random", 6.5);
+
   // Goal: "4 of 12 books", "save 50000, saved 12000", "goal"
-  if (has(/\b\d[\d,]*\s*(of|\/|out of)\s*\d[\d,]*\b/, t) && has(/[a-z]{3,}/, t)) add("goal", 4.5);
-  if (has(/\b(goal|target)\b/, t)) add("goal", 3);
-  if (has(/\b(done|so far|saved|completed|finished)\b/, t) && has(/\d/, t)) add("goal", (t.match(/\d+/g)?.length ?? 0) >= 2 ? 5 : 2.5);
-  const listSeps = (t.match(/,|\band\b|&|\n/g) ?? []).length;
-  if (listSeps >= 2) add("todo", 4);
-  else if (listSeps === 1 && has(/^(buy|get|todo|to do|groceries)\b/, t)) add("todo", 3);
-  if (has(/^(buy|get|pick up|grab)\b/, t)) add("todo", 2);
+  if (has(/\b\d[\d,]*\s*(of|\/|out of|de)\s*\d[\d,]*\b/i, t) && has(/[a-z]{3,}/, t)) add("goal", 4.5);
+  if (has(/\b(goal|target|meta|objetivo)\b/i, t)) add("goal", 3);
+  if (has(/\b(done|so far|saved|completed|finished|hecho|completado|ahorrado)\b/i, t) && has(/\d/, t)) add("goal", (t.match(/\d+/g)?.length ?? 0) >= 2 ? 5 : 2.5);
+
+  // Todo / Lists (EN and ES)
+  const listSeps = (t.match(/,|\band\b|\by\b|\be\b|&|\n/g) ?? []).length;
+  if (listSeps >= 2) add("todo", 5);
+  else if (listSeps === 1 && has(/^(buy|get|add|todo|to do|groceries|comprar|coger|añadir|agregar|poner|compra|supermercado|super|lista)\b/i, t)) add("todo", 4.5);
+  if (has(/^(add|buy|get|pick up|grab|need|groceries|todo|to do|añadir|agregar|poner|comprar|falta|faltan|necesito|necesitamos|pillar|traer|llevar)\b/i, t)) {
+    add("todo", 4);
+  }
+
+  // Events (EN and ES)
   const gather = has(GATHER, t);
-  if (has(DATE_WORDS, t)) add("event", gather || words.length <= 6 ? 2.5 : 1);
-  if (gather) add("event", 3);
-  if (has(/\b(on|over|via) (zoom|meet|teams|facetime)\b/, t)) add("event", 2);
-  if (has(/\b(recipe|ingredients|serves\s*\d|cook\s*time|bake\s*at|tablespoon|tsp|tbsp)\b/i, t)) add("recipe", 6);
-  if (has(/\b(book|reading|novel|pages|author)\b/i, t) && has(/\b(by|\d+\s*pp|pages|stars)\b/i, t)) add("book", 5.5);
+  if (has(DATE_WORDS, t)) add("event", gather || words.length <= 6 ? 4 : 2);
+  if (gather) add("event", 4);
+  if (has(/\b(on|over|via|por) (zoom|meet|teams|facetime|whatsapp)\b/i, t)) add("event", 2);
+
+  if (has(/\b(recipe|ingredients|serves\s*\d|cook\s*time|bake\s*at|tablespoon|tsp|tbsp|receta|ingredientes|cocinar|hornear)\b/i, t)) add("recipe", 6);
+  if (has(/\b(book|reading|novel|pages|author|libro|leyendo|novela|páginas|paginas|autor)\b/i, t) && has(/\b(by|\d+\s*pp|pages|stars|de|por)\b/i, t)) add("book", 5.5);
   if (has(/\b(movie|film|directed by|cinema|watch (a )?movie)\b/i, t)) add("movie", 5.5);
   if (has(/\b(outfit|wardrobe|wearing|pieces|chinos|sneakers|blazer)\b/i, t)) add("outfit", 5);
   if (has(/\b(artwork|painting|sculpture|canvas|oil on canvas)\b/i, t)) add("artwork", 5.5);

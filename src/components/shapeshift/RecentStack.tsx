@@ -19,11 +19,15 @@ import {
   Wallet,
   Shirt,
   Sparkles,
+  MapPin,
+  Share2,
+  Check,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { registry } from "@/components/intents/registry";
 import { spring, tween } from "@/lib/motion";
-import type { SavedItem } from "@/lib/savedItems";
+import { savedItems, type SavedItem } from "@/lib/savedItems";
+import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 
 const LIST_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -85,6 +89,29 @@ export function RecentStack({
     { id: "money", name: "Money" },
     { id: "style", name: "Style" },
   ]);
+  const [copiedId, setCopiedId] = useState<string | number | null>(null);
+
+  const handleToggleCheckItem = (item: SavedItem, index: number) => {
+    if (!Array.isArray(item.data?.items)) return;
+    const newItems = [...item.data.items];
+    newItems[index] = { ...newItems[index], done: !newItems[index].done };
+    const updatedItem: SavedItem = {
+      ...item,
+      data: { ...item.data, items: newItems },
+    };
+    savedItems.update((list) =>
+      list.map((x) => (x.id === item.id ? updatedItem : x))
+    );
+    savedItems.updateServerCard(updatedItem);
+  };
+
+  const handleShareCard = (item: SavedItem) => {
+    const url = `${window.location.origin}/p/${item.id}`;
+    navigator.clipboard.writeText(url);
+    setCopiedId(item.id);
+    notify("Public link copied to clipboard!", { id: "share" });
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   // Global Cmd+K / Ctrl+K shortcut to focus search
   useEffect(() => {
@@ -464,8 +491,8 @@ export function RecentStack({
           })}
         </div>
       ) : (
-        /* ── CARDS VIEW (DEFAULT) ──────────────────────────────── */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        /* ── CARDS VIEW (PINTEREST / TUMBLR / KEEP MASONRY) ── */
+        <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-3.5 space-y-3.5">
           <AnimatePresence initial={false}>
             {filteredItems.length === 0 ? (
               <div className="col-span-full py-12 text-center text-sm text-muted-foreground">
@@ -481,6 +508,11 @@ export function RecentStack({
                 const Icon = def?.icon || StickyNote;
                 const isArchived = item.status === "archived";
                 const childNotes = childrenByParentId.get(String(item.id)) || [];
+                const heroImg =
+                  item.data?.coverUrl ||
+                  item.data?.artworkUrl ||
+                  item.data?.posterUrl ||
+                  item.data?.ogImage;
 
                 return (
                   <motion.div
@@ -508,10 +540,34 @@ export function RecentStack({
                     transition={reduce ? tween.fade : spring.morph}
                     onClick={() => onOpen(item)}
                     className={cn(
-                      "group relative flex flex-col justify-between rounded-2xl border border-border/70 bg-card p-4 shadow-2xs hover:border-primary/40 hover:bg-secondary/15 hover:shadow-xs transition-all duration-150 ease-out cursor-pointer min-h-[120px]",
+                      "break-inside-avoid inline-block w-full mb-3.5 group relative flex flex-col justify-between rounded-2xl border border-border/70 bg-card p-4 shadow-2xs hover:border-primary/40 hover:bg-secondary/15 hover:shadow-xs transition-all duration-150 ease-out cursor-pointer",
                       isArchived && "opacity-60"
                     )}
                   >
+                    {/* Visual Media Banner (Pinterest style) */}
+                    {heroImg && (
+                      <div className="relative w-full overflow-hidden rounded-xl bg-secondary/30 mb-3 max-h-56 flex justify-center">
+                        <img
+                          src={heroImg}
+                          alt={item.summary}
+                          className="w-full max-h-56 object-cover rounded-xl transition-transform hover:scale-[1.01]"
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
+
+                    {/* Color Swatch */}
+                    {item.intent === "color" && item.data?.hex && (
+                      <div
+                        className="w-full h-12 rounded-xl border border-border/40 shadow-inner flex items-end p-2 mb-3"
+                        style={{ backgroundColor: item.data.hex }}
+                      >
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-black/60 text-white backdrop-blur-xs">
+                          {item.data.hex}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Top Row: Intent & Metadata */}
                     <div className="flex items-center justify-between gap-2 w-full pb-2 border-b border-border/40">
                       <div className="flex items-center gap-1.5 min-w-0">
@@ -537,11 +593,24 @@ export function RecentStack({
                         <span className="text-[10px] font-normal text-muted-foreground/75">
                           {formatRelativeTime(item.createdAt)}
                         </span>
-                        {/* Actions: Archive/Restore & Delete */}
+                        {/* Actions: Share, Archive/Restore & Delete */}
                         <div
                           className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                           onClick={(e) => e.stopPropagation()}
                         >
+                          <button
+                            type="button"
+                            onClick={() => handleShareCard(item)}
+                            title="Copy public link"
+                            aria-label="Share card"
+                            className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
+                          >
+                            {copiedId === item.id ? (
+                              <Check className="size-3 text-emerald-500" />
+                            ) : (
+                              <Share2 className="size-3" />
+                            )}
+                          </button>
                           {isArchived ? (
                             <button
                               type="button"
@@ -586,10 +655,63 @@ export function RecentStack({
                       >
                         {item.summary}
                       </span>
-                      {item.text && item.text !== item.summary && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed break-words">
+
+                      {/* Tumblr-style quote block */}
+                      {item.intent === "quote" && (
+                        <blockquote className="border-s-2 border-primary/50 ps-2.5 my-1.5 italic text-xs text-foreground/90 font-serif">
+                          “{item.text || item.summary}”
+                        </blockquote>
+                      )}
+
+                      {/* Body text if distinct from summary */}
+                      {item.text && item.text !== item.summary && item.intent !== "quote" && (
+                        <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed break-words">
                           {item.text}
                         </p>
+                      )}
+
+                      {/* Keep-style Interactive Checklist */}
+                      {Array.isArray(item.data?.items) && item.data.items.length > 0 && (
+                        <div
+                          className="flex flex-col gap-1.5 py-2 border-t border-border/30 mt-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {item.data.items.slice(0, 5).map((task: any, idx: number) => (
+                            <label
+                              key={task.id || idx}
+                              className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!!task.done}
+                                onChange={() => handleToggleCheckItem(item, idx)}
+                                className="size-3.5 rounded border-border accent-primary cursor-pointer"
+                              />
+                              <span className={cn(task.done && "line-through text-muted-foreground")}>
+                                {task.text}
+                              </span>
+                            </label>
+                          ))}
+                          {item.data.items.length > 5 && (
+                            <span className="text-[10px] text-muted-foreground italic">
+                              +{item.data.items.length - 5} more items
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* OpenStreetMap Location Button */}
+                      {item.data?.mapUrl && (
+                        <a
+                          href={item.data.mapUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors my-1 w-fit"
+                        >
+                          <MapPin className="size-3" />
+                          <span>Map location</span>
+                        </a>
                       )}
 
                       {/* Child notes */}

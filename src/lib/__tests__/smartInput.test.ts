@@ -24,6 +24,13 @@ describe("smartInput parser", () => {
       listId: "inbox",
       data: { director: "Christopher Nolan" },
     },
+    {
+      id: "card-4",
+      title: "Flight to Barcelona",
+      intent: "travel",
+      listId: "calendar",
+      data: { destination: "Barcelona", flight: "VY7822" },
+    },
   ];
 
   const lists = [
@@ -40,6 +47,41 @@ describe("smartInput parser", () => {
     expect(res?.targetId).toBe("card-1");
     expect(res?.itemsToAppend).toEqual(["milk", "eggs", "sourdough"]);
     expect(res?.label).toContain('Append to "Groceries"');
+  });
+
+  it("matches 'also need/buy X' and appends to active todo card", () => {
+    const res = analyzeSmartInput("also need coffee and butter", cards, lists);
+    expect(res).not.toBeNull();
+    expect(res?.kind).toBe("append_card");
+    expect(res?.targetId).toBe("card-1");
+    expect(res?.itemsToAppend).toEqual(["coffee", "butter"]);
+    expect(res?.label).toContain('Append to "Groceries"');
+  });
+
+  it("matches 'CardTitle: item1, item2' colon prefix and appends to card", () => {
+    const res = analyzeSmartInput("Groceries: sourdough, organic milk", cards, lists);
+    expect(res).not.toBeNull();
+    expect(res?.kind).toBe("append_card");
+    expect(res?.targetId).toBe("card-1");
+    expect(res?.itemsToAppend).toEqual(["sourdough", "organic milk"]);
+  });
+
+  it("matches flight updates like 'flight gate 12B, seat 14A' to update registered flight card", () => {
+    const res = analyzeSmartInput("flight gate 12B, seat 14A", cards, lists);
+    expect(res).not.toBeNull();
+    expect(res?.kind).toBe("update_card");
+    expect(res?.targetId).toBe("card-4");
+    expect(res?.updates?.gate).toBe("12B");
+    expect(res?.updates?.seat).toBe("14A");
+    expect(res?.label).toContain('Update "Flight to Barcelona"');
+  });
+
+  it("matches flight delay update", () => {
+    const res = analyzeSmartInput("flight to Barcelona delayed 45 minutes", cards, lists);
+    expect(res).not.toBeNull();
+    expect(res?.kind).toBe("update_card");
+    expect(res?.targetId).toBe("card-4");
+    expect(res?.updates?.delay).toBe("45 minutes");
   });
 
   it("matches 'put X in Y list' to route to a list", () => {
@@ -80,3 +122,4 @@ describe("smartInput parser", () => {
     expect(res).toBeNull();
   });
 });
+

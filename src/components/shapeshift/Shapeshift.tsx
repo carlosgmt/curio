@@ -95,6 +95,7 @@ export function Shapeshift() {
   // Navigation pane: 'capture' (Zen input only) vs 'cards' (Cards & Search)
   const [activePane, setActivePane] = useState<"capture" | "cards">("capture");
   const [lastSaved, setLastSaved] = useState<{ title: string; intent: string } | null>(null);
+  const [overrideSmart, setOverrideSmart] = useState(false);
 
   const touchStartX = useRef<number | null>(null);
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -218,6 +219,7 @@ export function Shapeshift() {
     setAttachedImages([]);
     setMem(initialMemory);
     setGated(neutralGated);
+    setOverrideSmart(false);
     if (editingId !== null) {
       setFlyingId(editingId);
       setEditingId(null);
@@ -272,8 +274,8 @@ export function Shapeshift() {
       return true;
     }
 
-    // If input matches smart action (append to card/list or attach note), execute it directly!
-    if (editingId === null && smartTarget) {
+    // If input matches smart action (append to card/list or attach note), execute it directly unless overridden!
+    if (editingId === null && smartTarget && !overrideSmart) {
       const actionText = text;
       fetch("/api/v1/cards/smart", {
         method: "POST",
@@ -693,10 +695,36 @@ export function Shapeshift() {
                         <span>Brain dump: {brainDumpItems.length} items detected</span>
                       </span>
                     ) : smartTarget ? (
-                      <span className="flex items-center gap-1.5 font-semibold text-brand">
-                        <span className="size-1.5 rounded-full bg-brand animate-pulse" />
-                        <span>{smartTarget.label}</span>
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {!overrideSmart ? (
+                          <>
+                            <span className="flex items-center gap-1.5 font-semibold text-brand">
+                              <span className="size-1.5 rounded-full bg-brand animate-pulse" />
+                              <span>{smartTarget.label}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setOverrideSmart(true)}
+                              className="rounded-full bg-secondary/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                            >
+                              Create new card instead
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-[11px] text-muted-foreground font-medium">
+                              Will create as new card
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setOverrideSmart(false)}
+                              className="text-[11px] font-semibold text-brand hover:underline"
+                            >
+                              Restore {smartTarget.kind === "update_card" ? "update" : "append"}
+                            </button>
+                          </>
+                        )}
+                      </div>
                     ) : null}
 
                     <span className="text-[11px] text-muted-foreground">

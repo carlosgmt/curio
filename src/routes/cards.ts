@@ -106,6 +106,24 @@ cardRoutes.post("/", async (c) => {
     .values({ cardId: row.id, actor: body.actor ?? "user", action: "created" })
     .run();
 
+  // Background visual auto-enrichment (covers, posters, maps, links)
+  (async () => {
+    try {
+      const { autoEnrich } = await import("../lib/enrichment");
+      const enriched = await autoEnrich(body.intent, body.title, body.raw_text ?? body.title);
+      if (enriched && Object.keys(enriched).length > 0) {
+        const current = db.select({ data: cards.data }).from(cards).where(eq(cards.id, row.id)).get();
+        if (current) {
+          const mergedData = { ...JSON.parse(current.data), ...enriched };
+          db.update(cards)
+            .set({ data: JSON.stringify(mergedData) })
+            .where(eq(cards.id, row.id))
+            .run();
+        }
+      }
+    } catch {}
+  })();
+
   return c.json(deserializeCard(row), 201);
 });
 
@@ -218,6 +236,46 @@ cardRoutes.post("/smart", async (c) => {
       matched: true,
       kind: "append_card",
       message: `Appended ${newItems.join(", ")} to "${target.title}"`,
+      card: deserializeCard(updatedRow),
+    });
+  }
+
+  // 1b. Update existing card (e.g. flight gate, seat, delay updates)
+  if (action.kind === "update_card" && action.targetId) {
+    const target = cardsParsed.find((c) => c.id === action.targetId);
+    if (!target) return c.json({ matched: false });
+
+    const existingData = target.data || {};
+    const updates = action.updates || {};
+    const updatedData = { ...existingData, ...updates };
+
+    const updatedRow = db
+      .update(cards)
+      .set({
+        data: JSON.stringify(updatedData),
+        updatedAt: sql`datetime('now')`,
+      })
+      .where(eq(cards.id, target.id))
+      .returning()
+      .get();
+
+    db.insert(cardEvents)
+      .values({
+        cardId: target.id,
+        actor,
+        action: "updated",
+        diff: JSON.stringify({ updates }),
+      })
+      .run();
+
+    const summaryParts = Object.entries(updates)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(", ");
+
+    return c.json({
+      matched: true,
+      kind: "update_card",
+      message: `Updated "${target.title}" (${summaryParts})`,
       card: deserializeCard(updatedRow),
     });
   }

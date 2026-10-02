@@ -59,7 +59,10 @@ function intentScores(raw: string): Scores {
 
   // Reminders & Task Actions (EN and ES)
   if (has(/\b(remind|reminder|don'?t forget|remember to|recordar|recuérdame|recuerdame|recordatorio|no olvidar|no te olvides|acordarme de|acordarse de|avísame|avisame)\b/i, t)) add("reminder", 6.5);
-  if (has(/^(alquilar|rent|llamar|call|hacer|pagar|pay|recoger|pick up|reservar|book|limpiar|clean|arreglar|fix|renovar|renew|cambiar|change|enviar|send|mandar|pedir|order|devolver|return|firmar|sign|avisar|revisar|check)\b/i, t)) {
+  if (
+    has(/^(alquilar|rent|llamar|call|hacer|pagar|pay|recoger|pick up|reservar|limpiar|clean|arreglar|fix|renovar|renew|cambiar|change|enviar|send|mandar|pedir|order|devolver|return|firmar|sign|avisar|revisar|check)\b/i, t) ||
+    has(/^book\s+(?:a\s+|an\s+|the\s+)?(?:flight|hotel|table|room|ticket|tickets|seat|trip|appointment|tour|cab|taxi|car)\b/i, t)
+  ) {
     const listSeps = (t.match(/,|\band\b|\by\b|\be\b|&|\n/g) ?? []).length;
     if (listSeps === 0) add("reminder", 5.5);
   }
@@ -128,13 +131,39 @@ function intentScores(raw: string): Scores {
   if (gather) add("event", 4);
   if (has(/\b(on|over|via|por) (zoom|meet|teams|facetime|whatsapp)\b/i, t)) add("event", 2);
 
+  // Recipes (EN and ES)
   if (has(/\b(recipe|ingredients|serves\s*\d|cook\s*time|bake\s*at|tablespoon|tsp|tbsp|receta|ingredientes|cocinar|hornear)\b/i, t)) add("recipe", 6);
-  if (has(/\b(book|reading|novel|pages|author|libro|leyendo|novela|páginas|paginas|autor)\b/i, t) && has(/\b(by|\d+\s*pp|pages|stars|de|por)\b/i, t)) add("book", 5.5);
-  if (has(/\b(movie|film|directed by|cinema|watch (a )?movie)\b/i, t)) add("movie", 5.5);
-  if (has(/\b(outfit|wardrobe|wearing|pieces|chinos|sneakers|blazer)\b/i, t)) add("outfit", 5);
-  if (has(/\b(artwork|painting|sculpture|canvas|oil on canvas)\b/i, t)) add("artwork", 5.5);
-  if (has(/\b(song|track|album|listen to|playlist)\b/i, t)) add("music", 5);
-  if (has(/\b(cafe|restaurant|bistro|place to visit|visit [a-z]+|hotel at)\b/i, t)) add("place", 4.5);
+
+  // Books (EN and ES)
+  const isBookPrefix =
+    (has(/^(book:?|reading:?|libro:?|leyendo:?|leer:?)\b/i, t) && !has(/^book\s+(?:a\s+|an\s+|the\s+)?(?:flight|hotel|table|room|ticket|tickets|seat|trip|appointment|tour|cab|taxi|car)\b/i, t)) ||
+    (has(/^read\b/i, t) && !has(/\b(done|so far|completed|finished|target|goal|workouts?|calories)\b/i, t));
+  const isBookSuffix = has(/\b(book|libro)\s*$/i, t);
+  const hasBookKeywords = has(/\b(novel|novela|author|autor|pages|páginas|paginas|audiobook|audiolibro|hardcover|paperback|goodreads|chapter|capítulo|capitulo)\b/i, t);
+  const hasBookWord = has(/\b(book|libro|books|libros)\b/i, t);
+
+  if (isBookPrefix) add("book", 7);
+  else if (isBookSuffix) add("book", 6);
+  else if (hasBookKeywords && (hasBookWord || has(/\b(by|de|por|\d+\s*pp|stars|estrellas)\b/i, t))) add("book", 6);
+  else if (hasBookWord && (has(/\b(by|de|por)\s+[a-zñáéíóú]+/i, t) || has(/\b(read|reading|leer|leyendo|finished|terminé|termine|recommend|recomiendo)\b/i, t))) add("book", 5.5);
+  else if (hasBookWord && words.length >= 2 && words.length <= 8) add("book", 4.5);
+
+  // Movies (EN and ES)
+  if (has(/\b(movie|film|directed by|cinema|watch (a )?movie|película|pelicula|cine|dirigida por|ver película|ver pelicula)\b/i, t)) add("movie", 5.5);
+
+  // Outfits
+  if (has(/\b(outfit|wardrobe|wearing|pieces|chinos|sneakers|blazer|ropa|armario|estilo)\b/i, t)) add("outfit", 5);
+
+  // Artwork (EN and ES)
+  if (has(/\b(artwork|painting|sculpture|canvas|oil on canvas|cuadro|pintura|escultura|lienzo|óleo|oleo)\b/i, t)) add("artwork", 5.5);
+
+  // Music (EN and ES)
+  if (has(/\b(song|track|album|listen to|playlist|canción|cancion|tema|álbum|disco|escuchar)\b/i, t)) add("music", 5);
+
+  // Place (EN and ES)
+  if (has(/\b(cafe|cafetería|cafeteria|restaurant|restaurante|bistro|bar|place to visit|sitio|lugar para visitar|visit [a-z]+|hotel (at|en))\b/i, t)) add("place", 4.5);
+
+  // Ideas & Quotes
   if (has(/^(idea:?|thought:?)\b|\b(startup idea|app idea)\b/i, t) || has(/#\w+/, t)) add("idea", 5);
   if (has(/^(quote:?)\b|[“”—]/, t)) add("quote", 5.5);
   if (has(/\b(i think|i feel|felt|feeling|thinking|wonder|realized|idea|thought|maybe we)\b/, t)) add("note", 2);
@@ -169,7 +198,10 @@ function intentScores(raw: string): Scores {
     s.calc = Math.min(s.calc ?? 0, 1);
     s.convert = Math.min(s.convert ?? 0, 1);
   }
-  if ((s.goal ?? 0) >= 4.5) s.calc = Math.min(s.calc ?? 0, 1);
+  if ((s.goal ?? 0) >= 4.5) {
+    s.calc = Math.min(s.calc ?? 0, 1);
+    s.book = Math.min(s.book ?? 0, 2);
+  }
   return s;
 }
 

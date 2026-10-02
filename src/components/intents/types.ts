@@ -15,6 +15,7 @@ export type BadgeSpec = { id: string; label: string; icon?: LucideIcon; tone?: "
 
 export type IntentDef<K extends CardIntent> = {
   label: string;
+  description?: string;
   example: string;
   icon: LucideIcon;
   /** Signals this intent reads (section 7.3). Everything else is ignored. */

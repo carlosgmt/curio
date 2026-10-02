@@ -4,6 +4,7 @@ import { analyzeSmartInput } from "../smartInput";
 import { parseReminder } from "../parse/reminder";
 import { parseTodo } from "../parse/todo";
 import { parseEvent } from "../parse/event";
+import { parseBook } from "../parse/book";
 
 describe("Bilingual EN and ES classification and smart actions", () => {
   const existingCards = [
@@ -213,6 +214,52 @@ describe("Bilingual EN and ES classification and smart actions", () => {
   describe("Travel across EN and ES", () => {
     it("classifies 'vuelo a Roma el próximo fin de semana' as travel", () => {
       const res = mockClassify("vuelo a Roma el próximo fin de semana");
+      expect(res.intent.value).toBe("travel");
+    });
+  });
+
+  describe("Books across EN and ES", () => {
+    it("classifies 'book title author' as book and parses cleanly", () => {
+      const res = mockClassify("book title author");
+      expect(res.intent.value).toBe("book");
+      const parsed = parseBook("book title author");
+      expect(parsed.title).toBe("Title");
+      expect(parsed.author).toBe("Author");
+    });
+
+    it("classifies 'Fernando Aramburu Maite libro' as book", () => {
+      const res = mockClassify("Fernando Aramburu Maite libro");
+      expect(res.intent.value).toBe("book");
+    });
+
+    it("classifies and parses 'book: Sapiens, Yuval Noah Harari'", () => {
+      const res = mockClassify("book: Sapiens, Yuval Noah Harari");
+      expect(res.intent.value).toBe("book");
+      const parsed = parseBook("book: Sapiens, Yuval Noah Harari");
+      expect(parsed.title).toBe("Sapiens");
+      expect(parsed.author).toBe("Yuval Noah Harari");
+    });
+
+    it("classifies and parses 'libro Patria de Fernando Aramburu'", () => {
+      const res = mockClassify("libro Patria de Fernando Aramburu");
+      expect(res.intent.value).toBe("book");
+      const parsed = parseBook("libro Patria de Fernando Aramburu");
+      expect(parsed.title).toBe("Patria");
+      expect(parsed.author).toBe("Fernando Aramburu");
+    });
+
+    it("classifies and parses 'reading Dune by Frank Herbert 500 pages'", () => {
+      const res = mockClassify("reading Dune by Frank Herbert 500 pages");
+      expect(res.intent.value).toBe("book");
+      const parsed = parseBook("reading Dune by Frank Herbert 500 pages");
+      expect(parsed.title).toBe("Dune");
+      expect(parsed.author).toBe("Frank Herbert");
+      expect(parsed.pages).toBe("500");
+    });
+
+    it("does NOT classify 'book a flight to London' as book", () => {
+      const res = mockClassify("book a flight to London");
+      expect(res.intent.value).not.toBe("book");
       expect(res.intent.value).toBe("travel");
     });
   });

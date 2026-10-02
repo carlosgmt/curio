@@ -30,6 +30,7 @@ import { NewTypeDialog } from "./NewTypeDialog";
 import { notify } from "@/lib/notify";
 import { detectDeviceCapabilities, type DeviceAiCapabilities } from "@/lib/deviceIntelligence";
 import { Key, Eye, EyeOff, Smartphone, Mic } from "lucide-react";
+import { CARD_INTENTS, registry } from "@/components/intents/registry";
 
 const PALETTES: { id: ColorPalette; name: string; color: string }[] = [
   { id: "indigo", name: "Indigo", color: "#3b5bdb" },
@@ -56,6 +57,7 @@ export function SettingsModal({
     customs: [],
   });
   const [newTypeOpen, setNewTypeOpen] = useState(false);
+  const [builtInSearch, setBuiltInSearch] = useState("");
 
   // Lists state
   const [listsData, setListsData] = useState<any[]>([]);
@@ -339,19 +341,64 @@ export function SettingsModal({
                   </div>
                 )}
 
-                <div className="pt-3 border-t border-border/40">
-                  <h4 className="text-xs font-medium text-muted-foreground mb-2">
-                    Built-in Standard Types ({typesData.builtins.length})
-                  </h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {typesData.builtins.map((k) => (
-                      <span
-                        key={k}
-                        className="rounded-full border border-border bg-secondary/40 px-2.5 py-0.5 text-xs text-muted-foreground font-medium"
-                      >
-                        {k}
-                      </span>
-                    ))}
+                <div className="pt-4 border-t border-border/40 flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Sparkles className="size-3.5 text-primary" />
+                        <span>Existing Standard Types ({CARD_INTENTS.length})</span>
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Built-in card models ready out of the box.
+                      </p>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Filter types..."
+                      value={builtInSearch}
+                      onChange={(e) => setBuiltInSearch(e.target.value)}
+                      className="rounded-lg border border-border bg-secondary/30 px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring w-36"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[240px] overflow-y-auto pr-1">
+                    {CARD_INTENTS.filter((k) => {
+                      const def = registry[k];
+                      if (!builtInSearch.trim()) return true;
+                      const q = builtInSearch.toLowerCase();
+                      return (
+                        def.label.toLowerCase().includes(q) ||
+                        k.toLowerCase().includes(q) ||
+                        (def.description && def.description.toLowerCase().includes(q)) ||
+                        def.example.toLowerCase().includes(q)
+                      );
+                    }).map((k) => {
+                      const def = registry[k];
+                      const Icon = def.icon;
+                      return (
+                        <div
+                          key={k}
+                          className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-secondary/20 p-2.5 text-xs hover:border-border transition-all"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="grid size-6 shrink-0 place-items-center rounded bg-secondary text-foreground border border-border/40">
+                              <Icon className="size-3.5" />
+                            </span>
+                            <span className="font-semibold text-foreground text-xs">{def.label}</span>
+                            <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.2 rounded font-mono ml-auto">
+                              {k}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                            {def.description || "Intelligent card type"}
+                          </p>
+                          <div className="text-[10px] font-mono text-muted-foreground/80 truncate bg-background/60 px-2 py-0.5 rounded border border-border/30 mt-0.5">
+                            <span className="text-primary/70 mr-1 select-none">ex:</span>
+                            {def.example}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

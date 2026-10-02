@@ -29,6 +29,7 @@ import { useTheme, type ColorMode, type ColorPalette } from "@/lib/theme";
 import { detectDeviceCapabilities, type DeviceAiCapabilities } from "@/lib/deviceIntelligence";
 import { NewTypeDialog } from "@/components/shapeshift/NewTypeDialog";
 import { cn } from "@/lib/utils";
+import { CARD_INTENTS, registry } from "@/components/intents/registry";
 
 type SettingsTab = "appearance" | "intelligence" | "types" | "lists";
 
@@ -58,6 +59,14 @@ export default function SettingsPage() {
   const [newTypeOpen, setNewTypeOpen] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [newListIcon, setNewListIcon] = useState("Folder");
+  const [builtInSearch, setBuiltInSearch] = useState("");
+  const [copiedExample, setCopiedExample] = useState<string | null>(null);
+
+  const copyExample = (ex: string) => {
+    navigator.clipboard.writeText(ex);
+    setCopiedExample(ex);
+    setTimeout(() => setCopiedExample(null), 2000);
+  };
 
   const fetchSettings = () => {
     fetch("/api/v1/settings")
@@ -277,7 +286,7 @@ export default function SettingsPage() {
               )}
             >
               <Sparkles className="size-4 shrink-0" />
-              <span>Custom Card Types</span>
+              <span>Card Types & Schemas</span>
             </button>
 
             <button
@@ -740,14 +749,15 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ── 3. CUSTOM CARD TYPES ── */}
+          {/* ── 3. CARD TYPES (CUSTOM & BUILT-IN) ── */}
           {activeTab === "types" && (
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-8">
+              {/* Header */}
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-foreground">Custom Card Types</h2>
+                  <h2 className="text-lg font-semibold text-foreground">Card Types & Schemas</h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Define custom card schemas, field types, and keyword detection patterns.
+                    Explore the {CARD_INTENTS.length} standard intelligent card types or create custom schemas with structured fields.
                   </p>
                 </div>
                 <button
@@ -760,41 +770,138 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {types.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-8 rounded-2xl border border-dashed border-border text-center">
-                  <Sparkles className="size-8 text-muted-foreground/60 mb-2" />
-                  <span className="text-sm font-medium text-foreground">No Custom Types Yet</span>
-                  <p className="text-xs text-muted-foreground max-w-sm mt-1">
-                    Create custom types here or type inline: <br />
-                    <code className="text-primary font-mono text-[11px] bg-secondary/60 px-1.5 py-0.5 rounded">new type: Wine (vintage, rating)</code>
-                  </p>
+              {/* 1. Custom Card Types Section */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <Sparkles className="size-4 text-primary" />
+                    <span>Custom Card Types ({types.length})</span>
+                  </h3>
                 </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {types.map((t) => (
-                    <div
-                      key={t.id}
-                      className="flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-2xs"
-                    >
-                      <div className="flex flex-col gap-1">
-                        <span className="text-sm font-semibold text-foreground">{t.name}</span>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{t.fields?.length || 0} fields</span>
-                          <span>•</span>
-                          <span>{t.patterns?.length || 0} patterns</span>
+
+                {types.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-6 rounded-2xl border border-dashed border-border text-center bg-card/40">
+                    <Sparkles className="size-7 text-muted-foreground/60 mb-2" />
+                    <span className="text-xs font-medium text-foreground">No Custom Types Defined</span>
+                    <p className="text-[11px] text-muted-foreground max-w-sm mt-1">
+                      Create custom types here or type inline in BrainSpace: <br />
+                      <code className="text-primary font-mono text-[10px] bg-secondary/60 px-1.5 py-0.5 rounded">new type: Wine (vintage, rating)</code>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {types.map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-2xs"
+                      >
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-foreground">{t.name}</span>
+                            <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded font-mono">
+                              {t.id}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{t.fields?.length || 0} fields</span>
+                            <span>•</span>
+                            <span>{t.patterns?.length || 0} patterns</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteType(t.id)}
+                          className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-secondary transition-all"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Existing Built-in Standard Types Section */}
+              <div className="flex flex-col gap-4 pt-4 border-t border-border/50">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <ListFilter className="size-4 text-primary" />
+                      <span>Existing Standard Types ({CARD_INTENTS.length})</span>
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Intrinsically classified and rendered by BrainSpace with zero configuration.
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search standard types..."
+                    value={builtInSearch}
+                    onChange={(e) => setBuiltInSearch(e.target.value)}
+                    className="w-full sm:w-64 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {CARD_INTENTS.filter((intent) => {
+                    const def = registry[intent];
+                    if (!builtInSearch.trim()) return true;
+                    const q = builtInSearch.toLowerCase();
+                    return (
+                      def.label.toLowerCase().includes(q) ||
+                      intent.toLowerCase().includes(q) ||
+                      (def.description && def.description.toLowerCase().includes(q)) ||
+                      def.example.toLowerCase().includes(q)
+                    );
+                  }).map((intent) => {
+                    const def = registry[intent];
+                    const Icon = def.icon;
+                    return (
+                      <div
+                        key={intent}
+                        className="flex flex-col justify-between gap-2.5 rounded-xl border border-border/70 bg-card p-3.5 shadow-2xs hover:border-border transition-all"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground border border-border/40">
+                            <Icon className="size-4.5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-foreground">{def.label}</span>
+                              <span className="font-mono text-[10px] text-muted-foreground bg-secondary/80 px-1.5 py-0.5 rounded">
+                                {intent}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
+                              {def.description || "Interactive intelligent card type"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Example trigger prompt */}
+                        <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/40 px-2.5 py-1.5 border border-border/30 text-[11px]">
+                          <span className="text-muted-foreground truncate font-mono">
+                            <span className="text-primary/70 mr-1.5 select-none">ex:</span>
+                            {def.example}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => copyExample(def.example)}
+                            className="shrink-0 text-muted-foreground hover:text-foreground p-0.5 rounded transition-all"
+                            title="Copy example to clipboard"
+                          >
+                            {copiedExample === def.example ? (
+                              <Check className="size-3 text-emerald-500" />
+                            ) : (
+                              <Copy className="size-3" />
+                            )}
+                          </button>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => deleteType(t.id)}
-                        className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-secondary transition-all"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              )}
+              </div>
             </div>
           )}
 

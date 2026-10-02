@@ -91,6 +91,7 @@ const TONE_EDGE = {
 export const registry: Registry = {
   event: {
     label: "Event",
+    description: "Schedules meetings, meals, calls or gatherings with date, time and attendees",
     example: "dinner with priya friday 8pm",
     icon: CalendarDays,
     signals: ["eventMode", "recurring"],
@@ -100,6 +101,7 @@ export const registry: Registry = {
   },
   reminder: {
     label: "Reminder",
+    description: "Captures time-sensitive tasks and reminders with alert dates",
     example: "remind me to call mom tomorrow",
     icon: Bell,
     signals: ["urgency", "recurring"],
@@ -110,6 +112,7 @@ export const registry: Registry = {
   },
   todo: {
     label: "Checklist",
+    description: "Interactive checklists for groceries, shopping, and multi-item tasks",
     example: "buy milk, eggs, bread and coffee",
     icon: ListChecks,
     signals: ["isShoppingList", "urgency"],
@@ -121,6 +124,7 @@ export const registry: Registry = {
   },
   timer: {
     label: "Timer",
+    description: "Countdown timers, pomodoro focus sessions, and stopwatches",
     example: "25 min focus",
     icon: Timer,
     signals: ["timerKind"],
@@ -131,6 +135,7 @@ export const registry: Registry = {
   },
   habit: {
     label: "Habit",
+    description: "Recurring daily or weekly routines and habit trackers",
     example: "meditate every morning",
     icon: Sun,
     signals: [],
@@ -139,6 +144,7 @@ export const registry: Registry = {
   },
   color: {
     label: "Color",
+    description: "Color hex swatch preview, RGB values, and palette cards",
     example: "#ff6b35",
     icon: Palette,
     signals: ["colorMood"],
@@ -147,6 +153,7 @@ export const registry: Registry = {
   },
   split: {
     label: "Split",
+    description: "Splits bills, checks, and expenses evenly among groups",
     example: "split 2400 between 3",
     icon: Users,
     signals: [],
@@ -156,6 +163,7 @@ export const registry: Registry = {
   },
   expense: {
     label: "Expense",
+    description: "Logs expenses with amount, currency, and category tags",
     example: "spent 450 on uber",
     icon: Wallet,
     signals: ["expenseCategory"],
@@ -165,6 +173,7 @@ export const registry: Registry = {
   },
   convert: {
     label: "Convert",
+    description: "Converts units across distance, volume, mass, and temperature",
     example: "5 miles in km",
     icon: Ruler,
     signals: [],
@@ -176,6 +185,7 @@ export const registry: Registry = {
   },
   calc: {
     label: "Calculate",
+    description: "Evaluates math expressions, percentages, and formulas",
     example: "18% of 3450",
     icon: Calculator,
     signals: [],
@@ -184,6 +194,7 @@ export const registry: Registry = {
   },
   travel: {
     label: "Trip",
+    description: "Travel itineraries, flights, gates, seats, and trip planning",
     example: "flight to goa next weekend",
     icon: TRANSPORT_ICON.flight,
     signals: ["transport", "tripType"],
@@ -199,6 +210,7 @@ export const registry: Registry = {
   },
   poll: {
     label: "Poll",
+    description: "Quick polls with multiple options for group voting",
     example: "pizza or burgers for friday?",
     icon: Vote,
     signals: ["hasExplicitOptions"],
@@ -207,6 +219,7 @@ export const registry: Registry = {
   },
   contact: {
     label: "Contact",
+    description: "Saves person names, phone numbers, and email addresses",
     example: "rahul 98200 12345 rahul@mail.com",
     icon: Contact,
     signals: [],
@@ -215,6 +228,7 @@ export const registry: Registry = {
   },
   link: {
     label: "Bookmark",
+    description: "Visual web bookmark with URL, domain preview, and note",
     example: "https://vercel.com/blog check later",
     icon: Link2,
     signals: [],
@@ -223,6 +237,7 @@ export const registry: Registry = {
   },
   countdown: {
     label: "Countdown",
+    description: "Counts down days and weeks until events or milestones",
     example: "days until christmas",
     icon: CalendarClock,
     signals: [],
@@ -232,6 +247,7 @@ export const registry: Registry = {
   },
   timezone: {
     label: "Time zone",
+    description: "Converts times across global timezones and cities",
     example: "3pm pst in ist",
     icon: Globe,
     signals: [],
@@ -241,6 +257,7 @@ export const registry: Registry = {
   },
   random: {
     label: "Random",
+    description: "Rolls dice, flips coins, and picks random numbers",
     example: "roll 2d6",
     icon: Dices,
     signals: [],
@@ -249,6 +266,7 @@ export const registry: Registry = {
   },
   goal: {
     label: "Goal",
+    description: "Numeric progress tracking toward targets and milestones",
     example: "read 12 books this year, 4 done",
     icon: Target,
     signals: [],
@@ -257,6 +275,7 @@ export const registry: Registry = {
   },
   note: {
     label: "Note",
+    description: "Free-form thoughts, reflections, and general notes",
     example: "the city felt so quiet this morning",
     icon: StickyNote,
     signals: ["tone", "isQuestion"],
@@ -268,6 +287,7 @@ export const registry: Registry = {
   },
   book: {
     label: "Book",
+    description: "Books, reading lists, authors, page counts, and reviews",
     example: "1984 by George Orwell, 328 pages",
     icon: BookOpen,
     signals: [],
@@ -276,6 +296,7 @@ export const registry: Registry = {
   },
   recipe: {
     label: "Recipe",
+    description: "Cooking recipes with ingredients, prep time, and servings",
     example: "chicken tikka masala, serves 4",
     icon: ChefHat,
     signals: [],
@@ -284,6 +305,7 @@ export const registry: Registry = {
   },
   outfit: {
     label: "Outfit",
+    description: "Wardrobe styling, clothing combinations, and apparel items",
     example: "black linen shirt, olive chinos, white sneakers",
     icon: Shirt,
     signals: [],
@@ -292,6 +314,7 @@ export const registry: Registry = {
   },
   artwork: {
     label: "Artwork",
+    description: "Artworks, paintings, sculptures, medium, and museum pieces",
     example: "Starry Night by Vincent van Gogh (1889)",
     icon: ImageIcon,
     signals: [],
@@ -300,6 +323,7 @@ export const registry: Registry = {
   },
   movie: {
     label: "Movie",
+    description: "Films, cinema releases, directors, release years, and ratings",
     example: "Inception (2010) directed by Christopher Nolan",
     icon: Film,
     signals: [],
@@ -308,6 +332,7 @@ export const registry: Registry = {
   },
   music: {
     label: "Music",
+    description: "Songs, albums, artists, tracks, and music listening queues",
     example: "Bohemian Rhapsody by Queen",
     icon: MusicIcon,
     signals: [],
@@ -316,6 +341,7 @@ export const registry: Registry = {
   },
   place: {
     label: "Place",
+    description: "Venues, restaurants, cafes, shops, and mapped locations",
     example: "Blue Bottle Coffee, 315 Linden St",
     icon: MapPin,
     signals: [],
@@ -324,6 +350,7 @@ export const registry: Registry = {
   },
   idea: {
     label: "Idea",
+    description: "Brainstorms, startup concepts, tagged creative thoughts",
     example: "personal finance app that auto-categorizes brain dumps #startup",
     icon: Lightbulb,
     signals: [],
@@ -332,6 +359,7 @@ export const registry: Registry = {
   },
   quote: {
     label: "Quote",
+    description: "Memorable quotes with attribution and authors",
     example: "Simplicity is prerequisite for reliability — Edsger W. Dijkstra",
     icon: QuoteIcon,
     signals: [],

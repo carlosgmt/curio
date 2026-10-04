@@ -1,7 +1,7 @@
 services:
-  brainspace:
+  curio:
     build: .
-    container_name: brainspace
+    container_name: curio
     environment:
       DATABASE_PATH: /data/memory.db
       MEDIA_PATH: /data/media
@@ -18,7 +18,7 @@ services:
       - ./data:/data
       - ./litestream.yml:/etc/litestream.yml
     command: replicate
-    depends_on: [brainspace]
+    depends_on: [curio]
 
   whisper:
     profiles: ["voice"]

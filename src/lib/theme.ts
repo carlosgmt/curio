@@ -5,8 +5,8 @@ import { useState, useEffect } from "react";
 export type ColorMode = "light" | "dark" | "system";
 export type ColorPalette = "indigo" | "emerald" | "amber" | "violet" | "rose" | "slate" | "dynamic";
 
-const THEME_KEY = "brainspace:theme";
-const PALETTE_KEY = "brainspace:palette";
+const THEME_KEY = "curio:theme";
+const PALETTE_KEY = "curio:palette";
 
 export function applyTheme(mode: ColorMode, palette: ColorPalette) {
   if (typeof window === "undefined") return;

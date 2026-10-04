@@ -140,3 +140,80 @@ export async function classifyWithOllama(text: string, signal?: AbortSignal): Pr
     return mockClassify(text);
   }
 }
+
+export interface GemmaEnrichment {
+  category: "wine" | "book" | "place" | "recipe" | "media" | "idea" | "general";
+  cleanQuery: string;
+  summary?: string;
+  tags?: string[];
+  details?: Record<string, any>;
+}
+
+export async function enrichWithGemma(input: {
+  intent: string;
+  title: string;
+  text: string;
+}): Promise<GemmaEnrichment | null> {
+  const host = await getReachableHost();
+  if (!host) return null;
+
+  const prompt = `You are a semantic knowledge enricher for a personal note and curation app.
+Analyze this input and extract structured entity knowledge, clean search terms for web lookup, and tags.
+
+Card Intent: ${input.intent}
+Title: "${input.title}"
+Content: "${input.text}"
+
+Respond with ONLY valid JSON:
+{
+  "category": "wine" | "book" | "place" | "recipe" | "media" | "idea" | "general",
+  "cleanQuery": "canonical search phrase for Google/APIs (e.g. 'Vega Sicilia Unico 2012', 'Norwegian Wood Haruki Murakami', 'El Xampanyet Barcelona')",
+  "summary": "1 concise sentence description or tasting note",
+  "tags": ["2 to 4 lowercase tags"],
+  "details": {
+    // If wine: "winery", "vintage", "region", "grape", "tastingNotes", "pairings"
+    // If book: "author", "genre", "year"
+    // If place: "city", "country", "venueType"
+    // If recipe: "cuisine", "mainIngredients", "cookTime"
+    // If media: "creator", "year", "genre"
+    // If idea/general: "topic", "actionItem"
+  }
+}`;
+
+  try {
+    const res = await fetch(`${host}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gemma4:e4b",
+        prompt,
+        format: "json",
+        stream: false,
+        options: {
+          temperature: 0.1,
+          num_predict: 250,
+        },
+      }),
+      signal: AbortSignal.timeout(4500),
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const parsed = JSON.parse(data.response || "{}");
+    if (!parsed.cleanQuery && !parsed.summary && !parsed.category) return null;
+
+    return {
+      category: parsed.category || "general",
+      cleanQuery: parsed.cleanQuery || input.title || input.text,
+      summary: parsed.summary,
+      tags: Array.isArray(parsed.tags)
+        ? parsed.tags
+            .map((t: any) => String(t).toLowerCase().replace(/^#/, "").trim())
+            .filter(Boolean)
+        : [],
+      details: parsed.details || {},
+    };
+  } catch {
+    return null;
+  }
+}

@@ -124,6 +124,6 @@ attachmentRoutes.post("/share-target", async (c) => {
       .run(attachId, cardId, filename, mimeType, buffer.length, filePath);
   }
 
-  // Redirect back to main BrainSpace dashboard
+  // Redirect back to main Curio dashboard
   return c.redirect("/", 303);
 });

@@ -1,10 +1,10 @@
 import { Shapeshift } from "@/components/shapeshift/Shapeshift";
-import { BrainSpaceHeader } from "@/components/shapeshift/BrainSpaceHeader";
+import { CurioHeader } from "@/components/shapeshift/CurioHeader";
 
 export default function Home() {
   return (
     <>
-      <BrainSpaceHeader />
+      <CurioHeader />
       <Shapeshift />
     </>
   );

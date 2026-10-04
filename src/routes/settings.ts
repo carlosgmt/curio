@@ -50,7 +50,7 @@ settingsRoutes.get("/", async (c) => {
       totalCards,
     },
     app: {
-      name: "BrainSpace",
+      name: "Curio",
       version: "0.1.0",
     }
   });

@@ -17,7 +17,7 @@ export const savedItemSchema = z.object({
 });
 export type SavedItem = z.infer<typeof savedItemSchema>;
 
-const KEY = "morphe:saved:v2";
+const KEY = "curio:saved:v2";
 const EMPTY: SavedItem[] = [];
 let items: SavedItem[] | null = null;
 let ephemeral = false;

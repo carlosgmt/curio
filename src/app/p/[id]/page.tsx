@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     parsedData.ogImage;
 
   return {
-    title: `${card.title} — BrainSpace`,
+    title: `${card.title} — Curio`,
     description: card.rawText || card.title,
     openGraph: {
       title: card.title,
@@ -61,7 +61,7 @@ export default async function PublicCardPage({ params }: Props) {
           className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="size-3.5" />
-          <span>Back to BrainSpace</span>
+          <span>Back to Curio</span>
         </Link>
         <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
           <Sparkles className="size-3.5" />

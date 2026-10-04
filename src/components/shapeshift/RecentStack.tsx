@@ -505,7 +505,7 @@ export function RecentStack({
                   ? `No cards match "${searchQuery}"`
                   : activeList !== "all"
                   ? `No cards in ${activeList}`
-                  : "Your BrainSpace is empty. Type a thought or paste a brain dump above."}
+                  : "Your Curio is empty. Type a thought or paste a brain dump above."}
               </div>
             ) : (
               filteredItems.map((item, i) => {

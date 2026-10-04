@@ -9,24 +9,24 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"], dis
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "BrainSpace — Self-organizing memory & smart brain dump",
+  title: "Curio — Self-organizing memory & smart brain dump",
   description:
-    "Dump thoughts, tasks, books, recipes, and notes. BrainSpace transforms raw text into structured, auto-filed cards.",
+    "Dump thoughts, tasks, books, recipes, and notes. Curio transforms raw text into structured, auto-filed cards.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_SITE_URL ??
       (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000"),
   ),
   openGraph: {
-    title: "BrainSpace",
+    title: "Curio",
     description: "An input that becomes what you mean.",
     type: "website",
   },
-  twitter: { card: "summary_large_image", title: "BrainSpace", description: "An input that becomes what you mean." },
+  twitter: { card: "summary_large_image", title: "Curio", description: "An input that becomes what you mean." },
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "BrainSpace",
+    title: "Curio",
   },
 };
 
@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var m=localStorage.getItem("brainspace:theme")||"system";var p=localStorage.getItem("brainspace:palette")||"dynamic";var dark=m==="dark"||(m==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(dark)document.documentElement.classList.add("dark");document.documentElement.setAttribute("data-palette",p);}catch(e){}`,
+            __html: `try{var m=localStorage.getItem("curio:theme")||"system";var p=localStorage.getItem("curio:palette")||"dynamic";var dark=m==="dark"||(m==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(dark)document.documentElement.classList.add("dark");document.documentElement.setAttribute("data-palette",p);}catch(e){}`,
           }}
         />
       </head>

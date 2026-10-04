@@ -126,7 +126,7 @@ export async function classifyWithOpenRouter(text: string, signal?: AbortSignal)
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
         "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "BrainSpace",
+        "X-Title": "Curio",
       },
       body: JSON.stringify({
         model,

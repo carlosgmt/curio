@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Brain, Settings } from "lucide-react";
 
-export function BrainSpaceHeader() {
+export function CurioHeader() {
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-background/80 backdrop-blur-md border-b border-border/40">
       <div className="flex items-center gap-2">
@@ -11,7 +11,7 @@ export function BrainSpaceHeader() {
           <Brain className="size-4" />
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold tracking-tight text-foreground text-sm">BrainSpace</span>
+          <span className="font-semibold tracking-tight text-foreground text-sm">Curio</span>
         </div>
       </div>
 

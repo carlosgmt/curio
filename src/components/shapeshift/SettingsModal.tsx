@@ -217,7 +217,7 @@ export function SettingsModal({
         <DialogContent className="sm:max-w-[620px] p-0 overflow-hidden max-h-[85vh] flex flex-col">
           <div className="flex items-center gap-2 border-b border-border/50 px-6 py-4 bg-secondary/30">
             <Settings className="size-4.5 text-primary" />
-            <DialogTitle className="text-base font-semibold">BrainSpace Settings</DialogTitle>
+            <DialogTitle className="text-base font-semibold">Curio Settings</DialogTitle>
           </div>
 
           {/* Tabs header */}
@@ -569,7 +569,7 @@ export function SettingsModal({
                     <span className="text-xs font-semibold text-foreground">On-Device Intelligence (Pixel / Chrome)</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    BrainSpace can utilize in-browser AI running directly on your hardware without sending notes to the cloud.
+                    Curio can utilize in-browser AI running directly on your hardware without sending notes to the cloud.
                   </p>
 
                   <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-border/40 text-xs">

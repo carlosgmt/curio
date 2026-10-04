@@ -537,7 +537,7 @@ export function Shapeshift() {
         onTouchEnd={handleTouchEnd}
         className="mx-auto w-full max-w-3xl px-4 pt-6 pb-24 sm:pt-10 sm:px-6"
       >
-        <h1 className="sr-only">BrainSpace</h1>
+        <h1 className="sr-only">Curio</h1>
 
         {/* ── Mode Navigation Bar ── */}
         <div className="flex items-center justify-center mb-6 sm:mb-8">

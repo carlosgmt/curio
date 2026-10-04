@@ -235,7 +235,7 @@ export default function SettingsPage() {
             className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground shadow-2xs hover:bg-secondary hover:text-foreground transition-all"
           >
             <ArrowLeft className="size-3.5" />
-            <span>Back to BrainSpace</span>
+            <span>Back to Curio</span>
           </Link>
           <div className="h-4 w-px bg-border/60" />
           <h1 className="text-base font-semibold text-foreground">Settings</h1>
@@ -526,7 +526,7 @@ export default function SettingsPage() {
                 </div>
 
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  BrainSpace routes intent classification through OpenRouter using TypeSafe&apos;s Jev model. Enter your OpenRouter API key below.
+                  Curio routes intent classification through OpenRouter using TypeSafe&apos;s Jev model. Enter your OpenRouter API key below.
                 </p>
 
                 {/* API Key Form */}
@@ -636,7 +636,7 @@ export default function SettingsPage() {
                 </div>
 
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  BrainSpace connects to your home server Ollama instance at <code className="font-mono text-foreground bg-secondary px-1.5 py-0.5 rounded text-[11px]">{ollamaInfo?.host || "http://host.docker.internal:11434"}</code>. Uses local Google Gemma for private intent classification.
+                  Curio connects to your home server Ollama instance at <code className="font-mono text-foreground bg-secondary px-1.5 py-0.5 rounded text-[11px]">{ollamaInfo?.host || "http://host.docker.internal:11434"}</code>. Uses local Google Gemma for private intent classification.
                 </p>
 
                 <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-secondary/30 border border-border/50 text-xs">
@@ -727,7 +727,7 @@ export default function SettingsPage() {
                     Google ships Gemini Nano hardware acceleration on Pixel, but the developer Prompt API (<code className="text-primary font-mono text-[11px]">window.ai</code>) is currently an experimental preview restricted to <strong>Chrome Dev / Canary</strong> builds and Desktop Origin Trials. Standard <strong>Chrome Stable</strong> on Android does not expose those flags yet.
                   </p>
                   <p className="text-muted-foreground leading-relaxed">
-                    Your on-device <strong>Speech Dictation Engine</strong> works natively directly through Pixel hardware with instant speech-to-text. For card categorization, BrainSpace uses the ultra-fast local heuristic classifier (0.1ms) or your selected OpenRouter model above.
+                    Your on-device <strong>Speech Dictation Engine</strong> works natively directly through Pixel hardware with instant speech-to-text. For card categorization, Curio uses the ultra-fast local heuristic classifier (0.1ms) or your selected OpenRouter model above.
                   </p>
                 </div>
 
@@ -784,7 +784,7 @@ export default function SettingsPage() {
                     <Sparkles className="size-7 text-muted-foreground/60 mb-2" />
                     <span className="text-xs font-medium text-foreground">No Custom Types Defined</span>
                     <p className="text-[11px] text-muted-foreground max-w-sm mt-1">
-                      Create custom types here or type inline in BrainSpace: <br />
+                      Create custom types here or type inline in Curio: <br />
                       <code className="text-primary font-mono text-[10px] bg-secondary/60 px-1.5 py-0.5 rounded">new type: Wine (vintage, rating)</code>
                     </p>
                   </div>
@@ -830,7 +830,7 @@ export default function SettingsPage() {
                       <span>Existing Standard Types ({CARD_INTENTS.length})</span>
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Intrinsically classified and rendered by BrainSpace with zero configuration.
+                      Intrinsically classified and rendered by Curio with zero configuration.
                     </p>
                   </div>
                   <input

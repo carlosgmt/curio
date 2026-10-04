@@ -90,7 +90,7 @@ export async function enrichPlace(query: string): Promise<EnrichedMetadata | nul
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(clean)}&format=json&limit=1`,
       {
-        headers: { "User-Agent": "BrainSpace/1.0 (https://brainspace.local)" },
+        headers: { "User-Agent": "Curio/1.0 (https://curio.local)" },
         signal: AbortSignal.timeout(3500),
       }
     );
@@ -124,7 +124,7 @@ export async function enrichLink(url: string): Promise<EnrichedMetadata | null> 
     const favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
 
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; BrainSpaceBot/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; CurioBot/1.0)" },
       signal: AbortSignal.timeout(3500),
     });
     if (!res.ok) return { domain, favicon };

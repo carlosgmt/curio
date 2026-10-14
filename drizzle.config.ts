@@ -1,10 +1,10 @@
-import type { Config } from "drizzle-kit";
+import { defineConfig } from "drizzle-kit";
 
-export default {
+export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
-  dialect: "sqlite",
+  dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_PATH ?? "./data/memory.db",
+    url: process.env.DATABASE_URL ?? "postgres://curio:curio_secret@localhost:5432/curio",
   },
-} satisfies Config;
+});

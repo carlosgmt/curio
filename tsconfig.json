@@ -31,5 +31,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "_archive_go"]
+  "exclude": ["node_modules", "_archive_go", "_archive_morphe"]
 }

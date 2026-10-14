@@ -287,7 +287,7 @@ export async function executeIngestionCascade(params: {
       ucpSkuId,
       priceCents,
       currency: "USD",
-      priceVerifiedAt: priceCents ? new Date() : null,
+      priceVerifiedAt: priceCents ? new Date().toISOString() : null,
     })
     .returning();
 

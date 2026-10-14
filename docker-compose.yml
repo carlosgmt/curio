@@ -1,37 +1,25 @@
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: curio-postgres
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-curio}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-curio_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-curio}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U curio -d curio"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   curio:
     build: .
     container_name: curio
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://curio:curio_secret@postgres:5432/curio}
+      DATABASE_PATH: /data/curio.db
       MEDIA_PATH: /data/media
       PORT: "3000"
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
     volumes: ["./data:/data"]
     ports: ["3000:3000"]
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
+
+  litestream:
+    image: litestream/litestream
+    profiles: ["backup"]
+    volumes:
+      - ./data:/data
+      - ./litestream.yml:/etc/litestream.yml
+    command: replicate
+    depends_on: [curio]
 
   whisper:
     profiles: ["voice"]
@@ -43,7 +31,3 @@ services:
     image: ollama/ollama
     volumes: ["./models:/root/.ollama"]
     ports: ["11434:11434"]
-
-volumes:
-  postgres_data:
-    driver: local

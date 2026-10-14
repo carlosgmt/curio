@@ -114,6 +114,19 @@ sqlite.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_list_items_list_order ON list_items (list_id, position_index);
+
+  CREATE TABLE IF NOT EXISTS entry_connections (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    source_save_id TEXT NOT NULL REFERENCES user_saves(id) ON DELETE CASCADE,
+    target_save_id TEXT NOT NULL REFERENCES user_saves(id) ON DELETE CASCADE,
+    connection_type TEXT NOT NULL,
+    context_note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_entry_connections_user ON entry_connections (user_id);
+  CREATE INDEX IF NOT EXISTS idx_entry_connections_pair ON entry_connections (source_save_id, target_save_id);
 `);
 
 export const db = drizzle(sqlite, { schema });

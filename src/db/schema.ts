@@ -163,6 +163,28 @@ export const listItems = sqliteTable(
   ]
 );
 
+// 7. Synaptic Memory Edges (Element-to-Element Relationships & Pairings)
+export const entryConnections = sqliteTable(
+  "entry_connections",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").references(() => users.id).notNull(),
+    sourceSaveId: text("source_save_id").references(() => userSaves.id).notNull(),
+    targetSaveId: text("target_save_id").references(() => userSaves.id).notNull(),
+    connectionType: text("connection_type").notNull(), // PAIRED_WITH, SOUNDTRACK_TO, WORN_ON, INSPIRED_BY, CONSUMED_AT
+    contextNote: text("context_note"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    index("idx_entry_connections_user").on(table.userId),
+    index("idx_entry_connections_pair").on(table.sourceSaveId, table.targetSaveId),
+  ]
+);
+
 // Inferred TypeScript types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -173,3 +195,5 @@ export type UserSave = typeof userSaves.$inferSelect;
 export type NewUserSave = typeof userSaves.$inferInsert;
 export type SmartList = typeof smartLists.$inferSelect;
 export type ListItem = typeof listItems.$inferSelect;
+export type EntryConnection = typeof entryConnections.$inferSelect;
+export type NewEntryConnection = typeof entryConnections.$inferInsert;

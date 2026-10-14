@@ -8,6 +8,13 @@
       "when": 1791992888900,
       "tag": "0000_broad_joshua_kane",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791995202238,
+      "tag": "0001_fearless_pandemic",
+      "breakpoints": true
     }
   ]
 }

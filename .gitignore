@@ -9,3 +9,5 @@ dist/
 .env
 *.tsbuildinfo
 .DS_Store
+docs
+docs_drive

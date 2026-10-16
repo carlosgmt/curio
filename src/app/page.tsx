@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Omnibox } from "@/components/shapeshift/Omnibox";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import { ImporterModal } from "@/components/importers/ImporterModal";
+import { PairingModal } from "@/components/connections/PairingModal";
 import {
   Sparkles,
   Layers,
@@ -36,6 +37,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [isImporterOpen, setIsImporterOpen] = useState(false);
+  const [pairingCard, setPairingCard] = useState<CardData | null>(null);
+  const [isPairingOpen, setIsPairingOpen] = useState(false);
 
   const fetchItems = async () => {
     try {
@@ -243,7 +246,12 @@ export default function Home() {
               <PolymorphicCard
                 key={item.save.id}
                 item={item}
+                onConnect={(card) => {
+                  setPairingCard(card);
+                  setIsPairingOpen(true);
+                }}
                 onSwapped={() => fetchItems()}
+                onUnlink={() => fetchItems()}
               />
             ))}
           </div>
@@ -256,6 +264,20 @@ export default function Home() {
         onClose={() => setIsImporterOpen(false)}
         onImported={() => {
           setIsImporterOpen(false);
+          fetchItems();
+        }}
+      />
+
+      {/* Synaptic Memory Edge Pairing Modal */}
+      <PairingModal
+        sourceCard={pairingCard}
+        availableCards={items}
+        isOpen={isPairingOpen}
+        onClose={() => {
+          setIsPairingOpen(false);
+          setPairingCard(null);
+        }}
+        onPaired={() => {
           fetchItems();
         }}
       />

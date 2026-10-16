@@ -1,8 +1,9 @@
 import { createHash } from "crypto";
-import { db, users, globalEntities, userSaves, type User, type GlobalEntity, type UserSave } from "@/db";
+import { db, users, globalEntities, userSaves, entitySources, type User, type GlobalEntity, type UserSave } from "@/db";
 import { eq, or } from "drizzle-orm";
 import { classifyPrivacyAndModality, type PrivacyClassificationResult } from "../router/privacy";
 import type { CandidateFallback } from "./disambiguation";
+import { enrichCaptureInput } from "../enrichment/dispatcher";
 
 export interface IngestionResult {
   status: "created" | "existing";
@@ -251,18 +252,18 @@ export async function executeIngestionCascade(params: {
     };
   }
 
-  // STEP 3 & 4: Structured Schema Extraction & Global Entity Creation
+  // STEP 3 & 4: Live Structured Enrichment & Global Entity Creation
   let heroImageUrl: string | null = null;
   let priceCents: number | null = null;
   let ucpSkuId: string | null = null;
 
   if (primary.coreType === "BOOK") {
     heroImageUrl = "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80";
-    priceCents = 1899; // $18.99
+    priceCents = 1899;
     ucpSkuId = "ucp_sku_dune_1965_book";
   } else if (primary.coreType === "PRODUCT") {
     heroImageUrl = "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80";
-    priceCents = 34900; // $349.00
+    priceCents = 34900;
     ucpSkuId = "ucp_sku_mode_sonnet";
   } else if (primary.coreType === "PLACE") {
     heroImageUrl = "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=600&q=80";
@@ -289,39 +290,81 @@ export async function executeIngestionCascade(params: {
     typePath = "/place/transit_trail";
   }
 
+  // Fetch live external metadata if available
+  let enrichment;
+  try {
+    enrichment = await enrichCaptureInput(input, {
+      detectedType: privacy.detectedType,
+    });
+  } catch {
+    enrichment = null;
+  }
+
+  const finalTitle = enrichment?.title || primary.title;
+  const finalCanonicalUrl = enrichment?.canonicalUrl || primary.url;
+  const finalSummary = enrichment?.summary || primary.snippet;
+  const finalCoreType = enrichment?.coreType || primary.coreType;
+  const finalTypePath = enrichment?.typePath || typePath;
+  const finalHeroImage = enrichment?.heroImageUrl || heroImageUrl;
+  const finalPriceCents = enrichment?.priceCents ?? priceCents;
+  const finalExternalId = enrichment?.canonicalExternalId;
+  const finalCreator = enrichment?.brandOrCreator;
+
   const [newEntity] = await db
     .insert(globalEntities)
     .values({
       urlHash,
       entityKey,
-      canonicalUrl: primary.url,
-      coreType: primary.coreType,
-      typePath,
-      title: primary.title,
-      summary: primary.snippet,
-      heroImageUrl,
+      canonicalUrl: finalCanonicalUrl,
+      coreType: finalCoreType,
+      typePath: finalTypePath,
+      canonicalExternalId: finalExternalId,
+      brandOrCreator: finalCreator,
+      title: finalTitle,
+      summary: finalSummary,
+      heroImageUrl: finalHeroImage,
       coreStructuredData: {
         rawQuery: input,
         extractedAt: new Date().toISOString(),
-        provenance: primary.url,
+        provenance: finalCanonicalUrl,
+        ...(enrichment?.coreStructuredData || {}),
       },
       extendedAttributes: {},
       ucpSkuId,
-      priceCents,
-      currency: "USD",
-      priceVerifiedAt: priceCents ? new Date().toISOString() : null,
+      priceCents: finalPriceCents,
+      currency: enrichment?.currency || "USD",
+      priceVerifiedAt: finalPriceCents ? new Date().toISOString() : null,
     })
     .returning();
+
+  let preferredSourceId: string | null = null;
+  if (enrichment?.primarySource) {
+    const { urlHash: sourceHash } = generateEntityKey(enrichment.primarySource.sourceUrl);
+    const [source] = await db
+      .insert(entitySources)
+      .values({
+        entityId: newEntity.id,
+        sellerName: enrichment.primarySource.sellerName,
+        sourceUrl: enrichment.primarySource.sourceUrl,
+        urlHash: sourceHash,
+        priceCents: enrichment.primarySource.priceCents,
+        currency: enrichment.primarySource.currency || "USD",
+        inStock: true,
+      })
+      .returning();
+    preferredSourceId = source.id;
+  }
 
   const [save] = await db
     .insert(userSaves)
     .values({
       userId: user.id,
       entityId: newEntity.id,
-      typePath,
+      typePath: finalTypePath,
+      preferredSourceId,
       isPrivateMemo: false,
       candidateFallbacks: runnerUps,
-      autoTags: [newEntity.coreType.toLowerCase(), typePath.split("/").pop() || "captured"],
+      autoTags: [newEntity.coreType.toLowerCase(), finalTypePath.split("/").pop() || "captured"],
       enrichmentStatus: "ENRICHED",
       visibility: "PRIVATE",
     })

@@ -9,6 +9,7 @@ import { QuotaIndicator } from "@/components/shapeshift/QuotaIndicator";
 import { ListTabsBar } from "@/components/lists/ListTabsBar";
 import { CreateListModal } from "@/components/lists/CreateListModal";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
+import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import type { SmartList } from "@/db";
 import type { ListWithSections } from "@/lib/lists/service";
 import {
@@ -49,6 +50,7 @@ export default function Home() {
   const [activeListSlug, setActiveListSlug] = useState<string | null>(null);
   const [activeListDetails, setActiveListDetails] = useState<ListWithSections | null>(null);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
 
   const fetchItems = async () => {
     try {
@@ -310,6 +312,7 @@ export default function Home() {
                   fetchItems();
                   fetchLists();
                 }}
+                onCardClick={(card) => setSelectedCard(card)}
               />
             ) : (
               <div className="text-center py-20 text-neutral-400 text-sm">
@@ -358,6 +361,7 @@ export default function Home() {
                   <PolymorphicCard
                     key={item.save.id}
                     item={item}
+                    onCardClick={(card) => setSelectedCard(card)}
                     onConnect={(card) => {
                       setPairingCard(card);
                       setIsPairingOpen(true);
@@ -418,6 +422,33 @@ export default function Home() {
         onCreated={(newList) => {
           fetchLists();
           setActiveListSlug(newList.slug);
+        }}
+      />
+
+      {/* Deep Inspection & Cultural Mode Lightbox */}
+      <CardLightboxModal
+        card={selectedCard}
+        isOpen={Boolean(selectedCard)}
+        onClose={() => setSelectedCard(null)}
+        onCardUpdated={(updatedSave) => {
+          fetchItems();
+          if (activeListSlug) fetchLists();
+          setSelectedCard((prev) =>
+            prev && prev.save.id === updatedSave?.id
+              ? {
+                  ...prev,
+                  save: {
+                    ...prev.save,
+                    ...updatedSave,
+                  },
+                }
+              : prev
+          );
+        }}
+        onCardDeleted={() => {
+          setSelectedCard(null);
+          fetchItems();
+          if (activeListSlug) fetchLists();
         }}
       />
     </main>

@@ -129,7 +129,10 @@ export function CardFooterWaterfall({
       {onUtilityClick ? (
         <button
           type="button"
-          onClick={onUtilityClick}
+          onClick={(e) => {
+            e.stopPropagation();
+            onUtilityClick();
+          }}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition cursor-pointer"
         >
           {utilityIcon}
@@ -140,6 +143,7 @@ export function CardFooterWaterfall({
           href={utilityHref}
           target="_blank"
           rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition cursor-pointer"
         >
           {utilityIcon}
@@ -152,6 +156,7 @@ export function CardFooterWaterfall({
         href={outboundUrl}
         target="_blank"
         rel="noreferrer"
+        onClick={(e) => e.stopPropagation()}
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-medium shadow-2xs transition active:scale-95 cursor-pointer text-xs shrink-0 ${
           isUcp
             ? "bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600"

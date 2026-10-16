@@ -12,6 +12,7 @@ export interface SectionGroupViewProps {
   onUnlink?: (connectionId: string) => void;
   onAddToList?: (saveId: string) => void;
   onCardUpdated?: () => void;
+  onCardClick?: (card: CardData) => void;
 }
 
 export function SectionGroupView({
@@ -21,6 +22,7 @@ export function SectionGroupView({
   onUnlink,
   onAddToList,
   onCardUpdated,
+  onCardClick,
 }: SectionGroupViewProps) {
   if (sections.length === 0) {
     return (
@@ -93,6 +95,7 @@ export function SectionGroupView({
                         onSwapped={onSwapped}
                         onUnlink={onUnlink}
                         onAddToList={onAddToList}
+                        onCardClick={onCardClick}
                       />
                     </div>
                   </div>

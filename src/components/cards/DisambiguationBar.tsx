@@ -73,7 +73,10 @@ export function DisambiguationBar({
             <button
               key={cand.url}
               type="button"
-              onClick={() => handleSwap(cand)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSwap(cand);
+              }}
               disabled={Boolean(isSwapping)}
               title={cand.snippet}
               className={`group flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all text-left ${

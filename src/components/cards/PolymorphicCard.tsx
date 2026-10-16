@@ -54,6 +54,7 @@ export interface PolymorphicCardProps {
   onSwapped?: (item: CardData) => void;
   onCustomFieldsUpdated?: (saveId: string, customValues: Record<string, unknown>) => void;
   onAddToList?: (saveId: string) => void;
+  onCardClick?: (item: CardData) => void;
 }
 
 export function PolymorphicCard({
@@ -64,6 +65,7 @@ export function PolymorphicCard({
   onSwapped,
   onCustomFieldsUpdated,
   onAddToList,
+  onCardClick,
 }: PolymorphicCardProps) {
   const { save, entity, primarySource } = item;
   const [internalConnections, setInternalConnections] = useState<ConnectedItem[]>(item.connections || []);
@@ -304,7 +306,10 @@ export function PolymorphicCard({
       )}
 
       {/* Silhouette Card Body */}
-      <div className="flex-1">
+      <div
+        className={`flex-1 ${onCardClick ? "cursor-pointer" : ""}`}
+        onClick={() => onCardClick?.(item)}
+      >
         {renderSilhouette()}
       </div>
 

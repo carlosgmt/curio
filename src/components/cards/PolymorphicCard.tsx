@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Link2 } from "lucide-react";
+import { Link2, FolderPlus } from "lucide-react";
 import { VinylDiscCard } from "./silhouettes/VinylDiscCard";
 import { MoviePosterCard } from "./silhouettes/MoviePosterCard";
 import { BookJacketCard } from "./silhouettes/BookJacketCard";
@@ -12,6 +12,7 @@ import { MapPassCard } from "./silhouettes/MapPassCard";
 import { PrivateMemoCard } from "./silhouettes/PrivateMemoCard";
 import { SynapsePill } from "../connections/SynapsePill";
 import { CustomFieldsSection } from "./CustomFieldsSection";
+import { AddToListPopover } from "../lists/AddToListPopover";
 import type { CandidateFallback } from "./DisambiguationBar";
 import type { ConnectedItem } from "@/lib/connections/service";
 
@@ -21,7 +22,7 @@ export interface CardData {
     isPrivateMemo: boolean;
     privateTitle?: string | null;
     personalNotes?: string | null;
-    userCustomValues?: Record<string, unknown> | null;
+    userCustomValues?: any;
     candidateFallbacks?: CandidateFallback[] | null;
     typePath?: string | null;
     autoTags?: string[] | null;
@@ -52,6 +53,7 @@ export interface PolymorphicCardProps {
   onUnlink?: (connectionId: string) => void;
   onSwapped?: (item: CardData) => void;
   onCustomFieldsUpdated?: (saveId: string, customValues: Record<string, unknown>) => void;
+  onAddToList?: (saveId: string) => void;
 }
 
 export function PolymorphicCard({
@@ -61,9 +63,11 @@ export function PolymorphicCard({
   onUnlink,
   onSwapped,
   onCustomFieldsUpdated,
+  onAddToList,
 }: PolymorphicCardProps) {
   const { save, entity, primarySource } = item;
   const [internalConnections, setInternalConnections] = useState<ConnectedItem[]>(item.connections || []);
+  const [isAddToListOpen, setIsAddToListOpen] = useState(false);
 
   useEffect(() => {
     if (propConnections !== undefined) {
@@ -262,20 +266,41 @@ export function PolymorphicCard({
       id={`save-${save.id}`}
       className="group/curio-card relative flex flex-col h-full transition-all duration-200"
     >
-      {/* Quick Pair action button */}
-      {!save.isPrivateMemo && onConnect && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onConnect(item);
-          }}
-          className="absolute top-3 right-3 z-30 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-900/80 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-md border border-white/20 dark:border-neutral-800 transition opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90 cursor-pointer"
-          title="Establish Synaptic Pair"
-        >
-          <Link2 className="w-3 h-3 text-neutral-300 dark:text-neutral-700" />
-          <span>Pair</span>
-        </button>
+      {/* Quick Action Toolbar (Board + Pair) */}
+      {!save.isPrivateMemo && (
+        <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90 transition">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onAddToList) {
+                onAddToList(save.id);
+              } else {
+                setIsAddToListOpen(true);
+              }
+            }}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-900/80 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-md border border-white/20 dark:border-neutral-800 transition cursor-pointer"
+            title="Add to Curated Board"
+          >
+            <FolderPlus className="w-3 h-3 text-neutral-300 dark:text-neutral-700" />
+            <span>Board</span>
+          </button>
+
+          {onConnect && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConnect(item);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-900/80 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-md border border-white/20 dark:border-neutral-800 transition cursor-pointer"
+              title="Establish Synaptic Pair"
+            >
+              <Link2 className="w-3 h-3 text-neutral-300 dark:text-neutral-700" />
+              <span>Pair</span>
+            </button>
+          )}
+        </div>
       )}
 
       {/* Silhouette Card Body */}
@@ -330,6 +355,13 @@ export function PolymorphicCard({
           )}
         </div>
       )}
+
+      {/* Add To List / Curated Board Popover */}
+      <AddToListPopover
+        saveId={save.id}
+        isOpen={isAddToListOpen}
+        onClose={() => setIsAddToListOpen(false)}
+      />
     </div>
   );
 }

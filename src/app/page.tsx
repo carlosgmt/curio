@@ -6,6 +6,11 @@ import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCa
 import { ImporterModal } from "@/components/importers/ImporterModal";
 import { PairingModal } from "@/components/connections/PairingModal";
 import { QuotaIndicator } from "@/components/shapeshift/QuotaIndicator";
+import { ListTabsBar } from "@/components/lists/ListTabsBar";
+import { CreateListModal } from "@/components/lists/CreateListModal";
+import { SectionGroupView } from "@/components/lists/SectionGroupView";
+import type { SmartList } from "@/db";
+import type { ListWithSections } from "@/lib/lists/service";
 import {
   Sparkles,
   Layers,
@@ -40,6 +45,10 @@ export default function Home() {
   const [isImporterOpen, setIsImporterOpen] = useState(false);
   const [pairingCard, setPairingCard] = useState<CardData | null>(null);
   const [isPairingOpen, setIsPairingOpen] = useState(false);
+  const [lists, setLists] = useState<Array<SmartList & { itemCount: number }>>([]);
+  const [activeListSlug, setActiveListSlug] = useState<string | null>(null);
+  const [activeListDetails, setActiveListDetails] = useState<ListWithSections | null>(null);
+  const [isCreateListOpen, setIsCreateListOpen] = useState(false);
 
   const fetchItems = async () => {
     try {
@@ -55,9 +64,42 @@ export default function Home() {
     }
   };
 
+  const fetchLists = async () => {
+    try {
+      const res = await fetch("/api/v1/lists");
+      if (res.ok) {
+        const data = await res.json();
+        setLists(data.lists || []);
+      }
+    } catch (err) {
+      console.error("Failed to load lists:", err);
+    }
+  };
+
   useEffect(() => {
     fetchItems();
+    fetchLists();
   }, []);
+
+  useEffect(() => {
+    if (!activeListSlug) {
+      setActiveListDetails(null);
+      return;
+    }
+    let isMounted = true;
+    fetch(`/api/v1/lists/${activeListSlug}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (isMounted && data?.list) {
+          setActiveListDetails(data);
+        }
+      })
+      .catch((err) => console.error("Failed to load list details:", err));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeListSlug]);
 
   const handleCaptured = (result: any) => {
     if (result.save) {
@@ -214,68 +256,133 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Archetype Filter Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-4 mb-8 scrollbar-none">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer ${
-                activeTab === tab.id
-                  ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
-                  : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
-              }`}
-            >
-              {tab.icon}
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </div>
+        {/* Curated Boards & Smart Lists Tabs Bar */}
+        <ListTabsBar
+          lists={lists}
+          activeListSlug={activeListSlug}
+          totalAllSavesCount={items.length}
+          onSelectList={setActiveListSlug}
+          onCreateListClick={() => setIsCreateListOpen(true)}
+        />
 
-        {/* Feed Grid */}
-        {loading ? (
-          <div className="text-center py-20 text-neutral-400 text-sm">
-            Loading your taste graph...
-          </div>
-        ) : filteredItems.length === 0 ? (
-          <div className="text-center py-20 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl p-8">
-            <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
-              No items in this category yet.
-            </p>
-            <p className="text-neutral-400 text-xs max-w-sm mx-auto">
-              Capture a new thought above or import a CSV export from Letterboxd or Goodreads to seed your library.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredItems.map((item) => (
-              <PolymorphicCard
-                key={item.save.id}
-                item={item}
+        {/* Content View: Board View vs Taste Stream Feed */}
+        {activeListSlug !== null ? (
+          <div>
+            {/* Board Header details */}
+            {activeListDetails && (
+              <div className="mb-8 p-6 rounded-3xl bg-neutral-100/60 dark:bg-neutral-900/40 border border-neutral-200/80 dark:border-neutral-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-bold font-serif text-neutral-900 dark:text-neutral-100">
+                      {activeListDetails.list.title}
+                    </h2>
+                    {activeListDetails.list.description && (
+                      <p className="text-xs text-neutral-500 mt-1 max-w-xl">
+                        {activeListDetails.list.description}
+                      </p>
+                    )}
+                  </div>
+                  <a
+                    href={`/list/${activeListDetails.list.slug}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 self-start sm:self-auto transition"
+                  >
+                    <span>View Public Board ↗</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* Section Group View */}
+            {activeListDetails ? (
+              <SectionGroupView
+                sections={activeListDetails.sections}
                 onConnect={(card) => {
                   setPairingCard(card);
                   setIsPairingOpen(true);
                 }}
-                onSwapped={() => fetchItems()}
-                onUnlink={() => fetchItems()}
-                onCustomFieldsUpdated={(saveId, updatedValues) => {
-                  setItems((prev) =>
-                    prev.map((it) =>
-                      it.save.id === saveId
-                        ? {
-                            ...it,
-                            save: {
-                              ...it.save,
-                              userCustomValues: updatedValues,
-                            },
-                          }
-                        : it
-                    )
-                  );
+                onSwapped={() => {
+                  fetchItems();
+                  fetchLists();
+                }}
+                onUnlink={() => {
+                  fetchItems();
+                  fetchLists();
                 }}
               />
-            ))}
+            ) : (
+              <div className="text-center py-20 text-neutral-400 text-sm">
+                Loading board...
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            {/* Archetype Filter Tabs */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-4 mb-8 scrollbar-none">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer ${
+                    activeTab === tab.id
+                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                      : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+                  }`}
+                >
+                  {tab.icon}
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Feed Grid */}
+            {loading ? (
+              <div className="text-center py-20 text-neutral-400 text-sm">
+                Loading your taste graph...
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="text-center py-20 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl p-8">
+                <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
+                  No items in this category yet.
+                </p>
+                <p className="text-neutral-400 text-xs max-w-sm mx-auto">
+                  Capture a new thought above or import a CSV export from Letterboxd or Goodreads to seed your library.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredItems.map((item) => (
+                  <PolymorphicCard
+                    key={item.save.id}
+                    item={item}
+                    onConnect={(card) => {
+                      setPairingCard(card);
+                      setIsPairingOpen(true);
+                    }}
+                    onSwapped={() => fetchItems()}
+                    onUnlink={() => fetchItems()}
+                    onCustomFieldsUpdated={(saveId, updatedValues) => {
+                      setItems((prev) =>
+                        prev.map((it) =>
+                          it.save.id === saveId
+                            ? {
+                                ...it,
+                                save: {
+                                  ...it.save,
+                                  userCustomValues: updatedValues,
+                                },
+                              }
+                            : it
+                        )
+                      );
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -301,6 +408,16 @@ export default function Home() {
         }}
         onPaired={() => {
           fetchItems();
+        }}
+      />
+
+      {/* Curated Board Creation Modal */}
+      <CreateListModal
+        isOpen={isCreateListOpen}
+        onClose={() => setIsCreateListOpen(false)}
+        onCreated={(newList) => {
+          fetchLists();
+          setActiveListSlug(newList.slug);
         }}
       />
     </main>

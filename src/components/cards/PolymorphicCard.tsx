@@ -11,6 +11,7 @@ import { RecipeIndexCard } from "./silhouettes/RecipeIndexCard";
 import { MapPassCard } from "./silhouettes/MapPassCard";
 import { PrivateMemoCard } from "./silhouettes/PrivateMemoCard";
 import { SynapsePill } from "../connections/SynapsePill";
+import { CustomFieldsSection } from "./CustomFieldsSection";
 import type { CandidateFallback } from "./DisambiguationBar";
 import type { ConnectedItem } from "@/lib/connections/service";
 
@@ -20,6 +21,7 @@ export interface CardData {
     isPrivateMemo: boolean;
     privateTitle?: string | null;
     personalNotes?: string | null;
+    userCustomValues?: Record<string, unknown> | null;
     candidateFallbacks?: CandidateFallback[] | null;
     typePath?: string | null;
     autoTags?: string[] | null;
@@ -49,6 +51,7 @@ export interface PolymorphicCardProps {
   onConnect?: (item: CardData) => void;
   onUnlink?: (connectionId: string) => void;
   onSwapped?: (item: CardData) => void;
+  onCustomFieldsUpdated?: (saveId: string, customValues: Record<string, unknown>) => void;
 }
 
 export function PolymorphicCard({
@@ -57,6 +60,7 @@ export function PolymorphicCard({
   onConnect,
   onUnlink,
   onSwapped,
+  onCustomFieldsUpdated,
 }: PolymorphicCardProps) {
   const { save, entity, primarySource } = item;
   const [internalConnections, setInternalConnections] = useState<ConnectedItem[]>(item.connections || []);
@@ -278,6 +282,20 @@ export function PolymorphicCard({
       <div className="flex-1">
         {renderSilhouette()}
       </div>
+
+      {/* Curio Learns: Custom Attributes & Consensus Badges */}
+      {!save.isPrivateMemo && (
+        <div className="px-1 mt-1.5">
+          <CustomFieldsSection
+            saveId={save.id}
+            userCustomValues={save.userCustomValues}
+            extendedAttributes={entity?.extendedAttributes}
+            onUpdated={(updatedValues) => {
+              onCustomFieldsUpdated?.(save.id, updatedValues);
+            }}
+          />
+        </div>
+      )}
 
       {/* Synaptic Memory Edge Connections */}
       {displayedConnections.length > 0 && (

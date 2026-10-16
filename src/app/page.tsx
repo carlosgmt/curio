@@ -5,6 +5,7 @@ import { Omnibox } from "@/components/shapeshift/Omnibox";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import { ImporterModal } from "@/components/importers/ImporterModal";
 import { PairingModal } from "@/components/connections/PairingModal";
+import { QuotaIndicator } from "@/components/shapeshift/QuotaIndicator";
 import {
   Sparkles,
   Layers,
@@ -150,17 +151,23 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-12 px-4 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="max-w-4xl mx-auto text-center mb-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-200/60 dark:bg-neutral-800/60 text-neutral-700 dark:text-neutral-300 text-xs font-semibold tracking-wide uppercase mb-4">
-          <Sparkles className="w-3.5 h-3.5 text-neutral-900 dark:text-neutral-100" />
-          Autonomous Memory & Taste Graph • PRD v3.2
+      <div className="max-w-4xl mx-auto mb-10">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-200/60 dark:bg-neutral-800/60 text-neutral-700 dark:text-neutral-300 text-xs font-semibold tracking-wide uppercase">
+            <Sparkles className="w-3.5 h-3.5 text-neutral-900 dark:text-neutral-100" />
+            Autonomous Memory & Taste Graph • PRD v3.2
+          </div>
+          <QuotaIndicator />
         </div>
-        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-50 mb-3 font-serif">
-          Curio
-        </h1>
-        <p className="text-base sm:text-lg text-neutral-600 dark:text-neutral-400 max-w-xl mx-auto">
-          Capture at Keep speed. Curate with Pinterest elegance. Engineered for Agents.
-        </p>
+
+        <div className="text-center">
+          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-50 mb-3 font-serif">
+            Curio
+          </h1>
+          <p className="text-base sm:text-lg text-neutral-600 dark:text-neutral-400 max-w-xl mx-auto">
+            Capture at Keep speed. Curate with Pinterest elegance. Engineered for Agents.
+          </p>
+        </div>
       </div>
 
       {/* Omnibox Universal Capture */}
@@ -252,6 +259,21 @@ export default function Home() {
                 }}
                 onSwapped={() => fetchItems()}
                 onUnlink={() => fetchItems()}
+                onCustomFieldsUpdated={(saveId, updatedValues) => {
+                  setItems((prev) =>
+                    prev.map((it) =>
+                      it.save.id === saveId
+                        ? {
+                            ...it,
+                            save: {
+                              ...it.save,
+                              userCustomValues: updatedValues,
+                            },
+                          }
+                        : it
+                    )
+                  );
+                }}
               />
             ))}
           </div>

@@ -29,22 +29,37 @@ export const users = sqliteTable("users", {
     .default(sql`(datetime('now'))`),
 });
 
-// 2. Curio Types & Custom Schemas ("Curio Learns")
-export const curioTypes = sqliteTable("curio_types", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id").references(() => users.id),
-  name: text("name").notNull(),
-  jsonSchema: text("json_schema", { mode: "json" }).notNull(),
-  publicFieldKeys: text("public_field_keys", { mode: "json" }).$type<string[]>().default([]).notNull(),
-  extractionPrompt: text("extraction_prompt"),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-});
+// 2. Curio Types & Hierarchical Type Ontology (PRD v3.2)
+export const curioTypes = sqliteTable(
+  "curio_types",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    parentTypeId: text("parent_type_id"),
+    userId: text("user_id").references(() => users.id),
+    name: text("name").notNull(),
+    typePath: text("type_path").notNull().unique(), // e.g. /media/film, /product/book, /media/music/vinyl
+    rootArchetype: text("root_archetype").notNull(), // PRODUCT, PLACE, MEDIA, ARTICLE, PRIVATE_MEMO, CULINARY
+    defaultSilhouette: text("default_silhouette").notNull(), // circle, tall_portrait, book_jacket, landscape_label, art_frame, recipe_card, map_pass, private_memo
+    identityRules: text("identity_rules", { mode: "json" }).$type<{
+      hardExternalIdKeys?: string[];
+      fingerprintFields?: string[];
+    }>(),
+    jsonSchema: text("json_schema", { mode: "json" }).notNull(),
+    publicFieldKeys: text("public_field_keys", { mode: "json" }).$type<string[]>().default([]).notNull(),
+    extractionPrompt: text("extraction_prompt"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    index("idx_curio_types_parent").on(table.parentTypeId),
+    index("idx_curio_types_path").on(table.typePath),
+  ]
+);
 
-// 3. Progressive Global Entity Cache (Shared Core + Crowdsourced Custom Attributes)
+// 3. Progressive Global Entity Cache (Shared Core + Canonical External Resolution)
 export const globalEntities = sqliteTable(
   "global_entities",
   {
@@ -52,10 +67,14 @@ export const globalEntities = sqliteTable(
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
     parentEntityId: text("parent_entity_id"),
+    canonicalExternalId: text("canonical_external_id"), // e.g. isbn:978..., tmdb:movie:..., spotify:album:...
+    identityFingerprint: text("identity_fingerprint"),
+    brandOrCreator: text("brand_or_creator"),
+    typePath: text("type_path"),
     urlHash: text("url_hash").notNull(),
     entityKey: text("entity_key").notNull(),
     canonicalUrl: text("canonical_url").notNull(),
-    coreType: text("core_type").notNull(), // PRODUCT, PLACE, MEDIA, BOOK, SOURCE_VIDEO
+    coreType: text("core_type").notNull(), // PRODUCT, PLACE, MEDIA, BOOK, SOURCE_VIDEO, CULINARY
     title: text("title").notNull(),
     summary: text("summary"),
     heroImageUrl: text("hero_image_url"),
@@ -63,6 +82,7 @@ export const globalEntities = sqliteTable(
     extendedAttributes: text("extended_attributes", { mode: "json" }).default({}).notNull(),
     ucpSkuId: text("ucp_sku_id"),
     priceCents: integer("price_cents"),
+    bestPriceCents: integer("best_price_cents"),
     currency: text("currency").default("USD"),
     priceVerifiedAt: text("price_verified_at"),
     createdAt: text("created_at")
@@ -77,10 +97,42 @@ export const globalEntities = sqliteTable(
     index("idx_global_entities_url_hash").on(table.urlHash),
     index("idx_global_entities_parent_id").on(table.parentEntityId),
     index("idx_global_entities_price_cents").on(table.priceCents),
+    index("idx_global_entities_canonical_ext").on(table.canonicalExternalId),
+    index("idx_global_entities_type_path").on(table.typePath),
   ]
 );
 
-// 4. User Saves (Personal Memory, Private Notes, Manual Overrides & Disambiguation)
+// 4. Multi-Merchant Sourcing (PRD v3.2 - Distinct Retailers/Platforms per Canonical Entity)
+export const entitySources = sqliteTable(
+  "entity_sources",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    entityId: text("entity_id")
+      .references(() => globalEntities.id, { onDelete: "cascade" })
+      .notNull(),
+    sellerName: text("seller_name").notNull(), // Amazon, Bookshop.org, MUBI, Apple TV, Spotify
+    sourceUrl: text("source_url").notNull(),
+    urlHash: text("url_hash").notNull(),
+    priceCents: integer("price_cents"),
+    currency: text("currency").default("USD"),
+    affiliateTemplate: text("affiliate_template"),
+    inStock: integer("in_stock", { mode: "boolean" }).default(true).notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    index("idx_entity_sources_entity_id").on(table.entityId),
+    index("idx_entity_sources_url_hash").on(table.urlHash),
+  ]
+);
+
+// 5. User Saves (Personal Memory, Private Notes, Manual Overrides & Disambiguation)
 export const userSaves = sqliteTable(
   "user_saves",
   {
@@ -90,6 +142,9 @@ export const userSaves = sqliteTable(
     userId: text("user_id").references(() => users.id).notNull(),
     entityId: text("entity_id").references(() => globalEntities.id),
     customTypeId: text("custom_type_id").references(() => curioTypes.id),
+    typeId: text("type_id").references(() => curioTypes.id),
+    typePath: text("type_path"),
+    preferredSourceId: text("preferred_source_id").references(() => entitySources.id),
     isPrivateMemo: integer("is_private_memo", { mode: "boolean" }).default(false).notNull(),
     privateTitle: text("private_title"),
     personalNotes: text("personal_notes"),
@@ -115,10 +170,11 @@ export const userSaves = sqliteTable(
   (table) => [
     index("idx_user_saves_user_id").on(table.userId),
     index("idx_user_saves_entity_id").on(table.entityId),
+    index("idx_user_saves_type_path").on(table.typePath),
   ]
 );
 
-// 5. Smart Lists & Curated Boards
+// 6. Smart Lists & Curated Boards
 export const smartLists = sqliteTable("smart_lists", {
   id: text("id")
     .primaryKey()
@@ -141,7 +197,7 @@ export const smartLists = sqliteTable("smart_lists", {
     .default(sql`(datetime('now'))`),
 });
 
-// 6. List Items Join Table (Enables Manual Ordering, Pinning & Section Headers)
+// 7. List Items Join Table (Enables Manual Ordering, Pinning & Section Headers)
 export const listItems = sqliteTable(
   "list_items",
   {
@@ -163,7 +219,7 @@ export const listItems = sqliteTable(
   ]
 );
 
-// 7. Synaptic Memory Edges (Element-to-Element Relationships & Pairings)
+// 8. Synaptic Memory Edges (Element-to-Element Relationships & Pairings)
 export const entryConnections = sqliteTable(
   "entry_connections",
   {
@@ -189,8 +245,11 @@ export const entryConnections = sqliteTable(
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type CurioType = typeof curioTypes.$inferSelect;
+export type NewCurioType = typeof curioTypes.$inferInsert;
 export type GlobalEntity = typeof globalEntities.$inferSelect;
 export type NewGlobalEntity = typeof globalEntities.$inferInsert;
+export type EntitySource = typeof entitySources.$inferSelect;
+export type NewEntitySource = typeof entitySources.$inferInsert;
 export type UserSave = typeof userSaves.$inferSelect;
 export type NewUserSave = typeof userSaves.$inferInsert;
 export type SmartList = typeof smartLists.$inferSelect;

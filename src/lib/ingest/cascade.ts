@@ -268,6 +268,27 @@ export async function executeIngestionCascade(params: {
     heroImageUrl = "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=600&q=80";
   }
 
+  // Determine canonical typePath based on detected coreType and keywords
+  let typePath = "/product/generic";
+  const lowerTitle = primary.title.toLowerCase();
+  const lowerInput = input.toLowerCase();
+
+  if (primary.coreType === "BOOK") {
+    typePath = "/product/book";
+  } else if (lowerTitle.includes("vinyl") || lowerInput.includes("vinyl") || lowerTitle.includes("album")) {
+    typePath = "/media/music/vinyl";
+  } else if (primary.coreType === "MEDIA" || lowerTitle.includes("movie") || lowerTitle.includes("film")) {
+    typePath = "/media/film";
+  } else if (lowerTitle.includes("wine") || lowerInput.includes("wine") || lowerTitle.includes("domaine")) {
+    typePath = "/product/beverage/wine";
+  } else if (lowerTitle.includes("recipe") || lowerInput.includes("recipe") || lowerInput.includes("cook")) {
+    typePath = "/culinary/recipe";
+  } else if (lowerTitle.includes("art") || lowerInput.includes("art") || lowerTitle.includes("painting")) {
+    typePath = "/product/art";
+  } else if (primary.coreType === "PLACE" || lowerTitle.includes("trail") || lowerTitle.includes("pass")) {
+    typePath = "/place/transit_trail";
+  }
+
   const [newEntity] = await db
     .insert(globalEntities)
     .values({
@@ -275,6 +296,7 @@ export async function executeIngestionCascade(params: {
       entityKey,
       canonicalUrl: primary.url,
       coreType: primary.coreType,
+      typePath,
       title: primary.title,
       summary: primary.snippet,
       heroImageUrl,
@@ -296,9 +318,10 @@ export async function executeIngestionCascade(params: {
     .values({
       userId: user.id,
       entityId: newEntity.id,
+      typePath,
       isPrivateMemo: false,
       candidateFallbacks: runnerUps,
-      autoTags: [newEntity.coreType.toLowerCase(), "captured"],
+      autoTags: [newEntity.coreType.toLowerCase(), typePath.split("/").pop() || "captured"],
       enrichmentStatus: "ENRICHED",
       visibility: "PRIVATE",
     })

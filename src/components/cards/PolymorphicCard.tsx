@@ -1,8 +1,15 @@
 "use client";
 
 import React from "react";
-import { Lock, ExternalLink, Tag, ShoppingBag, BookOpen, Coffee, Film, Sparkles } from "lucide-react";
-import { DisambiguationBar, type CandidateFallback } from "./DisambiguationBar";
+import { VinylDiscCard } from "./silhouettes/VinylDiscCard";
+import { MoviePosterCard } from "./silhouettes/MoviePosterCard";
+import { BookJacketCard } from "./silhouettes/BookJacketCard";
+import { WineLabelCard } from "./silhouettes/WineLabelCard";
+import { ArtFrameCard } from "./silhouettes/ArtFrameCard";
+import { RecipeIndexCard } from "./silhouettes/RecipeIndexCard";
+import { MapPassCard } from "./silhouettes/MapPassCard";
+import { PrivateMemoCard } from "./silhouettes/PrivateMemoCard";
+import type { CandidateFallback } from "./DisambiguationBar";
 
 export interface CardData {
   save: {
@@ -11,6 +18,8 @@ export interface CardData {
     privateTitle?: string | null;
     personalNotes?: string | null;
     candidateFallbacks?: CandidateFallback[] | null;
+    typePath?: string | null;
+    autoTags?: string[] | null;
     createdAt: string | Date;
   };
   entity?: {
@@ -19,11 +28,15 @@ export interface CardData {
     summary?: string | null;
     heroImageUrl?: string | null;
     coreType: string;
+    typePath?: string | null;
     canonicalUrl: string;
     priceCents?: number | null;
     currency?: string | null;
     ucpSkuId?: string | null;
+    coreStructuredData?: any;
+    extendedAttributes?: any;
   } | null;
+  primarySource?: any;
 }
 
 export function PolymorphicCard({
@@ -33,132 +46,152 @@ export function PolymorphicCard({
   item: CardData;
   onSwapped?: (item: CardData) => void;
 }) {
-  const { save, entity } = item;
+  const { save, entity, primarySource } = item;
 
-  // 1. Private Memo Card (FR-1.2 Privacy Gate)
+  // 1. Private Memo Vault Silhouette (PRD v3.2 FR-1.2 Privacy Gating)
   if (save.isPrivateMemo || !entity) {
+    return <PrivateMemoCard save={save} />;
+  }
+
+  // Helper to detect silhouette archetype based on typePath, coreType, and keywords
+  const typePath = (entity.typePath || save.typePath || "").toLowerCase();
+  const coreType = (entity.coreType || "").toUpperCase();
+  const title = (entity.title || "").toLowerCase();
+  const tags = (save.autoTags || []).map((t) => t.toLowerCase());
+
+  // 2. Vinyl Disc Silhouette (/media/music/vinyl)
+  if (
+    typePath.includes("vinyl") ||
+    typePath.includes("music") ||
+    tags.includes("vinyl") ||
+    tags.includes("album") ||
+    title.includes("vinyl") ||
+    title.includes("lp")
+  ) {
     return (
-      <div className="group relative rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40 p-5 shadow-sm hover:shadow-md transition-all">
-        <div className="flex items-center justify-between mb-3">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400 bg-amber-100/80 dark:bg-amber-900/50 px-2.5 py-1 rounded-full">
-            <Lock className="w-3.5 h-3.5" />
-            Private Memo
-          </span>
-          <span className="text-[11px] text-neutral-400">
-            {new Date(save.createdAt).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-        </div>
-
-        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
-          {save.privateTitle || "Personal Note"}
-        </h3>
-
-        <p className="text-sm text-neutral-600 dark:text-neutral-300 whitespace-pre-wrap leading-relaxed">
-          {save.personalNotes}
-        </p>
-
-        <div className="mt-4 pt-3 border-t border-amber-200/40 dark:border-amber-900/40 flex items-center justify-between text-[11px] text-amber-800/70 dark:text-amber-400/70 font-mono">
-          <span>Isolated to local memory</span>
-          <span>Never touches public web</span>
-        </div>
-      </div>
+      <VinylDiscCard
+        save={save}
+        entity={entity}
+        primarySource={primarySource}
+        onSwapped={onSwapped}
+      />
     );
   }
 
-  // 2. Public Entity Card (Polymorphic)
-  const formatPrice = (cents?: number | null, curr = "USD") => {
-    if (cents == null) return null;
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: curr || "USD",
-    }).format(cents / 100);
-  };
+  // 3. Movie Poster Silhouette (/media/film)
+  if (
+    typePath.includes("film") ||
+    typePath.includes("movie") ||
+    typePath.includes("cinema") ||
+    coreType === "MEDIA" ||
+    tags.includes("film") ||
+    tags.includes("movie") ||
+    title.includes("movie") ||
+    title.includes("film")
+  ) {
+    return (
+      <MoviePosterCard
+        save={save}
+        entity={entity}
+        primarySource={primarySource}
+        onSwapped={onSwapped}
+      />
+    );
+  }
 
-  const getCoreIcon = (type: string) => {
-    switch (type.toUpperCase()) {
-      case "BOOK":
-        return <BookOpen className="w-3.5 h-3.5 text-indigo-500" />;
-      case "PLACE":
-        return <Coffee className="w-3.5 h-3.5 text-emerald-500" />;
-      case "MEDIA":
-        return <Film className="w-3.5 h-3.5 text-purple-500" />;
-      default:
-        return <ShoppingBag className="w-3.5 h-3.5 text-blue-500" />;
-    }
-  };
+  // 4. Wine Label Silhouette (/product/beverage/wine)
+  if (
+    typePath.includes("wine") ||
+    typePath.includes("beverage") ||
+    tags.includes("wine") ||
+    title.includes("wine") ||
+    title.includes("domaine") ||
+    title.includes("château") ||
+    title.includes("chateau") ||
+    title.includes("cuvée")
+  ) {
+    return (
+      <WineLabelCard
+        save={save}
+        entity={entity}
+        primarySource={primarySource}
+        onSwapped={onSwapped}
+      />
+    );
+  }
 
+  // 5. Art Frame Silhouette (/product/art)
+  if (
+    typePath.includes("art") ||
+    typePath.includes("print") ||
+    tags.includes("art") ||
+    tags.includes("painting") ||
+    title.includes("lithograph") ||
+    title.includes("print") ||
+    title.includes("painting")
+  ) {
+    return (
+      <ArtFrameCard
+        save={save}
+        entity={entity}
+        primarySource={primarySource}
+        onSwapped={onSwapped}
+      />
+    );
+  }
+
+  // 6. Recipe Index Card Silhouette (/culinary/recipe)
+  if (
+    typePath.includes("recipe") ||
+    typePath.includes("culinary") ||
+    coreType === "CULINARY" ||
+    tags.includes("recipe") ||
+    tags.includes("cooking") ||
+    title.includes("recipe") ||
+    title.includes("pasta") ||
+    title.includes("salad")
+  ) {
+    return (
+      <RecipeIndexCard
+        save={save}
+        entity={entity}
+        primarySource={primarySource}
+        onSwapped={onSwapped}
+      />
+    );
+  }
+
+  // 7. Map Pass Silhouette (/place/transit_trail)
+  if (
+    typePath.includes("place") ||
+    typePath.includes("trail") ||
+    typePath.includes("transit") ||
+    coreType === "PLACE" ||
+    tags.includes("place") ||
+    tags.includes("trail") ||
+    tags.includes("japan") ||
+    title.includes("trail") ||
+    title.includes("pass") ||
+    title.includes("coffee") ||
+    title.includes("cafe")
+  ) {
+    return (
+      <MapPassCard
+        save={save}
+        entity={entity}
+        primarySource={primarySource}
+        onSwapped={onSwapped}
+      />
+    );
+  }
+
+  // 8. Book Jacket Silhouette (/product/book or default)
   return (
-    <div className="group relative rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
-      {entity.heroImageUrl && (
-        <div className="relative aspect-video w-full overflow-hidden bg-neutral-100 dark:bg-neutral-800">
-          <img
-            src={entity.heroImageUrl}
-            alt={entity.title}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102"
-          />
-          {entity.priceCents != null && (
-            <span className="absolute bottom-2.5 right-2.5 bg-neutral-900/90 text-white text-xs font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm shadow">
-              {formatPrice(entity.priceCents, entity.currency || "USD")}
-            </span>
-          )}
-        </div>
-      )}
-
-      <div className="p-5 flex-1 flex flex-col justify-between">
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2.5 py-0.5 rounded-full">
-              {getCoreIcon(entity.coreType)}
-              {entity.coreType}
-            </span>
-
-            {entity.canonicalUrl && (
-              <a
-                href={entity.canonicalUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition p-1"
-                title="Open canonical source"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            )}
-          </div>
-
-          <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-1 leading-snug">
-            {entity.title}
-          </h3>
-
-          {entity.summary && (
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 line-clamp-3 leading-relaxed mb-3">
-              {entity.summary}
-            </p>
-          )}
-
-          {entity.ucpSkuId && (
-            <div className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded mb-3">
-              <Sparkles className="w-3 h-3" />
-              Google UCP Verified
-            </div>
-          )}
-        </div>
-
-        {/* 1-Tap Candidate Disambiguation Bar */}
-        {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-          <DisambiguationBar
-            saveId={save.id}
-            candidates={save.candidateFallbacks}
-            onSwapped={() => {
-              if (onSwapped) onSwapped(item);
-            }}
-          />
-        )}
-      </div>
-    </div>
+    <BookJacketCard
+      save={save}
+      entity={entity}
+      primarySource={primarySource}
+      onSwapped={onSwapped}
+    />
   );
 }

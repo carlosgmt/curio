@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Film, Play, Star, Clapperboard, Tv, ExternalLink, X } from "lucide-react";
 import { buildAffiliateUrl, type UserAffiliateTags } from "@/lib/commerce/affiliate";
+import { getCinemaSearchLinks } from "@/lib/commerce/utilityDeepLinks";
 
 export interface CulturalModeProps {
   save: any;
@@ -23,10 +24,14 @@ export function CinemaCulturalMode({ save, entity, primarySource, creatorAffilia
   const rating = data.tmdbRating || data.rating || "8.4";
   const trailerUrl = data.trailerUrl || "https://www.youtube.com/embed/dQw4w9WgXcQ";
 
+  const filmTitle = entity?.title || "Film";
+  const searchLinks = getCinemaSearchLinks(filmTitle);
+
   const streamPlatforms = [
-    { name: "MUBI", url: "https://mubi.com", color: "bg-blue-600" },
-    { name: "Apple TV", url: "https://tv.apple.com", color: "bg-neutral-800" },
-    { name: "Google TV", url: "https://tv.google.com", color: "bg-red-600" },
+    { name: "MUBI", url: searchLinks.mubi, color: "bg-blue-600" },
+    { name: "Apple TV", url: searchLinks.appleTv, color: "bg-neutral-800" },
+    { name: "JustWatch", url: searchLinks.justWatch, color: "bg-amber-600" },
+    { name: "TMDB", url: searchLinks.tmdb, color: "bg-emerald-600" },
   ];
 
   return (

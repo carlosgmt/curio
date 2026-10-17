@@ -10,21 +10,30 @@ import {
   ExternalLink,
   ShoppingBag,
   Zap,
+  Wine,
+  Frame,
+  Lock,
 } from "lucide-react";
 
 import { buildAffiliateUrl, type UserAffiliateTags } from "@/lib/commerce/affiliate";
+import { resolveCardUtility } from "@/lib/commerce/utilityDeepLinks";
 
 export { buildAffiliateUrl, type UserAffiliateTags };
 
 export interface CardFooterWaterfallProps {
   entity: {
+    id?: string;
     title: string;
     canonicalUrl?: string;
     coreType: string;
     typePath?: string | null;
+    heroImageUrl?: string | null;
+    brandOrCreator?: string | null;
     priceCents?: number | null;
     currency?: string | null;
     ucpSkuId?: string | null;
+    coreStructuredData?: any;
+    extendedAttributes?: any;
   };
   primarySource?: {
     sellerName: string;
@@ -45,30 +54,36 @@ export function CardFooterWaterfall({
   customUtilityLabel,
   onUtilityClick,
 }: CardFooterWaterfallProps) {
-  const typePath = entity.typePath || "";
-  const coreType = entity.coreType.toUpperCase();
+  // 1. Determine Contextual Left Slot (Utility Connector via Deep-Link Engine)
+  const utility = resolveCardUtility({
+    entity,
+    customUtilityLabel,
+    primarySource,
+    onUtilityClick,
+  });
 
-  // 1. Determine Contextual Left Slot (Utility Connector)
-  let utilityIcon = <ExternalLink className="w-3.5 h-3.5" />;
-  let utilityText = customUtilityLabel || "Learn More";
-  let utilityHref = entity.canonicalUrl || "#";
-
-  if (typePath.startsWith("/media/film") || coreType === "MEDIA") {
-    utilityIcon = <Play className="w-3.5 h-3.5 fill-current" />;
-    utilityText = customUtilityLabel || "Watch on MUBI";
-  } else if (typePath.startsWith("/media/music") || typePath.includes("vinyl")) {
-    utilityIcon = <Music className="w-3.5 h-3.5" />;
-    utilityText = customUtilityLabel || "Play on Spotify";
-  } else if (typePath.startsWith("/product/book") || coreType === "BOOK") {
-    utilityIcon = <BookOpen className="w-3.5 h-3.5" />;
-    utilityText = customUtilityLabel || "Read Sample";
-  } else if (typePath.startsWith("/place") || coreType === "PLACE") {
-    utilityIcon = <MapPin className="w-3.5 h-3.5" />;
-    utilityText = customUtilityLabel || "Google Maps";
-  } else if (typePath.startsWith("/culinary") || coreType === "CULINARY") {
-    utilityIcon = <Utensils className="w-3.5 h-3.5" />;
-    utilityText = customUtilityLabel || "Cook Mode";
-  }
+  const renderUtilityIcon = () => {
+    switch (utility.iconName) {
+      case "play":
+        return <Play className="w-3.5 h-3.5 fill-current" />;
+      case "music":
+        return <Music className="w-3.5 h-3.5" />;
+      case "book-open":
+        return <BookOpen className="w-3.5 h-3.5" />;
+      case "map-pin":
+        return <MapPin className="w-3.5 h-3.5" />;
+      case "wine":
+        return <Wine className="w-3.5 h-3.5" />;
+      case "utensils":
+        return <Utensils className="w-3.5 h-3.5" />;
+      case "frame":
+        return <Frame className="w-3.5 h-3.5" />;
+      case "lock":
+        return <Lock className="w-3.5 h-3.5" />;
+      default:
+        return <ExternalLink className="w-3.5 h-3.5" />;
+    }
+  };
 
   // 2. Determine Right Slot (Monetized Accent CTA)
   const priceCents = primarySource?.priceCents ?? entity.priceCents;
@@ -107,19 +122,19 @@ export function CardFooterWaterfall({
           }}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition cursor-pointer"
         >
-          {utilityIcon}
-          <span className="truncate max-w-[130px]">{utilityText}</span>
+          {renderUtilityIcon()}
+          <span className="truncate max-w-[130px]">{utility.label}</span>
         </button>
       ) : (
         <a
-          href={utilityHref}
-          target="_blank"
-          rel="noreferrer"
+          href={utility.href}
+          target={utility.targetBlank ? "_blank" : undefined}
+          rel={utility.targetBlank ? "noreferrer" : undefined}
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition cursor-pointer"
         >
-          {utilityIcon}
-          <span className="truncate max-w-[130px]">{utilityText}</span>
+          {renderUtilityIcon()}
+          <span className="truncate max-w-[130px]">{utility.label}</span>
         </a>
       )}
 

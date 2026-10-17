@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Disc3, Music2, Volume2, ShoppingBag, ExternalLink, Play, Pause } from "lucide-react";
 import type { CulturalModeProps } from "./CinemaCulturalMode";
 import { buildAffiliateUrl } from "@/components/cards/CardFooterWaterfall";
+import { getDiscogsSearchLink } from "@/lib/commerce/utilityDeepLinks";
 
 interface Track {
   number?: string | number;
@@ -35,7 +36,7 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
 
   const vinylStoreUrl = primarySource?.sourceUrl
     ? buildAffiliateUrl(primarySource.sourceUrl, primarySource.sellerName, primarySource.affiliateTemplate, creatorAffiliateTags)
-    : "https://www.discogs.com";
+    : getDiscogsSearchLink([artist, entity?.title].filter(Boolean).join(" ").trim() || "Vinyl LP");
 
   return (
     <div className="flex flex-col h-full bg-neutral-950 text-white rounded-3xl overflow-hidden border border-neutral-800 shadow-2xl">

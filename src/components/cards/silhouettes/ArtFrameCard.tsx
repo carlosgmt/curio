@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Frame, Eye, Sparkles } from "lucide-react";
+import React, { useState } from "react";
+import { Frame, Eye, Sparkles, X } from "lucide-react";
 import { CardFooterWaterfall } from "../CardFooterWaterfall";
 import { DisambiguationBar } from "../DisambiguationBar";
 import type { SilhouetteCardProps } from "./VinylDiscCard";
@@ -13,6 +13,7 @@ export function ArtFrameCard({
   creatorAffiliateTags,
   onSwapped,
 }: SilhouetteCardProps) {
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
   const artist = data.artist || entity.brandOrCreator || "Unknown Artist";
   const year = data.year || "c. 1968";
@@ -75,8 +76,47 @@ export function ArtFrameCard({
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="View High-Res"
+          onUtilityClick={entity.heroImageUrl ? () => setIsLightboxOpen(true) : undefined}
         />
       </div>
+
+      {/* High-Res Artwork Lightbox */}
+      {isLightboxOpen && entity.heroImageUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsLightboxOpen(false);
+          }}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsLightboxOpen(false);
+            }}
+            className="absolute top-4 right-4 z-20 p-2 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white transition cursor-pointer"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={entity.heroImageUrl}
+            alt={entity.title}
+            className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-neutral-800"
+          />
+          <div className="mt-4 text-center max-w-lg">
+            <h3 className="font-serif text-lg font-bold text-white tracking-tight">
+              {entity.title} {year ? `(${year})` : ""}
+            </h3>
+            <p className="font-serif italic text-sm text-neutral-400 mt-0.5">
+              by {artist} • {collection}
+            </p>
+            <span className="block text-[10px] font-mono text-neutral-500 uppercase mt-1">
+              {medium} • {dimensions}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

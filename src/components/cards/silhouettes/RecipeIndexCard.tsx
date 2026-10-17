@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { UtensilsCrossed, Clock, Users, Check } from "lucide-react";
+import { UtensilsCrossed, Clock, Users, Check, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { CardFooterWaterfall } from "../CardFooterWaterfall";
 import { DisambiguationBar } from "../DisambiguationBar";
 import type { SilhouetteCardProps } from "./VinylDiscCard";
@@ -21,6 +21,8 @@ export function RecipeIndexCard({
 }: SilhouetteCardProps) {
   const [multiplier, setMultiplier] = useState<number>(1);
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
+  const [isCookMode, setIsCookMode] = useState<boolean>(false);
+  const [currentStep, setCurrentStep] = useState<number>(0);
 
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
   const prepTime = data.prepTimeMinutes ? `${data.prepTimeMinutes}m prep` : "15m prep";
@@ -186,8 +188,71 @@ export function RecipeIndexCard({
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Cook Mode"
+          onUtilityClick={() => setIsCookMode(true)}
         />
       </div>
+
+      {/* Fullscreen "Cook Mode" Kitchen Overlay */}
+      {isCookMode && (
+        <div
+          className="fixed inset-0 z-50 bg-neutral-950 text-white flex flex-col p-6 sm:p-12 animate-in fade-in duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between pb-6 border-b border-neutral-800">
+            <div>
+              <span className="text-xs font-mono uppercase text-amber-400 font-bold">
+                KITCHEN COOK MODE • {baseYield * multiplier} SERVINGS
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-serif font-bold mt-1 text-white">{entity.title}</h1>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCookMode(false)}
+              className="p-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition cursor-pointer"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="flex-1 flex flex-col items-center justify-center max-w-3xl mx-auto text-center px-4 py-8">
+            <span className="inline-block px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 mb-6">
+              Step {currentStep + 1} of {directions.length}
+            </span>
+
+            <p className="font-serif text-2xl sm:text-4xl font-medium leading-relaxed sm:leading-loose text-neutral-100">
+              {directions[currentStep]}
+            </p>
+          </div>
+
+          {/* Stepper Navigation */}
+          <div className="flex items-center justify-between pt-6 border-t border-neutral-800 max-w-3xl mx-auto w-full">
+            <button
+              type="button"
+              disabled={currentStep === 0}
+              onClick={() => setCurrentStep((prev) => Math.max(0, prev - 1))}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold bg-neutral-900 hover:bg-neutral-800 disabled:opacity-30 transition cursor-pointer text-white"
+            >
+              <ChevronLeft className="w-5 h-5" />
+              <span>Previous</span>
+            </button>
+
+            <span className="font-mono text-xs text-neutral-500">
+              {currentStep + 1} / {directions.length}
+            </span>
+
+            <button
+              type="button"
+              disabled={currentStep === directions.length - 1}
+              onClick={() => setCurrentStep((prev) => Math.min(directions.length - 1, prev + 1))}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold bg-white text-neutral-950 hover:bg-neutral-200 disabled:opacity-30 transition cursor-pointer shadow-lg"
+            >
+              <span>Next Step</span>
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

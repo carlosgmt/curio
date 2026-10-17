@@ -1,6 +1,7 @@
 import React from "react";
 import { notFound } from "next/navigation";
 import { getListBySlugWithItems } from "@/lib/lists/service";
+import { generateListJsonLd } from "@/lib/federation/jsonld";
 import { PublicBoardView } from "./PublicBoardView";
 import Link from "next/link";
 import { Lock, ArrowLeft } from "lucide-react";
@@ -45,5 +46,19 @@ export default async function ListPage({
     notFound();
   }
 
-  return <PublicBoardView data={data} />;
+  const allItems = data.sections.flatMap((s) => s.items);
+  const jsonLd = generateListJsonLd(data.list, allItems, data.owner);
+
+  return (
+    <>
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+      <PublicBoardView data={data} />
+    </>
+  );
 }
+

@@ -85,8 +85,6 @@ async function discoverCandidates(
     }
   }
 
-  // Deterministic candidate synthesis for query
-  const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const isUrl = /^https?:\/\//i.test(trimmed);
 
   if (isUrl) {
@@ -102,64 +100,88 @@ async function discoverCandidates(
     };
   }
 
-  // Generate top candidate + runner-ups for disambiguation bar (FR-2.3)
+  // Dynamic candidate synthesis based on query and detected coreType
   const coreType = detectedType || "PRODUCT";
+  const encoded = encodeURIComponent(trimmed);
+  const title = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+
   let primary: CandidateFallback;
   let runnerUps: CandidateFallback[] = [];
 
-  if (coreType === "BOOK" || /dune/i.test(trimmed)) {
+  if (coreType === "BOOK") {
     primary = {
-      title: "Dune (1965) — Frank Herbert",
-      url: `https://en.wikipedia.org/wiki/Dune_(novel)`,
-      snippet: "Dune is a 1965 epic science fiction novel by American author Frank Herbert, widely considered one of the greatest sci-fi novels of all time.",
+      title,
+      url: `https://openlibrary.org/search?q=${encoded}`,
+      snippet: `Book record for ${trimmed}`,
       coreType: "BOOK",
     };
     runnerUps = [
       {
-        title: "Dune by Frank Herbert — Goodreads",
-        url: "https://www.goodreads.com/book/show/44767.Dune",
-        snippet: "Set on the desert planet Arrakis, Dune is the story of the boy Paul Atreides...",
+        title: `${trimmed} — Goodreads`,
+        url: `https://www.goodreads.com/search?q=${encoded}`,
+        snippet: "Reader ratings, reviews, and literary editions",
         coreType: "BOOK",
       },
       {
-        title: "Dune: Part One (2021) — IMDb",
-        url: "https://www.imdb.com/title/tt1160419/",
-        snippet: "Denis Villeneuve adaptation of Frank Herbert's science fiction novel.",
+        title: `${trimmed} — Open Library`,
+        url: `https://openlibrary.org/search?q=${encoded}`,
+        snippet: "Open Library catalog & digital editions",
+        coreType: "BOOK",
+      },
+    ];
+  } else if (coreType === "MEDIA") {
+    primary = {
+      title,
+      url: `https://letterboxd.com/search/${encoded}/`,
+      snippet: `Film and cinema entry for ${trimmed}`,
+      coreType: "MEDIA",
+    };
+    runnerUps = [
+      {
+        title: `${trimmed} — IMDb`,
+        url: `https://www.imdb.com/find/?q=${encoded}`,
+        snippet: "Cast, credits, reviews, and specs",
+        coreType: "MEDIA",
+      },
+      {
+        title: `${trimmed} — Discogs`,
+        url: `https://www.discogs.com/search/?q=${encoded}`,
+        snippet: "Discography, release pressings, and vinyl records",
         coreType: "MEDIA",
       },
     ];
   } else if (coreType === "PLACE") {
     primary = {
       title: trimmed,
-      url: `https://maps.google.com/?q=${encodeURIComponent(trimmed)}`,
+      url: `https://maps.google.com/?q=${encoded}`,
       snippet: `Verified location for ${trimmed}`,
       coreType: "PLACE",
     };
     runnerUps = [
       {
         title: `${trimmed} — Foursquare City Guide`,
-        url: `https://foursquare.com/search?q=${encodeURIComponent(trimmed)}`,
+        url: `https://foursquare.com/search?q=${encoded}`,
         snippet: `Visitor reviews, top menu items, and opening hours for ${trimmed}`,
         coreType: "PLACE",
       },
     ];
   } else {
     primary = {
-      title: trimmed.charAt(0).toUpperCase() + trimmed.slice(1),
-      url: `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`,
+      title,
+      url: `https://duckduckgo.com/?q=${encoded}`,
       snippet: `Objective catalog entry for ${trimmed}`,
-      coreType: coreType,
+      coreType,
     };
     runnerUps = [
       {
         title: `${trimmed} on Amazon`,
-        url: `https://www.amazon.com/s?k=${encodeURIComponent(trimmed)}`,
+        url: `https://www.amazon.com/s?k=${encoded}`,
         snippet: `Commercial pricing and merchant availability`,
         coreType: "PRODUCT",
       },
       {
         title: `${trimmed} Discussion — Reddit`,
-        url: `https://www.reddit.com/search/?q=${encodeURIComponent(trimmed)}`,
+        url: `https://www.reddit.com/search/?q=${encoded}`,
         snippet: `Community recommendations and long-term user reviews`,
         coreType: "PRODUCT",
       },
@@ -176,6 +198,7 @@ export async function executeIngestionCascade(params: {
   input: string;
   userId?: string;
   customSchemaId?: string;
+  skipLocalLlm?: boolean;
 }): Promise<IngestionResult> {
   const { input } = params;
   const user = params.userId
@@ -187,7 +210,9 @@ export async function executeIngestionCascade(params: {
   }
 
   // STEP 0: Privacy & Modality Router
-  const privacy = await classifyPrivacyAndModality(input);
+  const privacy = await classifyPrivacyAndModality(input, {
+    skipLocalLlm: params.skipLocalLlm,
+  });
 
   // PRIVACY GATE: If private memo, bypass external search and global cache completely
   if (privacy.intent === "PRIVATE_MEMO") {
@@ -216,24 +241,78 @@ export async function executeIngestionCascade(params: {
     };
   }
 
-  // STEP 1: Global Entity & Attribute Cache Check
+  // INVERTED CASCADE: Run live external metadata enrichment first
   const query = privacy.extractedQuery || input;
-  const { primary, runnerUps } = await discoverCandidates(query, privacy.detectedType);
-  const { urlHash, entityKey } = generateEntityKey(primary.url, primary.title);
+  let enrichment;
+  try {
+    enrichment = await enrichCaptureInput(query, {
+      detectedType: privacy.detectedType,
+    });
+  } catch {
+    enrichment = null;
+  }
 
+  // Discover candidate fallbacks for disambiguation bar (FR-2.3)
+  const { primary: fallbackPrimary, runnerUps } = await discoverCandidates(query, privacy.detectedType);
+
+  const finalTitle = enrichment?.title || fallbackPrimary.title;
+  const finalCanonicalUrl = enrichment?.canonicalUrl || fallbackPrimary.url;
+  const finalSummary = enrichment?.summary || fallbackPrimary.snippet;
+  const finalCoreType = enrichment?.coreType || fallbackPrimary.coreType;
+  const finalTypePath = enrichment?.typePath || (finalCoreType === "BOOK" ? "/product/book" : "/product/generic");
+  const finalHeroImage = enrichment?.heroImageUrl || null;
+  const finalPriceCents = enrichment?.priceCents ?? null;
+  const finalExternalId = enrichment?.canonicalExternalId || null;
+  const finalCreator = enrichment?.brandOrCreator || null;
+
+  // Compute canonical identity keys from the real canonical URL and real title
+  const { urlHash, entityKey } = generateEntityKey(finalCanonicalUrl, finalTitle);
+
+  // STEP 1: Global Entity Cache Check
   const [cachedEntity] = await db
     .select()
     .from(globalEntities)
-    .where(or(eq(globalEntities.entityKey, entityKey), eq(globalEntities.canonicalUrl, primary.url)))
+    .where(
+      or(
+        eq(globalEntities.canonicalUrl, finalCanonicalUrl),
+        eq(globalEntities.urlHash, urlHash),
+        finalExternalId
+          ? eq(globalEntities.canonicalExternalId, finalExternalId)
+          : eq(globalEntities.entityKey, entityKey)
+      )
+    )
     .limit(1);
 
   if (cachedEntity) {
+    // If cached entity was a generic product but live enrichment discovered a specific cultural type
+    if (
+      (cachedEntity.coreType === "PRODUCT" && finalCoreType !== "PRODUCT") ||
+      (cachedEntity.typePath === "/product/generic" && finalTypePath !== "/product/generic")
+    ) {
+      await db
+        .update(globalEntities)
+        .set({
+          coreType: finalCoreType,
+          typePath: finalTypePath,
+          brandOrCreator: finalCreator || cachedEntity.brandOrCreator,
+          canonicalExternalId: finalExternalId || cachedEntity.canonicalExternalId,
+          heroImageUrl: finalHeroImage || cachedEntity.heroImageUrl,
+          summary: finalSummary || cachedEntity.summary,
+        })
+        .where(eq(globalEntities.id, cachedEntity.id));
+
+      cachedEntity.coreType = finalCoreType;
+      cachedEntity.typePath = finalTypePath;
+      if (finalCreator) cachedEntity.brandOrCreator = finalCreator;
+    }
+
     // Cache HIT! Link save at $0.00 compute
     const [save] = await db
       .insert(userSaves)
       .values({
         userId: user.id,
         entityId: cachedEntity.id,
+        typePath: cachedEntity.typePath,
         isPrivateMemo: false,
         candidateFallbacks: runnerUps,
         autoTags: [cachedEntity.coreType.toLowerCase()],
@@ -252,64 +331,7 @@ export async function executeIngestionCascade(params: {
     };
   }
 
-  // STEP 3 & 4: Live Structured Enrichment & Global Entity Creation
-  let heroImageUrl: string | null = null;
-  let priceCents: number | null = null;
-  let ucpSkuId: string | null = null;
-
-  if (primary.coreType === "BOOK") {
-    heroImageUrl = "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80";
-    priceCents = 1899;
-    ucpSkuId = "ucp_sku_dune_1965_book";
-  } else if (primary.coreType === "PRODUCT") {
-    heroImageUrl = "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80";
-    priceCents = 34900;
-    ucpSkuId = "ucp_sku_mode_sonnet";
-  } else if (primary.coreType === "PLACE") {
-    heroImageUrl = "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=600&q=80";
-  }
-
-  // Determine canonical typePath based on detected coreType and keywords
-  let typePath = "/product/generic";
-  const lowerTitle = primary.title.toLowerCase();
-  const lowerInput = input.toLowerCase();
-
-  if (primary.coreType === "BOOK") {
-    typePath = "/product/book";
-  } else if (lowerTitle.includes("vinyl") || lowerInput.includes("vinyl") || lowerTitle.includes("album")) {
-    typePath = "/media/music/vinyl";
-  } else if (primary.coreType === "MEDIA" || lowerTitle.includes("movie") || lowerTitle.includes("film")) {
-    typePath = "/media/film";
-  } else if (lowerTitle.includes("wine") || lowerInput.includes("wine") || lowerTitle.includes("domaine")) {
-    typePath = "/product/beverage/wine";
-  } else if (lowerTitle.includes("recipe") || lowerInput.includes("recipe") || lowerInput.includes("cook")) {
-    typePath = "/culinary/recipe";
-  } else if (lowerTitle.includes("art") || lowerInput.includes("art") || lowerTitle.includes("painting")) {
-    typePath = "/product/art";
-  } else if (primary.coreType === "PLACE" || lowerTitle.includes("trail") || lowerTitle.includes("pass")) {
-    typePath = "/place/transit_trail";
-  }
-
-  // Fetch live external metadata if available
-  let enrichment;
-  try {
-    enrichment = await enrichCaptureInput(input, {
-      detectedType: privacy.detectedType,
-    });
-  } catch {
-    enrichment = null;
-  }
-
-  const finalTitle = enrichment?.title || primary.title;
-  const finalCanonicalUrl = enrichment?.canonicalUrl || primary.url;
-  const finalSummary = enrichment?.summary || primary.snippet;
-  const finalCoreType = enrichment?.coreType || primary.coreType;
-  const finalTypePath = enrichment?.typePath || typePath;
-  const finalHeroImage = enrichment?.heroImageUrl || heroImageUrl;
-  const finalPriceCents = enrichment?.priceCents ?? priceCents;
-  const finalExternalId = enrichment?.canonicalExternalId;
-  const finalCreator = enrichment?.brandOrCreator;
-
+  // STEP 2: CACHE MISS — Insert new global entity with live resolved metadata
   const [newEntity] = await db
     .insert(globalEntities)
     .values({
@@ -330,7 +352,6 @@ export async function executeIngestionCascade(params: {
         ...(enrichment?.coreStructuredData || {}),
       },
       extendedAttributes: {},
-      ucpSkuId,
       priceCents: finalPriceCents,
       currency: enrichment?.currency || "USD",
       priceVerifiedAt: finalPriceCents ? new Date().toISOString() : null,

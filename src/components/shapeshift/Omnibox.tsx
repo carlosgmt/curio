@@ -6,9 +6,14 @@ import { ArrowRight, Lock, Globe, Sparkles, Loader2, Link2, BookOpen, Coffee, Sh
 interface OmniboxProps {
   onCaptured?: (item: any) => void;
   isCapturing?: boolean;
+  onOpenTypeBuilder?: () => void;
 }
 
-export function Omnibox({ onCaptured, isCapturing: externalIsCapturing }: OmniboxProps) {
+export function Omnibox({
+  onCaptured,
+  isCapturing: externalIsCapturing,
+  onOpenTypeBuilder,
+}: OmniboxProps) {
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hintType, setHintType] = useState<"memo" | "entity" | "url" | null>(null);
@@ -137,6 +142,20 @@ export function Omnibox({ onCaptured, isCapturing: externalIsCapturing }: Omnibo
         >
           <Coffee className="w-3 h-3" /> Blue Bottle Coffee Tokyo
         </button>
+        {onOpenTypeBuilder && (
+          <>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={onOpenTypeBuilder}
+              className="hover:text-amber-600 dark:hover:text-amber-400 transition font-medium text-neutral-700 dark:text-neutral-300 flex items-center gap-1 bg-amber-50/80 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40 cursor-pointer"
+              title="Teach Curio a new custom type"
+            >
+              <Sparkles className="w-3 h-3 text-amber-500" />
+              <span>+ Add Type</span>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

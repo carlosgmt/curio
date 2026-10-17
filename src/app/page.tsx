@@ -10,6 +10,7 @@ import { ListTabsBar } from "@/components/lists/ListTabsBar";
 import { CreateListModal } from "@/components/lists/CreateListModal";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
+import { TypeBuilderModal } from "@/components/shapeshift/TypeBuilderModal";
 import type { SmartList } from "@/db";
 import type { ListWithSections } from "@/lib/lists/service";
 import {
@@ -50,6 +51,7 @@ export default function Home() {
   const [activeListSlug, setActiveListSlug] = useState<string | null>(null);
   const [activeListDetails, setActiveListDetails] = useState<ListWithSections | null>(null);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
+  const [isTypeBuilderOpen, setIsTypeBuilderOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
 
   const fetchItems = async () => {
@@ -216,7 +218,10 @@ export default function Home() {
 
       {/* Omnibox Universal Capture */}
       <div className="mb-12">
-        <Omnibox onCaptured={handleCaptured} />
+        <Omnibox
+          onCaptured={handleCaptured}
+          onOpenTypeBuilder={() => setIsTypeBuilderOpen(true)}
+        />
       </div>
 
       {/* System Highlights */}
@@ -247,15 +252,26 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Action Button: Day-0 Importer */}
-          <button
-            type="button"
-            onClick={() => setIsImporterOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 shadow-sm transition active:scale-95 cursor-pointer self-start sm:self-auto"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Import CSV (Letterboxd / Goodreads)</span>
-          </button>
+          {/* Action Buttons: Teach Type & Day-0 Importer */}
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsTypeBuilderOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200 hover:border-neutral-400 dark:hover:border-neutral-600 shadow-2xs transition active:scale-95 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>+ Teach Type</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsImporterOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 shadow-sm transition active:scale-95 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Import CSV</span>
+            </button>
+          </div>
         </div>
 
         {/* Curated Boards & Smart Lists Tabs Bar */}
@@ -422,6 +438,16 @@ export default function Home() {
         onCreated={(newList) => {
           fetchLists();
           setActiveListSlug(newList.slug);
+        }}
+      />
+
+      {/* Curio Learns Type Builder Modal */}
+      <TypeBuilderModal
+        isOpen={isTypeBuilderOpen}
+        onClose={() => setIsTypeBuilderOpen(false)}
+        onTypeCreated={() => {
+          fetchItems();
+          fetchLists();
         }}
       />
 

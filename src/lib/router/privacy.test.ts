@@ -138,4 +138,68 @@ describe("Step 0 Privacy & Modality Router", () => {
       expect(result.extractedQuery).toBe("Dune Frank Herbert 1965");
     });
   });
+
+  describe("Local LLM & Heuristics Fallback", () => {
+    it("falls back gracefully to heuristics when local LLM is skipped", async () => {
+      const result = await classifyPrivacyAndModality("Met Alex for coffee", {
+        skipLocalLlm: true,
+      });
+      expect(result.intent).toBe("PRIVATE_MEMO");
+      expect(result.isPrivate).toBe(true);
+    });
+
+    it("parses local Ollama LLM response correctly", async () => {
+      const originalFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = (async (url: string | URL) => {
+          if (String(url).includes("/chat/completions")) {
+            return new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      role: "assistant",
+                      content: JSON.stringify({
+                        intent: "PUBLIC_ENTITY",
+                        confidence: 0.98,
+                        reasoning: "Classic novel by Haruki Murakami",
+                        suggestedTitle: "Norwegian Wood",
+                        detectedType: "BOOK",
+                        extractedQuery: "Norwegian Wood",
+                      }),
+                    },
+                  },
+                ],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            );
+          }
+          return originalFetch(url);
+        }) as typeof fetch;
+
+        const result = await classifyPrivacyAndModality("Norwegian Wood by Haruki Murakami");
+        expect(result.intent).toBe("PUBLIC_ENTITY");
+        expect(result.isPrivate).toBe(false);
+        expect(result.detectedType).toBe("BOOK");
+        expect(result.extractedQuery).toBe("Norwegian Wood");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("falls back to heuristics if local LLM fetch fails or is offline", async () => {
+      const originalFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = (async () => {
+          throw new Error("Connection refused (Ollama offline)");
+        }) as unknown as typeof fetch;
+
+        const result = await classifyPrivacyAndModality("Todo: buy groceries tomorrow");
+        expect(result.intent).toBe("PRIVATE_MEMO");
+        expect(result.isPrivate).toBe(true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
 });

@@ -247,7 +247,7 @@ export function CardLightboxModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-neutral-950/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div data-lightbox-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-neutral-950/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-5xl h-[92vh] rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
         {/* Top Lightbox Navigation Bar */}
         <div className="flex items-center justify-between px-6 py-3.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50/50 dark:bg-neutral-950/40">
@@ -287,6 +287,7 @@ export function CardLightboxModal({
               {archetypes.map((arch) => (
                 <button
                   key={arch.id}
+                  data-archetype-btn={arch.id}
                   type="button"
                   onClick={() => setActiveArchetype(arch.id)}
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition cursor-pointer ${

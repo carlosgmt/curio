@@ -307,6 +307,7 @@ export function PolymorphicCard({
 
       {/* Silhouette Card Body */}
       <div
+        data-card-body="true"
         className={`flex-1 ${onCardClick ? "cursor-pointer" : ""}`}
         onClick={() => onCardClick?.(item)}
       >

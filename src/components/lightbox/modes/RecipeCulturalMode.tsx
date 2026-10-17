@@ -125,6 +125,7 @@ export function RecipeCulturalMode({ save, entity, primarySource }: CulturalMode
             {[1, 2, 4].map((s) => (
               <button
                 key={s}
+                data-scaler-btn={s}
                 type="button"
                 onClick={() => setScale(s)}
                 className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition cursor-pointer ${

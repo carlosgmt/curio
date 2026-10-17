@@ -142,6 +142,7 @@ export function BookCulturalMode({ save, entity, primarySource }: CulturalModePr
           <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
+              data-reading-status="WANT_TO_READ"
               onClick={() => handleStatusChange("WANT_TO_READ")}
               className={`p-2 rounded-xl text-xs font-medium border flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 readingStatus === "WANT_TO_READ"
@@ -155,6 +156,7 @@ export function BookCulturalMode({ save, entity, primarySource }: CulturalModePr
 
             <button
               type="button"
+              data-reading-status="READING"
               onClick={() => handleStatusChange("READING")}
               className={`p-2 rounded-xl text-xs font-medium border flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 readingStatus === "READING"
@@ -168,6 +170,7 @@ export function BookCulturalMode({ save, entity, primarySource }: CulturalModePr
 
             <button
               type="button"
+              data-reading-status="FINISHED"
               onClick={() => handleStatusChange("FINISHED")}
               className={`p-2 rounded-xl text-xs font-medium border flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 readingStatus === "FINISHED"

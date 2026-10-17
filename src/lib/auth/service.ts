@@ -269,7 +269,7 @@ export async function requireAuth(
 
   const canFallback =
     options?.allowFallback ??
-    (process.env.NODE_ENV !== "production" && !isStrict);
+    (!isStrict && (process.env.CURIO_ALLOW_ANON === "true" || process.env.NODE_ENV !== "production"));
 
   if (canFallback) {
     const defaultUser = await getOrCreateDefaultUser();

@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.github
+data
+models
+*.log
+*.png
+.system_generated
+.env*.local

@@ -1,7 +1,19 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Upload, X, Film, BookOpen, FileText, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import {
+  Upload,
+  X,
+  Film,
+  BookOpen,
+  Bookmark,
+  MapPin,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Lock,
+  Sparkles,
+} from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
 
 interface ImporterModalProps {
@@ -9,6 +21,8 @@ interface ImporterModalProps {
   onClose: () => void;
   onImported?: () => void;
 }
+
+type PlatformTab = "auto" | "letterboxd" | "goodreads" | "bookmarks" | "takeout";
 
 const SAMPLE_LETTERBOXD = `Date,Name,Year,Letterboxd URI,Rating
 2026-03-14,Dune: Part Two,2024,https://boxd.it/mXQk,4.5
@@ -19,9 +33,42 @@ const SAMPLE_GOODREADS = `Book Id,Title,Author,Author l-f,Additional Authors,ISB
 44767,"Dune (Dune #1)",Frank Herbert,"Herbert, Frank",,="0441172717",="9780441172719",5,4.27,Ace Books,688,1990,1965,2026/02/01,2026/01/15,,,"read","A monumental masterpiece of ecology, religion, and politics.",,,,,1,,,0
 234225,"Dune Messiah (Dune #2)",Frank Herbert,"Herbert, Frank",,="0441102670",="9780441102679",4,3.89,Ace Books,336,1987,1969,2026/03/10,2026/02/05,,,"read","A deconstruction of the messiah myth.",,,,,1,,,0`;
 
+const SAMPLE_BOOKMARKS = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+    <DT><H3 ADD_DATE="1710000000">Design &amp; Architecture</H3>
+    <DL><p>
+        <DT><A HREF="https://archdaily.com" ADD_DATE="1710001000" TAGS="architecture,inspiration">ArchDaily</A>
+        <DT><A HREF="https://siteinspire.com" ADD_DATE="1710002000" TAGS="web,design">SiteInspire</A>
+    </DL><p>
+</DL><p>`;
+
+const SAMPLE_TAKEOUT_KEEP = JSON.stringify(
+  [
+    {
+      title: "Kyoto Coffee Recommendations",
+      textContent: "1. Weekenders Coffee\n2. Kurasu Kyoto\n3. Wife & Husband\nMust try Ethiopian pour-over.",
+      labels: [{ name: "Coffee" }, { name: "Travel" }],
+      isPinned: true,
+      userEditedTimestampUsec: 1710000000000000,
+    },
+    {
+      title: "Studio Ghibli Museum",
+      textContent: "Reserved tickets for next month. https://www.ghibli-museum.jp/en/",
+      labels: [{ name: "Tokyo" }],
+      isPinned: false,
+      userEditedTimestampUsec: 1710005000000000,
+    },
+  ],
+  null,
+  2
+);
+
 export function ImporterModal({ isOpen, onClose, onImported }: ImporterModalProps) {
-  const [platform, setPlatform] = useState<"auto" | "letterboxd" | "goodreads">("auto");
-  const [csvText, setCsvText] = useState("");
+  const [platform, setPlatform] = useState<PlatformTab>("auto");
+  const [payloadText, setPayloadText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [result, setResult] = useState<{ count?: number; error?: string } | null>(null);
@@ -36,7 +83,7 @@ export function ImporterModal({ isOpen, onClose, onImported }: ImporterModalProp
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      setCsvText(text);
+      setPayloadText(text);
     };
     reader.readAsText(file);
   };
@@ -49,23 +96,29 @@ export function ImporterModal({ isOpen, onClose, onImported }: ImporterModalProp
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      setCsvText(text);
+      setPayloadText(text);
     };
     reader.readAsText(file);
   };
 
   const handleImport = async () => {
-    if (!csvText.trim()) return;
+    if (!payloadText.trim()) return;
     setIsUploading(true);
     setResult(null);
 
     try {
+      // Map frontend platform to backend platform identifier
+      let backendPlatform: string = platform;
+      if (platform === "takeout") {
+        backendPlatform = payloadText.includes("FeatureCollection") ? "maps" : "keep";
+      }
+
       const res = await apiFetch("/api/v1/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          platform: platform === "auto" ? undefined : platform,
-          csvText,
+          platform: backendPlatform === "auto" ? undefined : backendPlatform,
+          payload: payloadText,
         }),
       });
 
@@ -77,7 +130,7 @@ export function ImporterModal({ isOpen, onClose, onImported }: ImporterModalProp
       setResult({ count: data.insertedCount });
       setTimeout(() => {
         onImported?.();
-      }, 800);
+      }, 1000);
     } catch (err: any) {
       setResult({ error: err.message });
     } finally {
@@ -85,170 +138,237 @@ export function ImporterModal({ isOpen, onClose, onImported }: ImporterModalProp
     }
   };
 
-  const loadSample = (type: "letterboxd" | "goodreads") => {
+  const loadSample = (type: PlatformTab) => {
     setPlatform(type);
-    setFileName(type === "letterboxd" ? "sample_watched.csv" : "sample_goodreads_export.csv");
-    setCsvText(type === "letterboxd" ? SAMPLE_LETTERBOXD : SAMPLE_GOODREADS);
+    if (type === "letterboxd") {
+      setFileName("sample_watched.csv");
+      setPayloadText(SAMPLE_LETTERBOXD);
+    } else if (type === "goodreads") {
+      setFileName("sample_goodreads_export.csv");
+      setPayloadText(SAMPLE_GOODREADS);
+    } else if (type === "bookmarks") {
+      setFileName("sample_bookmarks.html");
+      setPayloadText(SAMPLE_BOOKMARKS);
+    } else if (type === "takeout") {
+      setFileName("sample_takeout_keep.json");
+      setPayloadText(SAMPLE_TAKEOUT_KEEP);
+    }
     setResult(null);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-xl rounded-3xl bg-card border border-border p-6 shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-neutral-200 dark:border-neutral-800">
+        <div className="flex items-center justify-between pb-4 border-b border-border">
           <div>
-            <h2 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-              <Upload className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
-              Day-0 Cold-Start Importer
-            </h2>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-              Instantly port your taste graph from Letterboxd or Goodreads.
-            </p>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs uppercase tracking-widest text-primary/80 font-bold">
+                Day-0 Ingestion Engine
+              </span>
+              <span className="text-muted-foreground/40 text-xs">/</span>
+              <span className="text-xs text-muted-foreground font-mono">$0.00 compute</span>
+            </div>
+            <h2 className="text-xl font-serif font-medium text-foreground">Import Taste History</h2>
           </div>
           <button
-            type="button"
             onClick={onClose}
-            className="rounded-full p-1.5 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition"
+            className="p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Platform Selector Tabs */}
-        <div className="flex items-center gap-2 my-4">
+        {/* 4 Dedicated Tabs */}
+        <div className="flex items-center gap-1.5 pt-4 pb-2 border-b border-border overflow-x-auto">
           <button
-            type="button"
             onClick={() => setPlatform("auto")}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition cursor-pointer ${
+            className={`px-3 py-1.5 rounded-full text-xs font-mono font-medium whitespace-nowrap transition-colors ${
               platform === "auto"
-                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200"
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}
           >
             Auto-Detect
           </button>
           <button
-            type="button"
             onClick={() => setPlatform("letterboxd")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-medium whitespace-nowrap transition-colors ${
               platform === "letterboxd"
-                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200"
+                ? "bg-purple-500 text-white"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}
           >
             <Film className="w-3.5 h-3.5" />
-            Letterboxd (Films)
+            <span>Films (Letterboxd)</span>
           </button>
           <button
-            type="button"
             onClick={() => setPlatform("goodreads")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-medium whitespace-nowrap transition-colors ${
               platform === "goodreads"
-                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200"
+                ? "bg-amber-500 text-white"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
-            Goodreads (Books)
+            <span>Books (Goodreads)</span>
+          </button>
+          <button
+            onClick={() => setPlatform("bookmarks")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-medium whitespace-nowrap transition-colors ${
+              platform === "bookmarks"
+                ? "bg-blue-500 text-white"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <Bookmark className="w-3.5 h-3.5" />
+            <span>Bookmarks</span>
+          </button>
+          <button
+            onClick={() => setPlatform("takeout")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-medium whitespace-nowrap transition-colors ${
+              platform === "takeout"
+                ? "bg-emerald-500 text-white"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            <span>Takeout (Keep/Maps)</span>
           </button>
         </div>
 
-        {/* Dropzone Area */}
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-900 dark:hover:border-neutral-400 rounded-2xl p-6 text-center cursor-pointer transition bg-neutral-50/50 dark:bg-neutral-800/20"
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <FileText className="w-10 h-10 mx-auto text-neutral-400 mb-2" />
-          <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-            {fileName ? (
-              <span className="font-mono text-emerald-600 dark:text-emerald-400">{fileName}</span>
-            ) : (
-              "Click to choose CSV or drag & drop here"
-            )}
-          </p>
-          <p className="text-xs text-neutral-500 mt-1">
-            Exports accepted: Letterboxd watched.csv or Goodreads library export.
-          </p>
-        </div>
+        {/* Modal Body / Dropzone */}
+        <div className="py-4 space-y-4 overflow-y-auto flex-1">
+          {/* Privacy Notice for Keep */}
+          {platform === "takeout" && (
+            <div className="p-3 rounded-xl bg-secondary/80 border border-border text-xs font-mono flex items-start gap-2.5">
+              <Lock className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <span className="font-semibold text-foreground">Step-0 Zero-Trust Privacy Guarantee:</span>
+                <p className="text-muted-foreground">
+                  Google Keep memos without external links are stored strictly local-only as private notes. Zero network requests, zero external scraping.
+                </p>
+              </div>
+            </div>
+          )}
 
-        {/* Sample Loaders */}
-        <div className="flex items-center justify-between text-xs text-neutral-500 my-3">
-          <span>Need sample data?</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => loadSample("letterboxd")}
-              className="text-neutral-700 dark:text-neutral-300 underline underline-offset-2 hover:text-neutral-900 cursor-pointer"
-            >
-              Letterboxd Sample
-            </button>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={() => loadSample("goodreads")}
-              className="text-neutral-700 dark:text-neutral-300 underline underline-offset-2 hover:text-neutral-900 cursor-pointer"
-            >
-              Goodreads Sample
-            </button>
-          </div>
-        </div>
-
-        {/* Status Feedback */}
-        {result && (
+          {/* Drag & Drop Zone */}
           <div
-            className={`p-3 rounded-xl mb-4 text-xs flex items-center gap-2 ${
-              result.error
-                ? "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900"
-                : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900"
-            }`}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border rounded-2xl bg-muted/20 hover:bg-muted/40 cursor-pointer transition-colors text-center"
           >
-            {result.error ? (
-              <>
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{result.error}</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>Successfully imported {result.count} items into your Taste Stream!</span>
-              </>
-            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.json,.html,.geojson"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <Upload className="w-8 h-8 text-muted-foreground mb-2" />
+            <p className="text-xs font-mono font-medium text-foreground">
+              {fileName ? fileName : "Click to select or drag & drop file"}
+            </p>
+            <p className="text-[11px] font-mono text-muted-foreground mt-1">
+              Supports .csv, .json, .html, or .geojson exports
+            </p>
           </div>
-        )}
 
-        {/* Actions */}
-        <div className="flex justify-end gap-2 pt-3 border-t border-neutral-200 dark:border-neutral-800">
+          {/* Sample Data Loaders */}
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              Instant test samples:
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-mono">
+              <button
+                type="button"
+                onClick={() => loadSample("letterboxd")}
+                className="px-2.5 py-1 rounded-md bg-secondary hover:bg-accent text-foreground transition-colors border border-border"
+              >
+                Sample Letterboxd
+              </button>
+              <button
+                type="button"
+                onClick={() => loadSample("goodreads")}
+                className="px-2.5 py-1 rounded-md bg-secondary hover:bg-accent text-foreground transition-colors border border-border"
+              >
+                Sample Goodreads
+              </button>
+              <button
+                type="button"
+                onClick={() => loadSample("bookmarks")}
+                className="px-2.5 py-1 rounded-md bg-secondary hover:bg-accent text-foreground transition-colors border border-border"
+              >
+                Sample Bookmarks
+              </button>
+              <button
+                type="button"
+                onClick={() => loadSample("takeout")}
+                className="px-2.5 py-1 rounded-md bg-secondary hover:bg-accent text-foreground transition-colors border border-border"
+              >
+                Sample Keep Notes
+              </button>
+            </div>
+          </div>
+
+          {/* Payload Preview */}
+          {payloadText && (
+            <div>
+              <div className="flex justify-between items-center text-[11px] font-mono text-muted-foreground mb-1">
+                <span>File Payload Preview ({payloadText.length} characters)</span>
+                <button
+                  onClick={() => {
+                    setPayloadText("");
+                    setFileName(null);
+                  }}
+                  className="hover:text-destructive"
+                >
+                  Clear
+                </button>
+              </div>
+              <textarea
+                value={payloadText}
+                onChange={(e) => setPayloadText(e.target.value)}
+                rows={4}
+                className="w-full p-2.5 rounded-xl border border-border bg-background text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+            </div>
+          )}
+
+          {/* Result Alert */}
+          {result?.count !== undefined && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-mono flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>Successfully ingested {result.count} items into your taste graph!</span>
+            </div>
+          )}
+
+          {result?.error && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs font-mono flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{result.error}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="pt-4 border-t border-border flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+            className="px-4 py-2 rounded-full text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleImport}
-            disabled={!csvText.trim() || isUploading}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 disabled:opacity-40 transition cursor-pointer"
+            disabled={!payloadText.trim() || isUploading}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-full bg-primary text-primary-foreground text-xs font-mono font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-xs"
           >
-            {isUploading ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Importing...</span>
-              </>
-            ) : (
-              <span>Import to Taste Graph</span>
-            )}
+            {isUploading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>{isUploading ? "Ingesting..." : "Import into Curio"}</span>
           </button>
         </div>
       </div>

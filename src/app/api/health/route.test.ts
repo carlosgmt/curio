@@ -11,4 +11,22 @@ describe("Container Health Check Endpoint", () => {
     expect(typeof data.timestamp).toBe("string");
     expect(new Date(data.timestamp).getTime()).not.toBeNaN();
   });
+
+  it("GET /api/health?deep=true verifies SQLite database and WAL mode", async () => {
+    const req = {
+      nextUrl: {
+        searchParams: new URLSearchParams("deep=true"),
+      },
+    } as any;
+
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    expect(data.status).toBe("healthy");
+    expect(data.database).toBe("ok");
+    expect(typeof data.walMode).toBe("boolean");
+    expect(["online", "degraded"]).toContain(data.ollama);
+    expect(typeof data.timestamp).toBe("string");
+  });
 });

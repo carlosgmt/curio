@@ -194,6 +194,10 @@ async function discoverCandidates(
 /**
  * Deterministic Ingestion Cascade
  */
+export async function ingestCapture(input: string, user?: User | { id: string }) {
+  return executeIngestionCascade({ input, userId: user?.id });
+}
+
 export async function executeIngestionCascade(params: {
   input: string;
   userId?: string;

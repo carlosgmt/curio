@@ -170,6 +170,8 @@ export function parseHtmlMetadata(html: string, baseUrl?: string): ExtractedMeta
   return result;
 }
 
+export const extractOpenGraph = fetchAndExtractMetadata;
+
 /**
  * Fetches target URL and extracts rich metadata
  */

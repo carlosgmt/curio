@@ -15,9 +15,12 @@
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "docker:logs": "docker logs -f curio"
+    "docker:logs": "docker logs -f curio",
+    "admin": "bun run src/cli/admin.ts",
+    "mcp:build": "bun build --compile src/mcp/server.ts --outfile /Users/carlosgmt/Utilities/MCP/curio-mcp"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/better-sqlite3": "^9.6.0",
     "@typesafe-ai/sdk": "^0.6.0",
     "better-sqlite3": "^13.0.3",

@@ -40,6 +40,7 @@ sqlite.exec(`
     password_hash TEXT,
     onboarding_completed INTEGER NOT NULL DEFAULT 0,
     is_pro INTEGER NOT NULL DEFAULT 0,
+    is_admin INTEGER NOT NULL DEFAULT 0,
     ai_credits_remaining INTEGER NOT NULL DEFAULT 25,
     ai_credits_reset_at TEXT,
     custom_domain TEXT,
@@ -166,6 +167,7 @@ sqlite.exec(`
 // 2. Safe in-place schema migrations for existing SQLite databases (PRD v3.2 columns)
 ensureColumn("users", "password_hash", "TEXT");
 ensureColumn("users", "onboarding_completed", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("users", "is_admin", "INTEGER NOT NULL DEFAULT 0");
 
 ensureColumn("curio_types", "parent_type_id", "TEXT");
 ensureColumn("curio_types", "type_path", "TEXT NOT NULL DEFAULT ''");
@@ -182,6 +184,7 @@ ensureColumn("global_entities", "best_price_cents", "INTEGER");
 ensureColumn("user_saves", "type_id", "TEXT REFERENCES curio_types(id)");
 ensureColumn("user_saves", "type_path", "TEXT");
 ensureColumn("user_saves", "preferred_source_id", "TEXT REFERENCES entity_sources(id)");
+ensureColumn("user_saves", "private_embedding", "TEXT");
 
 // 3. Now create indexes safely on all tables/columns
 sqlite.exec(`

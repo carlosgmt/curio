@@ -13,6 +13,7 @@ export const users = sqliteTable("users", {
   passwordHash: text("password_hash"),
   onboardingCompleted: integer("onboarding_completed", { mode: "boolean" }).default(false).notNull(),
   isPro: integer("is_pro", { mode: "boolean" }).default(false).notNull(),
+  isAdmin: integer("is_admin", { mode: "boolean" }).default(false).notNull(),
   aiCreditsRemaining: integer("ai_credits_remaining").default(25).notNull(),
   aiCreditsResetAt: text("ai_credits_reset_at"),
   customDomain: text("custom_domain"),
@@ -167,6 +168,7 @@ export const userSaves = sqliteTable(
     hasConvertedPurchase: integer("has_converted_purchase", { mode: "boolean" }).default(false).notNull(),
     enrichmentStatus: text("enrichment_status").default("ENRICHED").notNull(),
     visibility: text("visibility").default("PRIVATE").notNull(),
+    privateEmbedding: text("private_embedding"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),

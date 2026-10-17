@@ -7,6 +7,7 @@ export interface HybridSearchOptions {
   userId: string;
   limit?: number;
   semanticWeight?: number; // 0.0 (lexical only) to 1.0 (semantic only), default 0.5
+  category?: string;
 }
 
 export interface HybridSearchResult {
@@ -233,7 +234,7 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
   const trimmed = query.trim();
 
   // Retrieve user's saves with linked entities
-  const records = await db
+  let records = await db
     .select({
       save: userSaves,
       entity: globalEntities,
@@ -242,6 +243,15 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
     .where(eq(userSaves.userId, userId))
     .orderBy(desc(userSaves.createdAt));
+
+  if (options.category) {
+    const cat = options.category.toLowerCase();
+    records = records.filter(
+      (r) =>
+        (r.save.typePath || "").toLowerCase().startsWith(cat) ||
+        (r.entity?.typePath || "").toLowerCase().startsWith(cat)
+    );
+  }
 
   if (records.length === 0) {
     return [];

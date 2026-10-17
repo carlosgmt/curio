@@ -1,5 +1,5 @@
 import { db, userSaves, globalEntities, curioTypes } from "@/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 export interface RegisterCustomTypeParams {
   name: string;
@@ -72,6 +72,7 @@ export async function updateSaveCustomAttributes(
  * Scans all user_saves for an entityId. When >= 2 distinct users have populated
  * the same attribute key with an identical value, merges that attribute into
  * global_entities.extended_attributes.
+ * Restricted strictly to PUBLIC saves so private notes and fields never leak.
  */
 export async function evaluateAttributePromotion(
   entityId: string
@@ -82,7 +83,13 @@ export async function evaluateAttributePromotion(
       userCustomValues: userSaves.userCustomValues,
     })
     .from(userSaves)
-    .where(eq(userSaves.entityId, entityId));
+    .where(
+      and(
+        eq(userSaves.entityId, entityId),
+        eq(userSaves.visibility, "PUBLIC"),
+        eq(userSaves.isPrivateMemo, false)
+      )
+    );
 
   if (saves.length < 2) {
     return {};

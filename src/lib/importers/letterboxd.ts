@@ -31,10 +31,15 @@ export function parseLetterboxdCSV(csvText: string): ImportedFilm[] {
     if (!title) continue;
 
     const yearStr = row["Year"];
-    const releaseYear = yearStr ? parseInt(yearStr, 10) : undefined;
+    const parsedYear = yearStr ? parseInt(yearStr, 10) : NaN;
+    const releaseYear = Number.isFinite(parsedYear) ? parsedYear : undefined;
+
     const uri = row["Letterboxd URI"] || `https://letterboxd.com/film/${encodeURIComponent(title.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}/`;
+
     const ratingStr = row["Rating"];
-    const rating = ratingStr ? parseFloat(ratingStr) : undefined;
+    const parsedRating = ratingStr ? parseFloat(ratingStr) : NaN;
+    const rating = Number.isFinite(parsedRating) ? parsedRating : undefined;
+
     const dateWatched = row["Date"] || row["Watched Date"];
 
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");

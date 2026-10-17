@@ -52,14 +52,17 @@ export function parseGoodreadsCSV(csvText: string): ImportedBook[] {
     const finalIsbn = isbn13 || isbn10;
 
     const pagesStr = row["Number of Pages"];
-    const pageCount = pagesStr ? parseInt(pagesStr, 10) : undefined;
+    const parsedPages = pagesStr ? parseInt(pagesStr, 10) : NaN;
+    const pageCount = Number.isFinite(parsedPages) ? parsedPages : undefined;
 
     const yearStr = row["Year Published"] || row["Original Publication Year"];
-    const yearPublished = yearStr ? parseInt(yearStr, 10) : undefined;
+    const parsedYear = yearStr ? parseInt(yearStr, 10) : NaN;
+    const yearPublished = Number.isFinite(parsedYear) ? parsedYear : undefined;
 
     const publisher = row["Publisher"] || undefined;
     const ratingStr = row["My Rating"];
-    const myRating = ratingStr && ratingStr !== "0" ? parseInt(ratingStr, 10) : undefined;
+    const parsedRating = ratingStr && ratingStr !== "0" ? parseInt(ratingStr, 10) : NaN;
+    const myRating = Number.isFinite(parsedRating) ? parsedRating : undefined;
     const review = row["My Review"] || undefined;
 
     const canonicalExternalId = finalIsbn

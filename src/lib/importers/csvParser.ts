@@ -1,3 +1,5 @@
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 /**
  * RFC 4180 compliant CSV parser with quote escaping and newline support
  */
@@ -58,8 +60,9 @@ export function parseCSV(csvText: string): Array<Record<string, string>> {
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     if (line.length === 1 && !line[0]) continue; // Skip empty row
-    const row: Record<string, string> = {};
+    const row: Record<string, string> = Object.create(null);
     headers.forEach((header, idx) => {
+      if (DANGEROUS_KEYS.has(header)) return;
       row[header] = line[idx] ?? "";
     });
     rows.push(row);

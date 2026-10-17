@@ -62,5 +62,62 @@ describe("Day-0 Cold-Start CSV Importers", () => {
       expect(result.insertedCount).toBe(1);
       expect(result.errors.length).toBe(0);
     });
+
+    it("uses deterministic entityKey and deduplicates global entities without random salts", async () => {
+      const csv = `Date,Name,Year,Letterboxd URI,Rating
+2026-04-01,Drive My Car,2021,https://boxd.it/drive-my-car,5.0`;
+      const films = parseLetterboxdCSV(csv);
+
+      // Ingest first time
+      const res1 = await ingestImportedItems(films);
+      expect(res1.insertedCount).toBe(1);
+
+      // Ingest second time
+      const res2 = await ingestImportedItems(films);
+      expect(res2.insertedCount).toBe(1);
+
+      // Verify that only 1 global entity exists for this movie
+      const { db, globalEntities } = await import("@/db");
+      const { eq } = await import("drizzle-orm");
+      const entities = await db
+        .select()
+        .from(globalEntities)
+        .where(eq(globalEntities.canonicalUrl, "https://boxd.it/drive-my-car"));
+
+      expect(entities.length).toBe(1);
+      // Verify entityKey has no random salt or Date.now()
+      expect(entities[0].entityKey).not.toContain("Math.random");
+      expect(entities[0].entityKey).toMatch(/^[a-f0-9]{16}_/);
+    });
+  });
+
+  describe("Prototype Pollution & Resilience Hardening", () => {
+    it("neutralizes prototype pollution attempts in CSV headers", async () => {
+      const { parseCSV } = await import("./csvParser");
+      const maliciousCsv = `__proto__,constructor,prototype,Name,Year
+polluted,dangerous,exploit,"Safe Movie",2025`;
+
+      const rows = parseCSV(maliciousCsv);
+      expect(rows.length).toBe(1);
+      expect(rows[0].Name).toBe("Safe Movie");
+      expect(rows[0].Year).toBe("2025");
+      expect((rows[0] as any).__proto__).toBeUndefined();
+      expect((Object.prototype as any).polluted).toBeUndefined();
+    });
+
+    it("guards non-numeric strings from resulting in NaN", () => {
+      const badLetterboxd = `Date,Name,Year,Letterboxd URI,Rating
+2026-01-01,Test Film,invalid-year,https://boxd.it/test,not-a-rating`;
+      const films = parseLetterboxdCSV(badLetterboxd);
+      expect(films[0].releaseYear).toBeUndefined();
+      expect(films[0].rating).toBeUndefined();
+
+      const badGoodreads = `Book Id,Title,Author,Number of Pages,Year Published,My Rating
+123,Bad Book,Author,N/A,TBD,unrated`;
+      const books = parseGoodreadsCSV(badGoodreads);
+      expect(books[0].pageCount).toBeUndefined();
+      expect(books[0].yearPublished).toBeUndefined();
+      expect(books[0].myRating).toBeUndefined();
+    });
   });
 });

@@ -129,4 +129,31 @@ describe("Saves Service (Inspection, Editing & Deletion)", () => {
     const check = await getSaveDetails(save.id);
     expect(check).toBeNull();
   });
+
+  it("PATCH and DELETE /api/v1/saves/[id] return 404 cleanly when save does not exist", async () => {
+    const { PATCH, DELETE } = await import("@/app/api/v1/saves/[id]/route");
+    const { NextRequest } = await import("next/server");
+
+    const nonExistentId = "non-existent-save-id-12345";
+
+    // Test DELETE 404
+    const deleteReq = new NextRequest(`http://localhost:3000/api/v1/saves/${nonExistentId}`, {
+      method: "DELETE",
+    });
+    const deleteRes = await DELETE(deleteReq, { params: Promise.resolve({ id: nonExistentId }) });
+    expect(deleteRes.status).toBe(404);
+    const deleteJson = await deleteRes.json();
+    expect(deleteJson.error).toContain("Save not found");
+
+    // Test PATCH 404
+    const patchReq = new NextRequest(`http://localhost:3000/api/v1/saves/${nonExistentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ privateTitle: "Ghost Update" }),
+    });
+    const patchRes = await PATCH(patchReq, { params: Promise.resolve({ id: nonExistentId }) });
+    expect(patchRes.status).toBe(404);
+    const patchJson = await patchRes.json();
+    expect(patchJson.error).toContain("not found");
+  });
 });

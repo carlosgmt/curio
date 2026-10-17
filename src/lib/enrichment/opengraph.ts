@@ -1,3 +1,5 @@
+import { safeFetch } from "../network/safeFetch";
+
 export interface ExtractedMetadata {
   title?: string;
   description?: string;
@@ -173,17 +175,16 @@ export function parseHtmlMetadata(html: string, baseUrl?: string): ExtractedMeta
  */
 export async function fetchAndExtractMetadata(
   url: string,
-  options?: { fetchFn?: typeof fetch; timeoutMs?: number }
+  options?: { fetchFn?: typeof fetch; timeoutMs?: number; dnsLookup?: any }
 ): Promise<ExtractedMetadata> {
   const fetchFn = options?.fetchFn ?? fetch;
   const timeoutMs = options?.timeoutMs ?? 7000;
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-    const response = await fetchFn(url, {
-      signal: controller.signal,
+    const response = await safeFetch(url, {
+      fetchFn,
+      timeoutMs,
+      dnsLookup: options?.dnsLookup,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -191,8 +192,6 @@ export async function fetchAndExtractMetadata(
         "Accept-Language": "en-US,en;q=0.9",
       },
     });
-
-    clearTimeout(timeout);
 
     if (!response.ok) {
       return { url };

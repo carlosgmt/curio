@@ -1,5 +1,5 @@
 import { db, users } from "@/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export const DEFAULT_MONTHLY_CREDITS = 25;
 
@@ -31,14 +31,16 @@ export function calculateNextResetDate(fromDate: Date = new Date()): string {
  * Checks and consumes AI credits for a user.
  * - Pro users bypass quota with unlimited remaining credits.
  * - Free users automatically reset to 25 credits every 30 days.
- * - Decrements credits on success or returns reason if quota exceeded.
+ * - Atomically decrements credits via SQL to prevent race conditions and overdrafts.
  */
 export async function checkAndConsumeCredit(
   userId: string,
   cost: number = 1,
   options?: { now?: Date }
 ): Promise<QuotaCheckResult> {
-  const now = options?.now || new Date();
+  if (!Number.isInteger(cost) || cost < 1) {
+    throw new Error("Cost must be a positive integer >= 1");
+  }
 
   const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!user) {
@@ -61,53 +63,44 @@ export async function checkAndConsumeCredit(
   }
 
   // 2. Monthly Reset Check
-  let currentCredits = user.aiCreditsRemaining;
+  const now = options?.now || new Date();
   let resetAt = user.aiCreditsResetAt;
-
   const isResetDue = !resetAt || new Date(resetAt) <= now;
 
   if (isResetDue) {
-    currentCredits = DEFAULT_MONTHLY_CREDITS;
     resetAt = calculateNextResetDate(now);
+    await db
+      .update(users)
+      .set({
+        aiCreditsRemaining: DEFAULT_MONTHLY_CREDITS,
+        aiCreditsResetAt: resetAt,
+      })
+      .where(eq(users.id, userId));
   }
 
-  // 3. Quota Evaluation
-  if (currentCredits < cost) {
-    // If we performed a reset, persist the reset state
-    if (isResetDue) {
-      await db
-        .update(users)
-        .set({
-          aiCreditsRemaining: currentCredits,
-          aiCreditsResetAt: resetAt,
-        })
-        .where(eq(users.id, userId));
-    }
+  // 3. Atomic SQL decrement preventing negative balances and concurrency races
+  const result = db.run(
+    sql`UPDATE users SET ai_credits_remaining = ai_credits_remaining - ${cost} WHERE id = ${userId} AND ai_credits_remaining >= ${cost}`
+  );
 
+  const [freshUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  const remaining = freshUser ? freshUser.aiCreditsRemaining : 0;
+
+  if (result.changes === 0) {
     return {
       allowed: false,
-      remaining: currentCredits,
+      remaining,
       isPro: false,
-      resetAt,
+      resetAt: freshUser?.aiCreditsResetAt ?? resetAt,
       reason: "Monthly AI extraction quota exceeded",
     };
   }
 
-  // 4. Consume Credits
-  const newRemaining = currentCredits - cost;
-  await db
-    .update(users)
-    .set({
-      aiCreditsRemaining: newRemaining,
-      aiCreditsResetAt: resetAt,
-    })
-    .where(eq(users.id, userId));
-
   return {
     allowed: true,
-    remaining: newRemaining,
+    remaining,
     isPro: false,
-    resetAt,
+    resetAt: freshUser?.aiCreditsResetAt ?? resetAt,
   };
 }
 

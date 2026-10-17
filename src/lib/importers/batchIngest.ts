@@ -1,4 +1,5 @@
 import { db, globalEntities, userSaves } from "@/db";
+import { eq } from "drizzle-orm";
 import { generateEntityKey, getOrCreateDefaultUser } from "../ingest/cascade";
 import type { ImportedFilm } from "./letterboxd";
 import type { ImportedBook } from "./goodreads";
@@ -19,22 +20,30 @@ export async function ingestImportedItems(
 
       const { urlHash, entityKey } = generateEntityKey(canonicalUrl, item.title);
 
-      const [entity] = await db
-        .insert(globalEntities)
-        .values({
-          urlHash,
-          entityKey: `${entityKey}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          canonicalUrl,
-          coreType: item.coreType,
-          typePath: item.typePath,
-          canonicalExternalId: item.canonicalExternalId,
-          title: item.title,
-          summary: "author" in item ? `By ${item.author}` : "releaseYear" in item ? `Released ${item.releaseYear}` : "",
-          coreStructuredData: item.coreStructuredData,
-          priceCents: item.coreType === "BOOK" ? 1899 : 399,
-          currency: "USD",
-        })
-        .returning();
+      let [entity] = await db
+        .select()
+        .from(globalEntities)
+        .where(eq(globalEntities.entityKey, entityKey))
+        .limit(1);
+
+      if (!entity) {
+        [entity] = await db
+          .insert(globalEntities)
+          .values({
+            urlHash,
+            entityKey,
+            canonicalUrl,
+            coreType: item.coreType,
+            typePath: item.typePath,
+            canonicalExternalId: item.canonicalExternalId,
+            title: item.title,
+            summary: "author" in item ? `By ${item.author}` : "releaseYear" in item ? `Released ${item.releaseYear}` : "",
+            coreStructuredData: item.coreStructuredData,
+            priceCents: item.coreType === "BOOK" ? 1899 : 399,
+            currency: "USD",
+          })
+          .returning();
+      }
 
       await db.insert(userSaves).values({
         userId: user.id,

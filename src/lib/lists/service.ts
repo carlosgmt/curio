@@ -1,4 +1,4 @@
-import { db, smartLists, listItems, userSaves, globalEntities, users, type SmartList, type ListItem, type UserSave, type GlobalEntity } from "@/db";
+import { db, smartLists, listItems, userSaves, globalEntities, users, curioTypes, type SmartList, type ListItem, type UserSave, type GlobalEntity } from "@/db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 
 export interface CreateListInput {
@@ -201,57 +201,80 @@ export async function removeItemFromList(listId: string, saveId: string): Promis
 }
 
 /**
- * Synchronizes multi-list assignments for a save from the `+ List` menu.
+ * Synchronizes multi-list assignments for a save from the `+ List` menu atomically.
  */
 export async function toggleSaveInLists(
   saveId: string,
   targetListIds: string[],
   userId: string
 ): Promise<{ added: string[]; removed: string[] }> {
-  // Get all lists owned by this user
-  const userLists = await db
-    .select({ id: smartLists.id })
-    .from(smartLists)
-    .where(eq(smartLists.userId, userId));
+  return db.transaction((tx) => {
+    // Get all lists owned by this user
+    const userLists = tx
+      .select({ id: smartLists.id })
+      .from(smartLists)
+      .where(eq(smartLists.userId, userId))
+      .all();
 
-  const validUserListIds = new Set(userLists.map((l) => l.id));
+    const validUserListIds = new Set(userLists.map((l) => l.id));
 
-  // Find which of these lists currently contain the save
-  const currentItems = await db
-    .select({ listId: listItems.listId })
-    .from(listItems)
-    .where(eq(listItems.saveId, saveId));
+    // Find which of these lists currently contain the save
+    const currentItems = tx
+      .select({ listId: listItems.listId })
+      .from(listItems)
+      .where(eq(listItems.saveId, saveId))
+      .all();
 
-  const currentListIds = new Set(
-    currentItems.map((i) => i.listId).filter((id) => validUserListIds.has(id))
-  );
+    const currentListIds = new Set(
+      currentItems.map((i) => i.listId).filter((id) => validUserListIds.has(id))
+    );
 
-  const targetSet = new Set(targetListIds.filter((id) => validUserListIds.has(id)));
+    const targetSet = new Set(targetListIds.filter((id) => validUserListIds.has(id)));
 
-  const added: string[] = [];
-  const removed: string[] = [];
+    const added: string[] = [];
+    const removed: string[] = [];
 
-  // Add to target lists not currently assigned
-  for (const listId of targetSet) {
-    if (!currentListIds.has(listId)) {
-      await addItemToList(listId, saveId);
-      added.push(listId);
+    // Add to target lists not currently assigned
+    for (const listId of targetSet) {
+      if (!currentListIds.has(listId)) {
+        const [maxItem] = tx
+          .select({ maxPos: sql<number>`MAX(position_index)` })
+          .from(listItems)
+          .where(eq(listItems.listId, listId))
+          .all();
+        const position = (maxItem?.maxPos ?? -1) + 1;
+
+        tx.insert(listItems)
+          .values({
+            listId,
+            saveId,
+            positionIndex: position,
+            sectionHeader: null,
+            curatorNote: null,
+            isPinned: false,
+          })
+          .run();
+
+        added.push(listId);
+      }
     }
-  }
 
-  // Remove from current lists not in target lists
-  for (const listId of currentListIds) {
-    if (!targetSet.has(listId)) {
-      await removeItemFromList(listId, saveId);
-      removed.push(listId);
+    // Remove from current lists not in target lists
+    for (const listId of currentListIds) {
+      if (!targetSet.has(listId)) {
+        tx.delete(listItems)
+          .where(and(eq(listItems.listId, listId), eq(listItems.saveId, saveId)))
+          .run();
+        removed.push(listId);
+      }
     }
-  }
 
-  return { added, removed };
+    return { added, removed };
+  });
 }
 
 /**
- * Reorders list items and updates section headers in bulk.
+ * Reorders list items and updates section headers in bulk atomically.
  */
 export async function reorderListItems(
   listId: string,
@@ -261,15 +284,17 @@ export async function reorderListItems(
     sectionHeader?: string | null;
   }>
 ): Promise<void> {
-  for (const item of itemsOrder) {
-    await db
-      .update(listItems)
-      .set({
-        positionIndex: item.positionIndex,
-        ...(item.sectionHeader !== undefined ? { sectionHeader: item.sectionHeader } : {}),
-      })
-      .where(and(eq(listItems.listId, listId), eq(listItems.saveId, item.saveId)));
-  }
+  db.transaction((tx) => {
+    for (const item of itemsOrder) {
+      tx.update(listItems)
+        .set({
+          positionIndex: item.positionIndex,
+          ...(item.sectionHeader !== undefined ? { sectionHeader: item.sectionHeader } : {}),
+        })
+        .where(and(eq(listItems.listId, listId), eq(listItems.saveId, item.saveId)))
+        .run();
+    }
+  });
 }
 
 /**
@@ -387,6 +412,50 @@ export async function getListBySlugWithItems(
   }
 
   const allItems = Array.from(itemsMap.values());
+
+  // Privacy isolation: If viewed by anyone other than the list owner, sanitize item saves
+  const isOwner = Boolean(viewerUserId && viewerUserId === list.userId);
+  if (!isOwner) {
+    const allCurioTypes = await db.select().from(curioTypes);
+    const typeIdToPublicKeys = new Map<string, string[]>();
+    const typePathToPublicKeys = new Map<string, string[]>();
+
+    for (const ct of allCurioTypes) {
+      typeIdToPublicKeys.set(ct.id, ct.publicFieldKeys || []);
+      if (ct.typePath) {
+        typePathToPublicKeys.set(ct.typePath, ct.publicFieldKeys || []);
+      }
+    }
+
+    for (const item of allItems) {
+      const customTypeId = item.save.customTypeId || (item.save as any).typeId;
+      let allowedKeys: Set<string> | null = null;
+
+      if (customTypeId && typeIdToPublicKeys.has(customTypeId)) {
+        allowedKeys = new Set(typeIdToPublicKeys.get(customTypeId));
+      } else if (item.save.typePath && typePathToPublicKeys.has(item.save.typePath)) {
+        allowedKeys = new Set(typePathToPublicKeys.get(item.save.typePath));
+      }
+
+      const rawCustom = item.save.userCustomValues;
+      const sanitizedCustom: Record<string, unknown> = {};
+
+      if (allowedKeys && rawCustom && typeof rawCustom === "object") {
+        for (const [k, v] of Object.entries(rawCustom as Record<string, unknown>)) {
+          if (allowedKeys.has(k)) {
+            sanitizedCustom[k] = v;
+          }
+        }
+      }
+
+      item.save = {
+        ...item.save,
+        personalNotes: null,
+        privateTitle: null,
+        userCustomValues: sanitizedCustom,
+      };
+    }
+  }
 
   // Sort: pinned first, then position index, then added date
   allItems.sort((a, b) => {

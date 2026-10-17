@@ -115,4 +115,73 @@ describe("AI Credit & Quota Metering Service", () => {
     expect(status.creditsRemaining).toBe(24);
     expect(status.totalMonthlyCredits).toBe(DEFAULT_MONTHLY_CREDITS);
   });
+
+  it("rejects negative, zero, and non-integer credit costs", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `negative-cost-${timestamp}@curio.local`,
+        username: `negative_cost_${timestamp}`,
+        displayName: "Negative Cost User",
+        isPro: false,
+        aiCreditsRemaining: 25,
+      })
+      .returning();
+
+    await expect(checkAndConsumeCredit(user.id, -100)).rejects.toThrow("Cost must be a positive integer");
+    await expect(checkAndConsumeCredit(user.id, 0)).rejects.toThrow("Cost must be a positive integer");
+    await expect(checkAndConsumeCredit(user.id, 1.5)).rejects.toThrow("Cost must be a positive integer");
+    await expect(checkAndConsumeCredit(user.id, -1)).rejects.toThrow("Cost must be a positive integer");
+
+    // Ensure credits were not modified
+    const status = await getUserQuotaStatus(user.id);
+    expect(status.creditsRemaining).toBe(25);
+  });
+
+  it("handles concurrent credit consumption atomically without overdrafting", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `concurrent-${timestamp}@curio.local`,
+        username: `concurrent_${timestamp}`,
+        displayName: "Concurrent User",
+        isPro: false,
+        aiCreditsRemaining: 5,
+        aiCreditsResetAt: calculateNextResetDate(new Date()),
+      })
+      .returning();
+
+    // 10 concurrent requests of cost 1 for an account with only 5 credits
+    const requests = Array.from({ length: 10 }, () => checkAndConsumeCredit(user.id, 1));
+    const results = await Promise.all(requests);
+
+    const allowedCount = results.filter((r) => r.allowed).length;
+    const rejectedCount = results.filter((r) => !r.allowed).length;
+
+    expect(allowedCount).toBe(5);
+    expect(rejectedCount).toBe(5);
+
+    const status = await getUserQuotaStatus(user.id);
+    expect(status.creditsRemaining).toBe(0);
+  });
+
+  it("POST /api/v1/user/quota rejects negative cost with 400 Bad Request", async () => {
+    const { POST } = await import("@/app/api/v1/user/quota/route");
+    const { NextRequest } = await import("next/server");
+
+    const req = new NextRequest("http://localhost:3000/api/v1/user/quota", {
+      method: "POST",
+      body: JSON.stringify({ cost: -100 }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+
+    const data = await res.json();
+    expect(data.success).toBe(false);
+    expect(data.error).toContain("Cost must be at least 1");
+  });
 });

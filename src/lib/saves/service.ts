@@ -112,19 +112,21 @@ export async function updateSaveDetails(
 }
 
 /**
- * Deletes a save and cascades removal from lists and synaptic connections.
+ * Deletes a save and cascades removal from lists and synaptic connections atomically.
  */
 export async function deleteSave(saveId: string): Promise<boolean> {
-  // Remove from lists
-  await db.delete(listItems).where(eq(listItems.saveId, saveId));
+  return db.transaction((tx) => {
+    // Remove from lists
+    tx.delete(listItems).where(eq(listItems.saveId, saveId)).run();
 
-  // Remove from connections
-  await db
-    .delete(entryConnections)
-    .where(or(eq(entryConnections.sourceSaveId, saveId), eq(entryConnections.targetSaveId, saveId)));
+    // Remove from connections
+    tx.delete(entryConnections)
+      .where(or(eq(entryConnections.sourceSaveId, saveId), eq(entryConnections.targetSaveId, saveId)))
+      .run();
 
-  // Remove save
-  const res = await db.delete(userSaves).where(eq(userSaves.id, saveId)).returning();
+    // Remove save
+    const res = tx.delete(userSaves).where(eq(userSaves.id, saveId)).returning().all();
 
-  return res.length > 0;
+    return res.length > 0;
+  });
 }

@@ -284,42 +284,47 @@ export async function executeIngestionCascade(params: {
     .limit(1);
 
   if (cachedEntity) {
-    // If cached entity was a generic product but live enrichment discovered a specific cultural type
-    if (
-      (cachedEntity.coreType === "PRODUCT" && finalCoreType !== "PRODUCT") ||
-      (cachedEntity.typePath === "/product/generic" && finalTypePath !== "/product/generic")
-    ) {
-      await db
-        .update(globalEntities)
-        .set({
-          coreType: finalCoreType,
-          typePath: finalTypePath,
-          brandOrCreator: finalCreator || cachedEntity.brandOrCreator,
-          canonicalExternalId: finalExternalId || cachedEntity.canonicalExternalId,
-          heroImageUrl: finalHeroImage || cachedEntity.heroImageUrl,
-          summary: finalSummary || cachedEntity.summary,
+    const save = db.transaction((tx) => {
+      // If cached entity was a generic product but live enrichment discovered a specific cultural type
+      if (
+        (cachedEntity.coreType === "PRODUCT" && finalCoreType !== "PRODUCT") ||
+        (cachedEntity.typePath === "/product/generic" && finalTypePath !== "/product/generic")
+      ) {
+        tx.update(globalEntities)
+          .set({
+            coreType: finalCoreType,
+            typePath: finalTypePath,
+            brandOrCreator: finalCreator || cachedEntity.brandOrCreator,
+            canonicalExternalId: finalExternalId || cachedEntity.canonicalExternalId,
+            heroImageUrl: finalHeroImage || cachedEntity.heroImageUrl,
+            summary: finalSummary || cachedEntity.summary,
+          })
+          .where(eq(globalEntities.id, cachedEntity.id))
+          .run();
+
+        cachedEntity.coreType = finalCoreType;
+        cachedEntity.typePath = finalTypePath;
+        if (finalCreator) cachedEntity.brandOrCreator = finalCreator;
+      }
+
+      // Cache HIT! Link save at $0.00 compute atomically
+      const [insertedSave] = tx
+        .insert(userSaves)
+        .values({
+          userId: user.id,
+          entityId: cachedEntity.id,
+          typePath: cachedEntity.typePath,
+          isPrivateMemo: false,
+          candidateFallbacks: runnerUps,
+          autoTags: [cachedEntity.coreType.toLowerCase()],
+          enrichmentStatus: "ENRICHED",
+          visibility: "PRIVATE",
         })
-        .where(eq(globalEntities.id, cachedEntity.id));
+        .returning()
+        .all();
 
-      cachedEntity.coreType = finalCoreType;
-      cachedEntity.typePath = finalTypePath;
-      if (finalCreator) cachedEntity.brandOrCreator = finalCreator;
-    }
-
-    // Cache HIT! Link save at $0.00 compute
-    const [save] = await db
-      .insert(userSaves)
-      .values({
-        userId: user.id,
-        entityId: cachedEntity.id,
-        typePath: cachedEntity.typePath,
-        isPrivateMemo: false,
-        candidateFallbacks: runnerUps,
-        autoTags: [cachedEntity.coreType.toLowerCase()],
-        enrichmentStatus: "ENRICHED",
-        visibility: "PRIVATE",
-      })
-      .returning();
+      return insertedSave;
+    });
 
     return {
       status: "created",
@@ -331,65 +336,72 @@ export async function executeIngestionCascade(params: {
     };
   }
 
-  // STEP 2: CACHE MISS — Insert new global entity with live resolved metadata
-  const [newEntity] = await db
-    .insert(globalEntities)
-    .values({
-      urlHash,
-      entityKey,
-      canonicalUrl: finalCanonicalUrl,
-      coreType: finalCoreType,
-      typePath: finalTypePath,
-      canonicalExternalId: finalExternalId,
-      brandOrCreator: finalCreator,
-      title: finalTitle,
-      summary: finalSummary,
-      heroImageUrl: finalHeroImage,
-      coreStructuredData: {
-        rawQuery: input,
-        extractedAt: new Date().toISOString(),
-        provenance: finalCanonicalUrl,
-        ...(enrichment?.coreStructuredData || {}),
-      },
-      extendedAttributes: {},
-      priceCents: finalPriceCents,
-      currency: enrichment?.currency || "USD",
-      priceVerifiedAt: finalPriceCents ? new Date().toISOString() : null,
-    })
-    .returning();
-
-  let preferredSourceId: string | null = null;
-  if (enrichment?.primarySource) {
-    const { urlHash: sourceHash } = generateEntityKey(enrichment.primarySource.sourceUrl);
-    const [source] = await db
-      .insert(entitySources)
+  // STEP 2: CACHE MISS — Insert new global entity, source, and save atomically
+  const { newEntity, save } = db.transaction((tx) => {
+    const [insertedEntity] = tx
+      .insert(globalEntities)
       .values({
-        entityId: newEntity.id,
-        sellerName: enrichment.primarySource.sellerName,
-        sourceUrl: enrichment.primarySource.sourceUrl,
-        urlHash: sourceHash,
-        priceCents: enrichment.primarySource.priceCents,
-        currency: enrichment.primarySource.currency || "USD",
-        inStock: true,
+        urlHash,
+        entityKey,
+        canonicalUrl: finalCanonicalUrl,
+        coreType: finalCoreType,
+        typePath: finalTypePath,
+        canonicalExternalId: finalExternalId,
+        brandOrCreator: finalCreator,
+        title: finalTitle,
+        summary: finalSummary,
+        heroImageUrl: finalHeroImage,
+        coreStructuredData: {
+          rawQuery: input,
+          extractedAt: new Date().toISOString(),
+          provenance: finalCanonicalUrl,
+          ...(enrichment?.coreStructuredData || {}),
+        },
+        extendedAttributes: {},
+        priceCents: finalPriceCents,
+        currency: enrichment?.currency || "USD",
+        priceVerifiedAt: finalPriceCents ? new Date().toISOString() : null,
       })
-      .returning();
-    preferredSourceId = source.id;
-  }
+      .returning()
+      .all();
 
-  const [save] = await db
-    .insert(userSaves)
-    .values({
-      userId: user.id,
-      entityId: newEntity.id,
-      typePath: finalTypePath,
-      preferredSourceId,
-      isPrivateMemo: false,
-      candidateFallbacks: runnerUps,
-      autoTags: [newEntity.coreType.toLowerCase(), finalTypePath.split("/").pop() || "captured"],
-      enrichmentStatus: "ENRICHED",
-      visibility: "PRIVATE",
-    })
-    .returning();
+    let preferredSourceId: string | null = null;
+    if (enrichment?.primarySource) {
+      const { urlHash: sourceHash } = generateEntityKey(enrichment.primarySource.sourceUrl);
+      const [source] = tx
+        .insert(entitySources)
+        .values({
+          entityId: insertedEntity.id,
+          sellerName: enrichment.primarySource.sellerName,
+          sourceUrl: enrichment.primarySource.sourceUrl,
+          urlHash: sourceHash,
+          priceCents: enrichment.primarySource.priceCents,
+          currency: enrichment.primarySource.currency || "USD",
+          inStock: true,
+        })
+        .returning()
+        .all();
+      preferredSourceId = source.id;
+    }
+
+    const [insertedSave] = tx
+      .insert(userSaves)
+      .values({
+        userId: user.id,
+        entityId: insertedEntity.id,
+        typePath: finalTypePath,
+        preferredSourceId,
+        isPrivateMemo: false,
+        candidateFallbacks: runnerUps,
+        autoTags: [insertedEntity.coreType.toLowerCase(), finalTypePath.split("/").pop() || "captured"],
+        enrichmentStatus: "ENRICHED",
+        visibility: "PRIVATE",
+      })
+      .returning()
+      .all();
+
+    return { newEntity: insertedEntity, save: insertedSave };
+  });
 
   return {
     status: "created",

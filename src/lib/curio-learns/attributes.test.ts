@@ -89,6 +89,7 @@ describe("Custom Attributes & Consensus Promotion Engine", () => {
         userId: user1.id,
         entityId: entity.id,
         isPrivateMemo: false,
+        visibility: "PUBLIC",
       })
       .returning();
 
@@ -99,6 +100,7 @@ describe("Custom Attributes & Consensus Promotion Engine", () => {
         userId: user2.id,
         entityId: entity.id,
         isPrivateMemo: false,
+        visibility: "PUBLIC",
       })
       .returning();
 
@@ -158,5 +160,78 @@ describe("Custom Attributes & Consensus Promotion Engine", () => {
     const [dbType] = await db.select().from(curioTypes).where(eq(curioTypes.id, customType.id));
     expect(dbType).not.toBeNull();
     expect(dbType.userId).toBe(creator.id);
+  });
+
+  it("strictly isolates private saves and memos from consensus attribute promotion", async () => {
+    const timestamp = Date.now();
+
+    const [u1] = await db
+      .insert(users)
+      .values({
+        email: `private-u1-${timestamp}@curio.local`,
+        username: `priv_u1_${timestamp}`,
+      })
+      .returning();
+
+    const [u2] = await db
+      .insert(users)
+      .values({
+        email: `private-u2-${timestamp}@curio.local`,
+        username: `priv_u2_${timestamp}`,
+      })
+      .returning();
+
+    const [entity] = await db
+      .insert(globalEntities)
+      .values({
+        canonicalUrl: `https://example.com/secret-wine-${timestamp}`,
+        urlHash: `hash-wine-${timestamp}`,
+        entityKey: `key-wine-${timestamp}`,
+        coreType: "PRODUCT",
+        typePath: "/product/beverage/wine",
+        title: "Secret Natural Wine",
+        coreStructuredData: {},
+        extendedAttributes: {},
+      })
+      .returning();
+
+    // User 1 creates PRIVATE save
+    const [privateSave1] = await db
+      .insert(userSaves)
+      .values({
+        userId: u1.id,
+        entityId: entity.id,
+        isPrivateMemo: false,
+        visibility: "PRIVATE",
+      })
+      .returning();
+
+    // User 2 creates PRIVATE save
+    const [privateSave2] = await db
+      .insert(userSaves)
+      .values({
+        userId: u2.id,
+        entityId: entity.id,
+        isPrivateMemo: false,
+        visibility: "PRIVATE",
+      })
+      .returning();
+
+    // Both users set the same key and value on private saves
+    await updateSaveCustomAttributes(privateSave1.id, {
+      secret_tasting_note: "hints of truffle and wet stone",
+    });
+
+    const res2 = await updateSaveCustomAttributes(privateSave2.id, {
+      secret_tasting_note: "hints of truffle and wet stone",
+    });
+
+    // Should NOT promote to global entity
+    expect(res2.promotedAttributes).toEqual({});
+    const [freshEntity] = await db
+      .select()
+      .from(globalEntities)
+      .where(eq(globalEntities.id, entity.id));
+    expect(freshEntity.extendedAttributes).toEqual({});
   });
 });

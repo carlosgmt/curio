@@ -41,9 +41,15 @@ export async function PATCH(
     }
 
     const updated = await updateSaveDetails(saveId, parsed.data);
+    if (!updated) {
+      return NextResponse.json({ error: "Save not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true, ...updated });
   } catch (error: any) {
+    if (error.message?.includes("not found")) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -56,7 +62,11 @@ export async function DELETE(
     const { id: saveId } = await params;
     const deleted = await deleteSave(saveId);
 
-    return NextResponse.json({ success: deleted });
+    if (!deleted) {
+      return NextResponse.json({ error: "Save not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

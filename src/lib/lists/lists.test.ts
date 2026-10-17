@@ -267,4 +267,84 @@ describe("Smart Lists, Curated Boards & Editorial Sections Engine", () => {
       await getListBySlugWithItems(privateList.slug, stranger.id);
     }).toThrow("FORBIDDEN: Private list");
   });
+
+  it("sanitizes private titles, notes, and custom fields on public lists when viewed by strangers", async () => {
+    const timestamp = Date.now();
+    const [owner] = await db
+      .insert(users)
+      .values({
+        email: `vitrine-owner-${timestamp}@curio.local`,
+        username: `vitrine_owner_${timestamp}`,
+      })
+      .returning();
+
+    const [stranger] = await db
+      .insert(users)
+      .values({
+        email: `vitrine-stranger-${timestamp}@curio.local`,
+        username: `vitrine_stranger_${timestamp}`,
+      })
+      .returning();
+
+    const list = await createList(owner.id, {
+      title: "Public Wine Vitrine",
+      visibility: "PUBLIC",
+    });
+
+    const [entity] = await db
+      .insert(globalEntities)
+      .values({
+        canonicalUrl: `https://example.com/jurawine-${timestamp}`,
+        urlHash: `hash-jura-${timestamp}`,
+        entityKey: `key-jura-${timestamp}`,
+        coreType: "PRODUCT",
+        typePath: "/product/beverage/wine",
+        title: "Overnoy Houillon Poulsard",
+        coreStructuredData: {},
+      })
+      .returning();
+
+    const [save] = await db
+      .insert(userSaves)
+      .values({
+        userId: owner.id,
+        entityId: entity.id,
+        typePath: "/product/beverage/wine",
+        privateTitle: "Private Secret Bottle",
+        personalNotes: "Purchased under the table in Arbois for 80 EUR. Do not share.",
+        userCustomValues: {
+          producer: "Overnoy", // valid publicFieldKey in wine schema
+          secretMerchantContact: "+33 6 12 34 56 78", // private non-public key
+        },
+        isPrivateMemo: false,
+        visibility: "PUBLIC",
+      })
+      .returning();
+
+    await addItemToList(list.id, save.id);
+
+    // 1. Owner view: retains privateTitle, personalNotes, and private custom values
+    const ownerView = await getListBySlugWithItems(list.slug, owner.id);
+    const ownerItem = ownerView?.sections[0].items[0];
+    expect(ownerItem?.save.privateTitle).toBe("Private Secret Bottle");
+    expect(ownerItem?.save.personalNotes).toContain("Purchased under the table");
+    expect((ownerItem?.save.userCustomValues as any)?.secretMerchantContact).toBe("+33 6 12 34 56 78");
+    expect((ownerItem?.save.userCustomValues as any)?.producer).toBe("Overnoy");
+
+    // 2. Stranger view: sanitized
+    const strangerView = await getListBySlugWithItems(list.slug, stranger.id);
+    const strangerItem = strangerView?.sections[0].items[0];
+    expect(strangerItem?.save.privateTitle).toBeNull();
+    expect(strangerItem?.save.personalNotes).toBeNull();
+    expect((strangerItem?.save.userCustomValues as any)?.secretMerchantContact).toBeUndefined();
+    expect((strangerItem?.save.userCustomValues as any)?.producer).toBe("Overnoy");
+
+    // 3. Unauthenticated view (no viewerUserId): also sanitized
+    const unauthView = await getListBySlugWithItems(list.slug);
+    const unauthItem = unauthView?.sections[0].items[0];
+    expect(unauthItem?.save.privateTitle).toBeNull();
+    expect(unauthItem?.save.personalNotes).toBeNull();
+    expect((unauthItem?.save.userCustomValues as any)?.secretMerchantContact).toBeUndefined();
+    expect((unauthItem?.save.userCustomValues as any)?.producer).toBe("Overnoy");
+  });
 });

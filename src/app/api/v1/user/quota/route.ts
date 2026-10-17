@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUserQuotaStatus, checkAndConsumeCredit } from "@/lib/curio-learns/quota";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 const QuotaConsumeSchema = z.object({
   cost: z.number().int("Cost must be an integer").min(1, "Cost must be at least 1").default(1),
@@ -9,7 +9,7 @@ const QuotaConsumeSchema = z.object({
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const quota = await getUserQuotaStatus(user.id);
 
     return NextResponse.json({
@@ -23,13 +23,16 @@ export async function GET(req: NextRequest) {
       quota,
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const rawBody = await req.json().catch(() => ({}));
     const parseResult = QuotaConsumeSchema.safeParse(rawBody);
 
@@ -54,6 +57,9 @@ export async function POST(req: NextRequest) {
       { status: result.allowed ? 200 : 429 }
     );
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     if (error.message?.includes("Cost must be")) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }

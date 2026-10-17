@@ -37,12 +37,32 @@ sqlite.exec(`
     username TEXT NOT NULL UNIQUE,
     display_name TEXT,
     avatar_url TEXT,
+    password_hash TEXT,
+    onboarding_completed INTEGER NOT NULL DEFAULT 0,
     is_pro INTEGER NOT NULL DEFAULT 0,
     ai_credits_remaining INTEGER NOT NULL DEFAULT 25,
     ai_credits_reset_at TEXT,
     custom_domain TEXT,
     affiliate_tags TEXT,
     google_sync_tokens TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS user_accounts (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    provider_account_id TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -144,6 +164,9 @@ sqlite.exec(`
 `);
 
 // 2. Safe in-place schema migrations for existing SQLite databases (PRD v3.2 columns)
+ensureColumn("users", "password_hash", "TEXT");
+ensureColumn("users", "onboarding_completed", "INTEGER NOT NULL DEFAULT 0");
+
 ensureColumn("curio_types", "parent_type_id", "TEXT");
 ensureColumn("curio_types", "type_path", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("curio_types", "root_archetype", "TEXT NOT NULL DEFAULT 'PRODUCT'");
@@ -162,6 +185,12 @@ ensureColumn("user_saves", "preferred_source_id", "TEXT REFERENCES entity_source
 
 // 3. Now create indexes safely on all tables/columns
 sqlite.exec(`
+  CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions (user_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions (token);
+
+  CREATE INDEX IF NOT EXISTS idx_user_accounts_user_id ON user_accounts (user_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_user_accounts_provider_account ON user_accounts (provider, provider_account_id);
+
   CREATE INDEX IF NOT EXISTS idx_curio_types_path ON curio_types (type_path);
   CREATE INDEX IF NOT EXISTS idx_curio_types_parent ON curio_types (parent_type_id);
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getListBySlugWithItems } from "@/lib/lists/service";
+import { getOptionalAuth } from "@/lib/auth/service";
 import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
 
 export async function GET(
@@ -9,13 +10,17 @@ export async function GET(
   try {
     const { slug } = await params;
 
-    // Check if user is logged in / default user
     let viewerUserId: string | undefined;
-    try {
-      const user = await getOrCreateDefaultUser();
-      viewerUserId = user.id;
-    } catch {
-      // Unauthenticated visitor
+    const auth = await getOptionalAuth(req);
+    if (auth) {
+      viewerUserId = auth.user.id;
+    } else if (process.env.NODE_ENV !== "production" && req.headers.get("x-strict-auth") !== "true") {
+      try {
+        const user = await getOrCreateDefaultUser();
+        viewerUserId = user.id;
+      } catch {
+        // Unauthenticated visitor
+      }
     }
 
     const data = await getListBySlugWithItems(slug, viewerUserId);

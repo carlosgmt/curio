@@ -11,6 +11,9 @@ import { CreateListModal } from "@/components/lists/CreateListModal";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { TypeBuilderModal } from "@/components/shapeshift/TypeBuilderModal";
+import { AuthModal } from "@/components/auth/AuthModal";
+import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
+import { UserNav } from "@/components/layout/UserNav";
 import type { SmartList } from "@/db";
 import type { ListWithSections } from "@/lib/lists/service";
 import {
@@ -53,6 +56,28 @@ export default function Home() {
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
   const [isTypeBuilderOpen, setIsTypeBuilderOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authTab, setAuthTab] = useState<"login" | "register">("login");
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+
+  const fetchCurrentUser = async () => {
+    try {
+      const res = await fetch("/api/v1/auth/me");
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data.user);
+        if (data.user && !data.user.onboardingCompleted) {
+          setIsOnboardingOpen(true);
+        }
+      } else {
+        setUser(null);
+      }
+    } catch (err) {
+      console.error("Failed to check auth status:", err);
+      setUser(null);
+    }
+  };
 
   const fetchItems = async () => {
     try {
@@ -81,6 +106,7 @@ export default function Home() {
   };
 
   useEffect(() => {
+    fetchCurrentUser();
     fetchItems();
     fetchLists();
   }, []);
@@ -203,7 +229,23 @@ export default function Home() {
             <Sparkles className="w-3.5 h-3.5 text-neutral-900 dark:text-neutral-100" />
             Autonomous Memory & Taste Graph • PRD v3.2
           </div>
-          <QuotaIndicator />
+          <div className="flex items-center gap-3">
+            <QuotaIndicator />
+            <UserNav
+              user={user}
+              onOpenAuth={(tab = "login") => {
+                setAuthTab(tab);
+                setIsAuthOpen(true);
+              }}
+              onOpenOnboarding={() => setIsOnboardingOpen(true)}
+              onLogout={async () => {
+                await fetch("/api/v1/auth/logout", { method: "POST" });
+                setUser(null);
+                fetchItems();
+                fetchLists();
+              }}
+            />
+          </div>
         </div>
 
         <div className="text-center">
@@ -475,6 +517,33 @@ export default function Home() {
           setSelectedCard(null);
           fetchItems();
           if (activeListSlug) fetchLists();
+        }}
+      />
+
+      {/* Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        defaultTab={authTab}
+        onClose={() => setIsAuthOpen(false)}
+        onSuccess={(authenticatedUser, _token, isRegister) => {
+          setUser(authenticatedUser);
+          fetchItems();
+          fetchLists();
+          if (isRegister || !authenticatedUser.onboardingCompleted) {
+            setIsOnboardingOpen(true);
+          }
+        }}
+      />
+
+      {/* 5-Step Onboarding Modal */}
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        initialUser={user}
+        onClose={() => setIsOnboardingOpen(false)}
+        onComplete={(completedUser) => {
+          setUser(completedUser);
+          fetchItems();
+          fetchLists();
         }}
       />
     </main>

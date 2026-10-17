@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSaveDetails, updateSaveDetails, deleteSave } from "@/lib/saves/service";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 const updateSaveSchema = z.object({
   privateTitle: z.string().optional().nullable(),
@@ -14,6 +15,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { id: saveId } = await params;
     const details = await getSaveDetails(saveId);
 
@@ -21,8 +23,15 @@ export async function GET(
       return NextResponse.json({ error: "Save not found" }, { status: 404 });
     }
 
+    if (details.save.userId !== user.id) {
+      return NextResponse.json({ error: "Forbidden: Not your save" }, { status: 403 });
+    }
+
     return NextResponse.json({ success: true, ...details });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -32,7 +41,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { id: saveId } = await params;
+
+    const details = await getSaveDetails(saveId);
+    if (!details) {
+      return NextResponse.json({ error: "Save not found" }, { status: 404 });
+    }
+
+    if (details.save.userId !== user.id) {
+      return NextResponse.json({ error: "Forbidden: Not your save" }, { status: 403 });
+    }
+
     const body = await req.json();
     const parsed = updateSaveSchema.safeParse(body);
 
@@ -47,6 +67,9 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, ...updated });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     if (error.message?.includes("not found")) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
@@ -59,15 +82,28 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { id: saveId } = await params;
-    const deleted = await deleteSave(saveId);
 
+    const details = await getSaveDetails(saveId);
+    if (!details) {
+      return NextResponse.json({ error: "Save not found" }, { status: 404 });
+    }
+
+    if (details.save.userId !== user.id) {
+      return NextResponse.json({ error: "Forbidden: Not your save" }, { status: 403 });
+    }
+
+    const deleted = await deleteSave(saveId);
     if (!deleted) {
       return NextResponse.json({ error: "Save not found" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

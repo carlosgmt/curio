@@ -5,9 +5,10 @@ import type { ImportedFilm } from "./letterboxd";
 import type { ImportedBook } from "./goodreads";
 
 export async function ingestImportedItems(
-  items: Array<ImportedFilm | ImportedBook>
+  items: Array<ImportedFilm | ImportedBook>,
+  userId?: string
 ): Promise<{ insertedCount: number; errors: string[] }> {
-  const user = await getOrCreateDefaultUser();
+  const targetUserId = userId || (await getOrCreateDefaultUser()).id;
   let insertedCount = 0;
   const errors: string[] = [];
 
@@ -46,7 +47,7 @@ export async function ingestImportedItems(
       }
 
       await db.insert(userSaves).values({
-        userId: user.id,
+        userId: targetUserId,
         entityId: entity.id,
         typePath: item.typePath,
         isPrivateMemo: false,

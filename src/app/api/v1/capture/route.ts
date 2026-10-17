@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { executeIngestionCascade, getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { executeIngestionCascade } from "@/lib/ingest/cascade";
 import { db, userSaves, globalEntities } from "@/db";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, and, or, lt, count } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 const captureSchema = z.object({
   input: z.string().min(1, "Capture input cannot be empty"),
@@ -12,6 +13,7 @@ const captureSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    const { user } = await requireAuth(req);
     const body = await req.json();
     const parsed = captureSchema.safeParse(body);
 
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     const result = await executeIngestionCascade({
       input: parsed.data.input,
-      userId: parsed.data.userId,
+      userId: user.id,
       customSchemaId: parsed.data.customSchemaId,
     });
 
@@ -40,6 +42,9 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     console.error("Capture failed:", error);
     return NextResponse.json(
       { error: "Capture ingestion failed", message: error.message },
@@ -50,20 +55,71 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
-    const saves = await db
+    const { user } = await requireAuth(req);
+    const url = new URL(req.url);
+    const cursor = url.searchParams.get("cursor");
+    const rawLimit = parseInt(url.searchParams.get("limit") || "50", 10);
+    const limit = Math.max(1, Math.min(isNaN(rawLimit) ? 50 : rawLimit, 100));
+
+    // Get total count of saves for the authenticated user
+    const [countResult] = await db
+      .select({ total: count() })
+      .from(userSaves)
+      .where(eq(userSaves.userId, user.id));
+    const totalCount = countResult?.total ?? 0;
+
+    let cursorFilter = eq(userSaves.userId, user.id);
+
+    if (cursor) {
+      const [cursorSave] = await db
+        .select({
+          id: userSaves.id,
+          createdAt: userSaves.createdAt,
+        })
+        .from(userSaves)
+        .where(and(eq(userSaves.id, cursor), eq(userSaves.userId, user.id)))
+        .limit(1);
+
+      if (cursorSave) {
+        cursorFilter = and(
+          eq(userSaves.userId, user.id),
+          or(
+            lt(userSaves.createdAt, cursorSave.createdAt),
+            and(
+              eq(userSaves.createdAt, cursorSave.createdAt),
+              lt(userSaves.id, cursorSave.id)
+            )
+          )
+        )!;
+      }
+    }
+
+    const rows = await db
       .select({
         save: userSaves,
         entity: globalEntities,
       })
       .from(userSaves)
       .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
-      .where(eq(userSaves.userId, user.id))
-      .orderBy(desc(userSaves.createdAt))
-      .limit(50);
+      .where(cursorFilter)
+      .orderBy(desc(userSaves.createdAt), desc(userSaves.id))
+      .limit(limit + 1);
 
-    return NextResponse.json({ saves });
+    let nextCursor: string | null = null;
+    if (rows.length > limit) {
+      rows.pop();
+      nextCursor = rows[rows.length - 1].save.id;
+    }
+
+    return NextResponse.json({
+      saves: rows,
+      nextCursor,
+      totalCount,
+    });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

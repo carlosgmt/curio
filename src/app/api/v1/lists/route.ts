@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUserLists, createList, toggleSaveInLists } from "@/lib/lists/service";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 const createListSchema = z.object({
   title: z.string().min(1, "List title cannot be empty"),
@@ -22,20 +22,23 @@ const syncListsSchema = z.object({
   listIds: z.array(z.string()),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const lists = await getUserLists(user.id);
 
     return NextResponse.json({ lists });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const body = await req.json();
     const parsed = createListSchema.safeParse(body);
 
@@ -50,13 +53,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, list }, { status: 201 });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function PUT(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const body = await req.json();
     const parsed = syncListsSchema.safeParse(body);
 
@@ -71,6 +77,9 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({ success: true, ...result });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTypeById, deleteCustomType } from "@/lib/types/service";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 export async function GET(
   req: NextRequest,
@@ -25,8 +25,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { id } = await params;
-    const user = await getOrCreateDefaultUser();
 
     const success = await deleteCustomType(id, user.id);
     if (!success) {
@@ -35,6 +35,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: "Type deleted successfully" });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     if (error.message === "CANNOT_DELETE_CANONICAL_TYPE") {
       return NextResponse.json(
         { error: "Cannot delete canonical root archetype" },

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { reorderListItems } from "@/lib/lists/service";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 import { db, smartLists } from "@/db";
 import { eq } from "drizzle-orm";
 
@@ -20,8 +20,8 @@ export async function PUT(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { slug } = await params;
-    const user = await getOrCreateDefaultUser();
 
     const [list] = await db
       .select()
@@ -48,6 +48,9 @@ export async function PUT(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

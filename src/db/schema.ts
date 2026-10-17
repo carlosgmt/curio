@@ -10,6 +10,8 @@ export const users = sqliteTable("users", {
   username: text("username").notNull().unique(), // @handle
   displayName: text("display_name"),
   avatarUrl: text("avatar_url"),
+  passwordHash: text("password_hash"),
+  onboardingCompleted: integer("onboarding_completed", { mode: "boolean" }).default(false).notNull(),
   isPro: integer("is_pro", { mode: "boolean" }).default(false).notNull(),
   aiCreditsRemaining: integer("ai_credits_remaining").default(25).notNull(),
   aiCreditsResetAt: text("ai_credits_reset_at"),
@@ -241,9 +243,59 @@ export const entryConnections = sqliteTable(
   ]
 );
 
+// 9. User Authentication Sessions (Multi-Tenancy & Sliding Window Sessions)
+export const userSessions = sqliteTable(
+  "user_sessions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: text("expires_at").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    uniqueIndex("idx_user_sessions_token").on(table.token),
+    index("idx_user_sessions_user_id").on(table.userId),
+  ]
+);
+
+// 10. Linked User Accounts (OAuth Provider Linkage)
+export const userAccounts = sqliteTable(
+  "user_accounts",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    index("idx_user_accounts_user_id").on(table.userId),
+    uniqueIndex("idx_user_accounts_provider_account").on(table.provider, table.providerAccountId),
+  ]
+);
+
 // Inferred TypeScript types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type UserSession = typeof userSessions.$inferSelect;
+export type NewUserSession = typeof userSessions.$inferInsert;
+export type UserAccount = typeof userAccounts.$inferSelect;
+export type NewUserAccount = typeof userAccounts.$inferInsert;
 export type CurioType = typeof curioTypes.$inferSelect;
 export type NewCurioType = typeof curioTypes.$inferInsert;
 export type GlobalEntity = typeof globalEntities.$inferSelect;
@@ -256,3 +308,4 @@ export type SmartList = typeof smartLists.$inferSelect;
 export type ListItem = typeof listItems.$inferSelect;
 export type EntryConnection = typeof entryConnections.$inferSelect;
 export type NewEntryConnection = typeof entryConnections.$inferInsert;
+

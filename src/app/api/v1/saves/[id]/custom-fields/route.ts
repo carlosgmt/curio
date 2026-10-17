@@ -3,6 +3,7 @@ import { z } from "zod";
 import { updateSaveCustomAttributes } from "@/lib/curio-learns/attributes";
 import { db, userSaves, globalEntities } from "@/db";
 import { eq } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 const updateCustomFieldsSchema = z.object({
   customValues: z.record(z.string(), z.unknown()),
@@ -13,7 +14,23 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { id: saveId } = await params;
+
+    const [save] = await db
+      .select()
+      .from(userSaves)
+      .where(eq(userSaves.id, saveId))
+      .limit(1);
+
+    if (!save) {
+      return NextResponse.json({ error: "Save not found" }, { status: 404 });
+    }
+
+    if (save.userId !== user.id) {
+      return NextResponse.json({ error: "Forbidden: Not your save" }, { status: 403 });
+    }
+
     const body = await req.json();
     const parsed = updateCustomFieldsSchema.safeParse(body);
 
@@ -32,6 +49,9 @@ export async function POST(
       promotedAttributes: result.promotedAttributes,
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -41,6 +61,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { id: saveId } = await params;
     const [save] = await db
       .select({
@@ -56,11 +77,18 @@ export async function GET(
       return NextResponse.json({ error: "Save not found" }, { status: 404 });
     }
 
+    if (save.save.userId !== user.id) {
+      return NextResponse.json({ error: "Forbidden: Not your save" }, { status: 403 });
+    }
+
     return NextResponse.json({
       userCustomValues: save.save.userCustomValues || {},
       extendedAttributes: save.entity?.extendedAttributes || {},
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

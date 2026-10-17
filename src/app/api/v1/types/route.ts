@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listAllTypes, registerCustomType } from "@/lib/types/service";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 const createTypeSchema = z.object({
   name: z.string().min(1, "Type name is required"),
@@ -21,19 +21,22 @@ const createTypeSchema = z.object({
   extractionPrompt: z.string().optional(),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const types = await listAllTypes(user.id);
     return NextResponse.json({ types });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const body = await req.json();
     const parsed = createTypeSchema.safeParse(body);
 
@@ -47,6 +50,9 @@ export async function POST(req: NextRequest) {
     const createdType = await registerCustomType(user.id, parsed.data);
     return NextResponse.json({ success: true, type: createdType }, { status: 201 });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createConnection, deleteConnection, getConnectedSaves, type ConnectionType } from "@/lib/connections/service";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 const createConnectionSchema = z.object({
   sourceSaveId: z.string().min(1),
@@ -12,7 +12,7 @@ const createConnectionSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const body = await req.json();
     const parsed = createConnectionSchema.safeParse(body);
 
@@ -30,6 +30,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, connection }, { status: 201 });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -52,7 +55,7 @@ export async function GET(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await getOrCreateDefaultUser();
+    const { user } = await requireAuth(req);
     const { searchParams } = new URL(req.url);
     const connectionId = searchParams.get("connectionId");
 
@@ -63,6 +66,9 @@ export async function DELETE(req: NextRequest) {
     const deleted = await deleteConnection(connectionId, user.id);
     return NextResponse.json({ success: true, deleted });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

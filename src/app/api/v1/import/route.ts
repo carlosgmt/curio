@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseLetterboxdCSV } from "@/lib/importers/letterboxd";
 import { parseGoodreadsCSV } from "@/lib/importers/goodreads";
 import { ingestImportedItems } from "@/lib/importers/batchIngest";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 export async function POST(req: NextRequest) {
   try {
+    const { user } = await requireAuth(req);
     const body = await req.json();
     const { platform, csvText } = body;
 
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No valid rows found in CSV." }, { status: 400 });
     }
 
-    const result = await ingestImportedItems(items);
+    const result = await ingestImportedItems(items, user.id);
 
     return NextResponse.json({
       success: true,
@@ -44,6 +46,9 @@ export async function POST(req: NextRequest) {
       errors: result.errors,
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     console.error("CSV import error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

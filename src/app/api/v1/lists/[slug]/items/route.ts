@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { addItemToList, removeItemFromList } from "@/lib/lists/service";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 import { db, smartLists } from "@/db";
 import { eq } from "drizzle-orm";
 
@@ -18,8 +18,8 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { slug } = await params;
-    const user = await getOrCreateDefaultUser();
 
     const [list] = await db
       .select()
@@ -51,6 +51,9 @@ export async function POST(
 
     return NextResponse.json({ success: true, item }, { status: 201 });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -60,8 +63,8 @@ export async function DELETE(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const { user } = await requireAuth(req);
     const { slug } = await params;
-    const user = await getOrCreateDefaultUser();
 
     const [list] = await db
       .select()
@@ -87,6 +90,9 @@ export async function DELETE(
     const removed = await removeItemFromList(list.id, saveId);
     return NextResponse.json({ success: true, removed });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

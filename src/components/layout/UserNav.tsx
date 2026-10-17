@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign } from "lucide-react";
 import { AffiliateSettingsModal } from "@/components/commerce/AffiliateSettingsModal";
 
@@ -33,21 +34,31 @@ export function UserNav({
   if (!user) {
     return (
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onOpenAuth("login")}
+        <Link
+          href="/login"
+          onClick={(e) => {
+            if (onOpenAuth) {
+              e.preventDefault();
+              onOpenAuth("login");
+            }
+          }}
           className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer"
         >
           Log In
-        </button>
-        <button
-          type="button"
-          onClick={() => onOpenAuth("register")}
+        </Link>
+        <Link
+          href="/register"
+          onClick={(e) => {
+            if (onOpenAuth) {
+              e.preventDefault();
+              onOpenAuth("register");
+            }
+          }}
           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 transition active:scale-95 shadow-2xs cursor-pointer"
         >
           <Sparkles className="w-3 h-3 text-amber-500" />
           <span>Sign Up</span>
-        </button>
+        </Link>
       </div>
     );
   }

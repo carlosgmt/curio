@@ -14,6 +14,7 @@ import { TypeBuilderModal } from "@/components/shapeshift/TypeBuilderModal";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { UserNav } from "@/components/layout/UserNav";
+import { CurioLandingVitrine } from "@/components/landing/CurioLandingVitrine";
 import { apiFetch } from "@/lib/apiClient";
 import type { SmartList } from "@/db";
 import type { ListWithSections } from "@/lib/lists/service";
@@ -47,6 +48,7 @@ type FilterTab =
 export default function Home() {
   const [items, setItems] = useState<CardData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [isImporterOpen, setIsImporterOpen] = useState(false);
   const [pairingCard, setPairingCard] = useState<CardData | null>(null);
@@ -77,6 +79,8 @@ export default function Home() {
     } catch (err) {
       console.error("Failed to check auth status:", err);
       setUser(null);
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -110,6 +114,14 @@ export default function Home() {
     fetchCurrentUser();
     fetchItems();
     fetchLists();
+
+    // Check for ?onboarding=true redirection from registration
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("onboarding") === "true") {
+        setIsOnboardingOpen(true);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -220,6 +232,59 @@ export default function Home() {
     { id: "places", label: "Passes & Trails", icon: <MapPin className="w-3.5 h-3.5" /> },
     { id: "memos", label: "Private Vault", icon: <Lock className="w-3.5 h-3.5" /> },
   ];
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-10 h-10 rounded-2xl bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-950 flex items-center justify-center font-serif font-black text-xl shadow-md animate-pulse">
+          C
+        </div>
+        <p className="mt-3 text-xs font-mono uppercase tracking-widest text-neutral-400">
+          Loading Curio Taste Graph...
+        </p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <CurioLandingVitrine
+          onOpenAuth={(tab) => {
+            setAuthTab(tab || "login");
+            setIsAuthOpen(true);
+          }}
+        />
+
+        {/* Authentication Modal */}
+        <AuthModal
+          isOpen={isAuthOpen}
+          defaultTab={authTab}
+          onClose={() => setIsAuthOpen(false)}
+          onSuccess={(authenticatedUser, _token, isRegister) => {
+            setUser(authenticatedUser);
+            fetchItems();
+            fetchLists();
+            if (isRegister || !authenticatedUser.onboardingCompleted) {
+              setIsOnboardingOpen(true);
+            }
+          }}
+        />
+
+        {/* Onboarding Modal */}
+        <OnboardingModal
+          isOpen={isOnboardingOpen}
+          initialUser={user}
+          onClose={() => setIsOnboardingOpen(false)}
+          onComplete={(completedUser) => {
+            setUser(completedUser);
+            fetchItems();
+            fetchLists();
+          }}
+        />
+      </>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-12 px-4 sm:px-6 lg:px-8">

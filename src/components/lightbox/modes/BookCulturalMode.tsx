@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { BookOpen, Bookmark, Quote, CheckCircle2, Clock, Check, Plus, Trash2 } from "lucide-react";
+import { BookOpen, Bookmark, Quote, CheckCircle2, Clock, Check, Plus, Trash2, ShoppingBag, ExternalLink } from "lucide-react";
 import type { CulturalModeProps } from "./CinemaCulturalMode";
+import { buildAffiliateUrl } from "@/lib/commerce/affiliate";
 
 type ReadingStatus = "WANT_TO_READ" | "READING" | "FINISHED";
 
-export function BookCulturalMode({ save, entity, primarySource }: CulturalModeProps) {
+export function BookCulturalMode({ save, entity, primarySource, creatorAffiliateTags }: CulturalModeProps) {
   const data = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
   const customValues = (typeof save?.userCustomValues === "object" && save?.userCustomValues) || {};
 
@@ -255,11 +256,28 @@ export function BookCulturalMode({ save, entity, primarySource }: CulturalModePr
           </div>
         </div>
 
-        {/* Telemetry Bar */}
+        {/* Telemetry Bar & Creator-Attributed Affiliate CTA */}
         <div className="pt-3 border-t border-neutral-200/60 dark:border-neutral-800 flex items-center justify-between text-[10px] font-mono text-neutral-400">
-          <span>{publisher}</span>
-          <span>{pages}</span>
-          <span>{isbn}</span>
+          <div className="flex items-center gap-2">
+            <span>{publisher}</span>
+            <span>•</span>
+            <span>{pages}</span>
+          </div>
+          <a
+            href={buildAffiliateUrl(
+              primarySource?.sourceUrl || entity?.canonicalUrl || `https://bookshop.org/books?keywords=${encodeURIComponent(entity?.title || "")}`,
+              primarySource?.sellerName || "Bookshop.org",
+              primarySource?.affiliateTemplate,
+              creatorAffiliateTags
+            )}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 transition shadow-2xs cursor-pointer"
+          >
+            <ShoppingBag className="w-3 h-3" />
+            <span>Get on {primarySource?.sellerName || "Bookshop.org"}</span>
+            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+          </a>
         </div>
       </div>
     </div>

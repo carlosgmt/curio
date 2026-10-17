@@ -1,7 +1,8 @@
-import { db, userSaves, globalEntities, curioTypes, listItems, smartLists, entitySources, entryConnections } from "@/db";
+import { db, userSaves, globalEntities, curioTypes, listItems, smartLists, entitySources, entryConnections, users } from "@/db";
 import { eq, or } from "drizzle-orm";
 import { getConnectedSaves, type ConnectedItem } from "@/lib/connections/service";
 import { evaluateAttributePromotion } from "@/lib/curio-learns/attributes";
+import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 
 export interface UpdateSaveDetailsInput {
   privateTitle?: string | null;
@@ -17,6 +18,12 @@ export interface SaveDetails {
   connections: ConnectedItem[];
   lists: Array<typeof smartLists.$inferSelect & { listItem: typeof listItems.$inferSelect }>;
   sources: Array<typeof entitySources.$inferSelect>;
+  owner?: {
+    id: string;
+    username: string;
+    displayName: string | null;
+    affiliateTags?: UserAffiliateTags | null;
+  } | null;
 }
 
 /**
@@ -64,6 +71,18 @@ export async function getSaveDetails(saveId: string): Promise<SaveDetails | null
       .where(eq(entitySources.entityId, record.entity.id));
   }
 
+  // Retrieve save owner
+  const [owner] = await db
+    .select({
+      id: users.id,
+      username: users.username,
+      displayName: users.displayName,
+      affiliateTags: users.affiliateTags,
+    })
+    .from(users)
+    .where(eq(users.id, record.save.userId))
+    .limit(1);
+
   return {
     save: record.save,
     entity: record.entity,
@@ -71,6 +90,7 @@ export async function getSaveDetails(saveId: string): Promise<SaveDetails | null
     connections,
     lists,
     sources,
+    owner: owner || null,
   };
 }
 

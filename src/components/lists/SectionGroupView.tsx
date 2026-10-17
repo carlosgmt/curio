@@ -4,9 +4,11 @@ import React from "react";
 import { Pin, Quote } from "lucide-react";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import type { SectionGroup } from "@/lib/lists/service";
+import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 
 export interface SectionGroupViewProps {
   sections: SectionGroup[];
+  creatorAffiliateTags?: UserAffiliateTags | null;
   onConnect?: (card: CardData) => void;
   onSwapped?: (card: CardData) => void;
   onUnlink?: (connectionId: string) => void;
@@ -17,6 +19,7 @@ export interface SectionGroupViewProps {
 
 export function SectionGroupView({
   sections,
+  creatorAffiliateTags,
   onConnect,
   onSwapped,
   onUnlink,
@@ -91,6 +94,7 @@ export function SectionGroupView({
                     <div className="flex-1">
                       <PolymorphicCard
                         item={cardData}
+                        creatorAffiliateTags={creatorAffiliateTags}
                         onConnect={onConnect}
                         onSwapped={onSwapped}
                         onUnlink={onUnlink}

@@ -19,6 +19,7 @@ export function CardDeepLinkClient({ initialDetails }: CardDeepLinkClientProps) 
     entity: initialDetails.entity,
     primarySource: initialDetails.sources[0] || null,
     connections: initialDetails.connections,
+    creatorAffiliateTags: initialDetails.owner?.affiliateTags,
   });
 
   const handleClose = () => {
@@ -58,6 +59,7 @@ export function CardDeepLinkClient({ initialDetails }: CardDeepLinkClientProps) 
 
       <CardLightboxModal
         card={card}
+        creatorAffiliateTags={initialDetails.owner?.affiliateTags}
         isOpen={true}
         onClose={handleClose}
         onCardUpdated={handleUpdated}

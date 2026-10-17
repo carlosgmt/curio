@@ -15,6 +15,7 @@ import { CustomFieldsSection } from "./CustomFieldsSection";
 import { AddToListPopover } from "../lists/AddToListPopover";
 import type { CandidateFallback } from "./DisambiguationBar";
 import type { ConnectedItem } from "@/lib/connections/service";
+import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 
 export interface CardData {
   save: {
@@ -44,11 +45,13 @@ export interface CardData {
   } | null;
   primarySource?: any;
   connections?: ConnectedItem[];
+  creatorAffiliateTags?: UserAffiliateTags | null;
 }
 
 export interface PolymorphicCardProps {
   item: CardData;
   connections?: ConnectedItem[];
+  creatorAffiliateTags?: UserAffiliateTags | null;
   onConnect?: (item: CardData) => void;
   onUnlink?: (connectionId: string) => void;
   onSwapped?: (item: CardData) => void;
@@ -60,6 +63,7 @@ export interface PolymorphicCardProps {
 export function PolymorphicCard({
   item,
   connections: propConnections,
+  creatorAffiliateTags: propCreatorTags,
   onConnect,
   onUnlink,
   onSwapped,
@@ -68,6 +72,7 @@ export function PolymorphicCard({
   onCardClick,
 }: PolymorphicCardProps) {
   const { save, entity, primarySource } = item;
+  const effectiveTags = item.creatorAffiliateTags || propCreatorTags;
   const [internalConnections, setInternalConnections] = useState<ConnectedItem[]>(item.connections || []);
   const [isAddToListOpen, setIsAddToListOpen] = useState(false);
 
@@ -140,6 +145,7 @@ export function PolymorphicCard({
           save={save}
           entity={entity}
           primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
           onSwapped={onSwapped}
         />
       );
@@ -161,6 +167,7 @@ export function PolymorphicCard({
           save={save}
           entity={entity}
           primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
           onSwapped={onSwapped}
         />
       );
@@ -182,6 +189,7 @@ export function PolymorphicCard({
           save={save}
           entity={entity}
           primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
           onSwapped={onSwapped}
         />
       );
@@ -202,6 +210,7 @@ export function PolymorphicCard({
           save={save}
           entity={entity}
           primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
           onSwapped={onSwapped}
         />
       );
@@ -223,6 +232,7 @@ export function PolymorphicCard({
           save={save}
           entity={entity}
           primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
           onSwapped={onSwapped}
         />
       );
@@ -247,6 +257,7 @@ export function PolymorphicCard({
           save={save}
           entity={entity}
           primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
           onSwapped={onSwapped}
         />
       );
@@ -258,6 +269,7 @@ export function PolymorphicCard({
         save={save}
         entity={entity}
         primarySource={primarySource}
+        creatorAffiliateTags={effectiveTags}
         onSwapped={onSwapped}
       />
     );

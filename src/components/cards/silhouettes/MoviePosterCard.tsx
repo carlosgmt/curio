@@ -10,6 +10,7 @@ export function MoviePosterCard({
   save,
   entity,
   primarySource,
+  creatorAffiliateTags,
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
@@ -86,6 +87,7 @@ export function MoviePosterCard({
             typePath: entity.typePath || "/media/film",
           }}
           primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Watch on MUBI"
         />
       </div>

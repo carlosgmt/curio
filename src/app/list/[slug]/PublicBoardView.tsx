@@ -91,7 +91,7 @@ export function PublicBoardView({ data }: { data: ListWithSections }) {
 
       {/* Sections and Cards Grid */}
       <div className="max-w-6xl mx-auto">
-        <SectionGroupView sections={sections} />
+        <SectionGroupView sections={sections} creatorAffiliateTags={owner?.affiliateTags} />
       </div>
 
       {/* Footer */}

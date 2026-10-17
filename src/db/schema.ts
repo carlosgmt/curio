@@ -18,8 +18,10 @@ export const users = sqliteTable("users", {
   customDomain: text("custom_domain"),
   affiliateTags: text("affiliate_tags", { mode: "json" }).$type<{
     amazon?: string;
+    bookshop?: string;
     ltk?: string;
     skimlinks?: string;
+    customRef?: string;
   }>(),
   googleSyncTokens: text("google_sync_tokens", { mode: "json" }).$type<{
     mapsListEnabled?: boolean;

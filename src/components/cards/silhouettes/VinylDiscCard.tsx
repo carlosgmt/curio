@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { Disc3, Music2, Sparkles, Volume2 } from "lucide-react";
-import { CardFooterWaterfall } from "../CardFooterWaterfall";
+import { CardFooterWaterfall, type UserAffiliateTags } from "../CardFooterWaterfall";
 import { DisambiguationBar, type CandidateFallback } from "../DisambiguationBar";
 
 export interface SilhouetteCardProps {
@@ -29,6 +29,7 @@ export interface SilhouetteCardProps {
     extendedAttributes?: any;
   };
   primarySource?: any;
+  creatorAffiliateTags?: UserAffiliateTags | null;
   onSwapped?: (item: any) => void;
 }
 
@@ -36,6 +37,7 @@ export function VinylDiscCard({
   save,
   entity,
   primarySource,
+  creatorAffiliateTags,
   onSwapped,
 }: SilhouetteCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -127,6 +129,7 @@ export function VinylDiscCard({
           typePath: entity.typePath || "/media/music/vinyl",
         }}
         primarySource={primarySource}
+        creatorAffiliateTags={creatorAffiliateTags}
         customUtilityLabel="Play on Spotify"
       />
     </div>

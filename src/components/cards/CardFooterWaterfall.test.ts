@@ -32,4 +32,13 @@ describe("CardFooterWaterfall Affiliate Routing", () => {
     const affiliateUrl = buildAffiliateUrl(url, "Boutique", template);
     expect(affiliateUrl).toBe("https://redirect.network.com/?partner=curio&dest=https%3A%2F%2Fboutique.com%2Fart-print");
   });
+
+  it("injects curator custom Amazon tag and Bookshop aid when provided", () => {
+    const amazonUrl = "https://www.amazon.com/dp/B08N5WRWNW";
+    const bookshopUrl = "https://bookshop.org/books/dune/9780441172719";
+    const tags = { amazon: "mycreator-20", bookshop: "curator-reads" };
+
+    expect(buildAffiliateUrl(amazonUrl, "Amazon", null, tags)).toContain("tag=mycreator-20");
+    expect(buildAffiliateUrl(bookshopUrl, "Bookshop.org", null, tags)).toContain("aid=curator-reads");
+  });
 });

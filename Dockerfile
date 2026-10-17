@@ -22,7 +22,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME="0.0.0.0"
 ENV PORT=3000
-ENV DATABASE_PATH=/data/memory.db
+ENV DATABASE_PATH=/data/curio.db
 ENV MEDIA_PATH=/data/media
 
 RUN apk add --no-cache libc6-compat

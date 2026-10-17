@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield } from "lucide-react";
+import { User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign } from "lucide-react";
+import { AffiliateSettingsModal } from "@/components/commerce/AffiliateSettingsModal";
 
 export interface UserNavProps {
   user: {
@@ -15,6 +16,7 @@ export interface UserNavProps {
   } | null;
   onOpenAuth: (tab?: "login" | "register") => void;
   onOpenOnboarding: () => void;
+  onOpenAffiliateSettings?: () => void;
   onLogout: () => void;
 }
 
@@ -22,9 +24,11 @@ export function UserNav({
   user,
   onOpenAuth,
   onOpenOnboarding,
+  onOpenAffiliateSettings,
   onLogout,
 }: UserNavProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [affiliateModalOpen, setAffiliateModalOpen] = useState(false);
 
   if (!user) {
     return (
@@ -144,6 +148,22 @@ export function UserNav({
               type="button"
               onClick={() => {
                 setDropdownOpen(false);
+                if (onOpenAffiliateSettings) {
+                  onOpenAffiliateSettings();
+                } else {
+                  setAffiliateModalOpen(true);
+                }
+              }}
+              className="w-full flex items-center gap-2 p-2 rounded-xl text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition text-left cursor-pointer"
+            >
+              <DollarSign className="w-3.5 h-3.5 text-amber-500" />
+              <span>Affiliate & Monetization</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setDropdownOpen(false);
                 onLogout();
               }}
               className="w-full flex items-center gap-2 p-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition text-left cursor-pointer"
@@ -154,6 +174,12 @@ export function UserNav({
           </div>
         </>
       )}
+
+      {/* Embedded Creator Affiliate Modal if used standalone */}
+      <AffiliateSettingsModal
+        isOpen={affiliateModalOpen}
+        onClose={() => setAffiliateModalOpen(false)}
+      />
     </div>
   );
 }

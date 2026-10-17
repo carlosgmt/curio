@@ -497,6 +497,7 @@ export default function Home() {
       <CardLightboxModal
         card={selectedCard}
         isOpen={Boolean(selectedCard)}
+        creatorAffiliateTags={user?.affiliateTags}
         onClose={() => setSelectedCard(null)}
         onCardUpdated={(updatedSave) => {
           fetchItems();

@@ -1,0 +1,16 @@
+# Litestream Continuous SQLite Streaming Replication Example Template
+# Copy this file to litestream.yml and supply your S3/R2 cloud storage credentials
+# or pass via container environment variables.
+
+dbs:
+  - path: /data/curio.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET:-curio-sqlite-backups}
+        path: curio.db
+        endpoint: ${LITESTREAM_ENDPOINT:-https://<account_id>.r2.cloudflarestorage.com}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID:-YOUR_ACCESS_KEY}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY:-YOUR_SECRET_KEY}
+        sync-interval: 1s
+        retention: 72h
+        validation-interval: 1h

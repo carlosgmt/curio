@@ -10,6 +10,7 @@ export function BookJacketCard({
   save,
   entity,
   primarySource,
+  creatorAffiliateTags,
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
@@ -101,6 +102,7 @@ export function BookJacketCard({
             typePath: entity.typePath || "/product/book",
           }}
           primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Read Sample"
         />
       </div>

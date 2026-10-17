@@ -1,0 +1,14 @@
+# Litestream Continuous SQLite Streaming Replication Configuration
+# Replicates /data/curio.db in near real-time to S3-compatible object storage (Cloudflare R2, MinIO, AWS S3)
+
+dbs:
+  - path: /data/curio.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: curio.db
+        endpoint: ${LITESTREAM_ENDPOINT}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        sync-interval: 1s
+        retention: 72h

@@ -36,11 +36,13 @@ import { SynapsePill } from "../connections/SynapsePill";
 import { CustomFieldsSection } from "../cards/CustomFieldsSection";
 import { AddToListPopover } from "../lists/AddToListPopover";
 import type { ConnectedItem } from "@/lib/connections/service";
+import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 
 export interface CardLightboxModalProps {
   card: CardData | null;
   isOpen: boolean;
   onClose: () => void;
+  creatorAffiliateTags?: UserAffiliateTags | null;
   onCardUpdated?: (updatedSave: any) => void;
   onCardDeleted?: (saveId: string) => void;
 }
@@ -51,6 +53,7 @@ export function CardLightboxModal({
   card,
   isOpen,
   onClose,
+  creatorAffiliateTags,
   onCardUpdated,
   onCardDeleted,
 }: CardLightboxModalProps) {
@@ -215,11 +218,11 @@ export function CardLightboxModal({
   const renderLeftStage = () => {
     switch (activeArchetype) {
       case "cinema":
-        return <CinemaCulturalMode save={card.save} entity={card.entity} primarySource={card.primarySource} />;
+        return <CinemaCulturalMode save={card.save} entity={card.entity} primarySource={card.primarySource} creatorAffiliateTags={creatorAffiliateTags} />;
       case "book":
-        return <BookCulturalMode save={card.save} entity={card.entity} primarySource={card.primarySource} />;
+        return <BookCulturalMode save={card.save} entity={card.entity} primarySource={card.primarySource} creatorAffiliateTags={creatorAffiliateTags} />;
       case "vinyl":
-        return <VinylCulturalMode save={card.save} entity={card.entity} primarySource={card.primarySource} />;
+        return <VinylCulturalMode save={card.save} entity={card.entity} primarySource={card.primarySource} creatorAffiliateTags={creatorAffiliateTags} />;
       case "recipe":
         return <RecipeCulturalMode save={card.save} entity={card.entity} primarySource={card.primarySource} />;
       case "place":

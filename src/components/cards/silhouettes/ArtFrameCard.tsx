@@ -10,6 +10,7 @@ export function ArtFrameCard({
   save,
   entity,
   primarySource,
+  creatorAffiliateTags,
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
@@ -72,6 +73,7 @@ export function ArtFrameCard({
             typePath: entity.typePath || "/product/art",
           }}
           primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="View High-Res"
         />
       </div>

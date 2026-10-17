@@ -11,7 +11,7 @@ interface Track {
   duration?: string;
 }
 
-export function VinylCulturalMode({ save, entity, primarySource }: CulturalModeProps) {
+export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliateTags }: CulturalModeProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const data = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
 
@@ -34,7 +34,7 @@ export function VinylCulturalMode({ save, entity, primarySource }: CulturalModeP
     : defaultTracklist;
 
   const vinylStoreUrl = primarySource?.sourceUrl
-    ? buildAffiliateUrl(primarySource.sourceUrl, primarySource.sellerName)
+    ? buildAffiliateUrl(primarySource.sourceUrl, primarySource.sellerName, primarySource.affiliateTemplate, creatorAffiliateTags)
     : "https://www.discogs.com";
 
   return (

@@ -1,5 +1,6 @@
 import { db, smartLists, listItems, userSaves, globalEntities, users, curioTypes, type SmartList, type ListItem, type UserSave, type GlobalEntity } from "@/db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
+import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 
 export interface CreateListInput {
   title: string;
@@ -40,6 +41,7 @@ export interface ListWithSections {
     username: string;
     displayName: string | null;
     avatarUrl: string | null;
+    affiliateTags?: UserAffiliateTags | null;
   } | null;
   itemCount: number;
   sections: SectionGroup[];
@@ -324,6 +326,7 @@ export async function getListBySlugWithItems(
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
+      affiliateTags: users.affiliateTags,
     })
     .from(users)
     .where(eq(users.id, list.userId))

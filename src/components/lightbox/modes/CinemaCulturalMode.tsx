@@ -2,15 +2,16 @@
 
 import React, { useState } from "react";
 import { Film, Play, Star, Clapperboard, Tv, ExternalLink, X } from "lucide-react";
-import { buildAffiliateUrl } from "@/components/cards/CardFooterWaterfall";
+import { buildAffiliateUrl, type UserAffiliateTags } from "@/lib/commerce/affiliate";
 
 export interface CulturalModeProps {
   save: any;
   entity: any;
   primarySource?: any;
+  creatorAffiliateTags?: UserAffiliateTags | null;
 }
 
-export function CinemaCulturalMode({ save, entity, primarySource }: CulturalModeProps) {
+export function CinemaCulturalMode({ save, entity, primarySource, creatorAffiliateTags }: CulturalModeProps) {
   const [showTrailer, setShowTrailer] = useState(false);
   const data = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
 
@@ -97,7 +98,7 @@ export function CinemaCulturalMode({ save, entity, primarySource }: CulturalMode
             {streamPlatforms.map((platform) => (
               <a
                 key={platform.name}
-                href={primarySource?.sourceUrl ? buildAffiliateUrl(primarySource.sourceUrl, platform.name) : platform.url}
+                href={primarySource?.sourceUrl ? buildAffiliateUrl(primarySource.sourceUrl, platform.name, null, creatorAffiliateTags) : platform.url}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-200 transition cursor-pointer"

@@ -12,6 +12,10 @@ import {
   Zap,
 } from "lucide-react";
 
+import { buildAffiliateUrl, type UserAffiliateTags } from "@/lib/commerce/affiliate";
+
+export { buildAffiliateUrl, type UserAffiliateTags };
+
 export interface CardFooterWaterfallProps {
   entity: {
     title: string;
@@ -29,52 +33,15 @@ export interface CardFooterWaterfallProps {
     currency?: string | null;
     affiliateTemplate?: string | null;
   } | null;
+  creatorAffiliateTags?: UserAffiliateTags | null;
   customUtilityLabel?: string;
   onUtilityClick?: () => void;
-}
-
-/**
- * Injects affiliate partner parameters into merchant destination URLs
- */
-export function buildAffiliateUrl(
-  url: string,
-  sellerName?: string,
-  affiliateTemplate?: string | null
-): string {
-  if (affiliateTemplate) {
-    return affiliateTemplate.replace("{url}", encodeURIComponent(url));
-  }
-
-  try {
-    const parsed = new URL(url);
-    const domain = parsed.hostname.toLowerCase();
-
-    if (domain.includes("amazon.") || sellerName?.toLowerCase() === "amazon") {
-      parsed.searchParams.set("tag", "curio-20");
-      return parsed.toString();
-    }
-    if (domain.includes("bookshop.org") || sellerName?.toLowerCase() === "bookshop.org") {
-      parsed.searchParams.set("aid", "curio");
-      return parsed.toString();
-    }
-    if (domain.includes("discogs.com")) {
-      parsed.searchParams.set("ev", "curio_curate");
-      return parsed.toString();
-    }
-
-    // Default universal affiliate tracking parameter
-    if (!parsed.searchParams.has("ref")) {
-      parsed.searchParams.set("ref", "curio");
-    }
-    return parsed.toString();
-  } catch {
-    return url;
-  }
 }
 
 export function CardFooterWaterfall({
   entity,
   primarySource,
+  creatorAffiliateTags,
   customUtilityLabel,
   onUtilityClick,
 }: CardFooterWaterfallProps) {
@@ -108,7 +75,12 @@ export function CardFooterWaterfall({
   const currency = primarySource?.currency || entity.currency || "USD";
   const sellerName = primarySource?.sellerName || (entity.ucpSkuId ? "Google UCP" : "Merchant");
   const targetUrl = primarySource?.sourceUrl || entity.canonicalUrl || "#";
-  const outboundUrl = buildAffiliateUrl(targetUrl, sellerName, primarySource?.affiliateTemplate);
+  const outboundUrl = buildAffiliateUrl(
+    targetUrl,
+    sellerName,
+    primarySource?.affiliateTemplate,
+    creatorAffiliateTags
+  );
 
   const formatPrice = (cents?: number | null, curr = "USD") => {
     if (cents == null) return null;

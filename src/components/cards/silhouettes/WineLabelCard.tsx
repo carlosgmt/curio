@@ -10,6 +10,7 @@ export function WineLabelCard({
   save,
   entity,
   primarySource,
+  creatorAffiliateTags,
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
@@ -93,6 +94,7 @@ export function WineLabelCard({
             typePath: entity.typePath || "/product/beverage/wine",
           }}
           primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Vivino Review"
         />
       </div>

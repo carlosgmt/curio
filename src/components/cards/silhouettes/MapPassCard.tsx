@@ -10,6 +10,7 @@ export function MapPassCard({
   save,
   entity,
   primarySource,
+  creatorAffiliateTags,
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
@@ -109,6 +110,7 @@ export function MapPassCard({
             typePath: entity.typePath || "/place/transit_trail",
           }}
           primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Google Maps"
         />
       </div>

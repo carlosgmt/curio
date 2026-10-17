@@ -16,6 +16,7 @@ export function RecipeIndexCard({
   save,
   entity,
   primarySource,
+  creatorAffiliateTags,
   onSwapped,
 }: SilhouetteCardProps) {
   const [multiplier, setMultiplier] = useState<number>(1);
@@ -183,6 +184,7 @@ export function RecipeIndexCard({
             typePath: entity.typePath || "/culinary/recipe",
           }}
           primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Cook Mode"
         />
       </div>

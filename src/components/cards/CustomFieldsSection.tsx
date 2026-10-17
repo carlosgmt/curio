@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Plus, X, Tag, Globe, Check, Loader2 } from "lucide-react";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface CustomFieldsSectionProps {
   saveId: string;
@@ -41,7 +42,7 @@ export function CustomFieldsSection({
         },
       };
 
-      const res = await fetch(`/api/v1/saves/${saveId}/custom-fields`, {
+      const res = await apiFetch(`/api/v1/saves/${saveId}/custom-fields`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -74,7 +75,7 @@ export function CustomFieldsSection({
         },
       };
 
-      const res = await fetch(`/api/v1/saves/${saveId}/custom-fields`, {
+      const res = await apiFetch(`/api/v1/saves/${saveId}/custom-fields`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

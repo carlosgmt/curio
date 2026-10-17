@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Zap, Crown, Info, RefreshCw } from "lucide-react";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface QuotaData {
   isPro: boolean;
@@ -18,7 +19,7 @@ export function QuotaIndicator() {
 
   const fetchQuota = async () => {
     try {
-      const res = await fetch("/api/v1/user/quota");
+      const res = await apiFetch("/api/v1/user/quota");
       if (res.ok) {
         const data = await res.json();
         setQuota(data.quota);

@@ -20,6 +20,7 @@ import {
   X,
   Compass,
 } from "lucide-react";
+import { apiFetch } from "@/lib/apiClient";
 
 interface OmniboxProps {
   onCaptured?: (item: any) => void;
@@ -98,7 +99,7 @@ export function Omnibox({
 
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/v1/search?q=${encodeURIComponent(searchQuery)}&semantic=true&limit=8`);
+        const res = await apiFetch(`/api/v1/search?q=${encodeURIComponent(searchQuery)}&semantic=true&limit=8`);
         if (res.ok) {
           const data = await res.json();
           setSearchResults(data.results || []);
@@ -131,7 +132,7 @@ export function Omnibox({
 
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/v1/capture", {
+      const res = await apiFetch("/api/v1/capture", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: trimmed }),

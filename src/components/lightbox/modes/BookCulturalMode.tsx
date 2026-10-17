@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { BookOpen, Bookmark, Quote, CheckCircle2, Clock, Check, Plus, Trash2, ShoppingBag, ExternalLink } from "lucide-react";
 import type { CulturalModeProps } from "./CinemaCulturalMode";
 import { buildAffiliateUrl } from "@/lib/commerce/affiliate";
+import { apiFetch } from "@/lib/apiClient";
 
 type ReadingStatus = "WANT_TO_READ" | "READING" | "FINISHED";
 
@@ -29,7 +30,7 @@ export function BookCulturalMode({ save, entity, primarySource, creatorAffiliate
   const handleStatusChange = async (status: ReadingStatus) => {
     setReadingStatus(status);
     try {
-      await fetch(`/api/v1/saves/${save.id}/custom-fields`, {
+      await apiFetch(`/api/v1/saves/${save.id}/custom-fields`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -53,7 +54,7 @@ export function BookCulturalMode({ save, entity, primarySource, creatorAffiliate
     setIsAddingQuote(false);
 
     try {
-      await fetch(`/api/v1/saves/${save.id}/custom-fields`, {
+      await apiFetch(`/api/v1/saves/${save.id}/custom-fields`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -72,7 +73,7 @@ export function BookCulturalMode({ save, entity, primarySource, creatorAffiliate
     setQuotes(nextQuotes);
 
     try {
-      await fetch(`/api/v1/saves/${save.id}/custom-fields`, {
+      await apiFetch(`/api/v1/saves/${save.id}/custom-fields`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

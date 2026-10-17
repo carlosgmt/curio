@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { RefreshCw, ExternalLink, Sparkles, Check } from "lucide-react";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface CandidateFallback {
   title: string;
@@ -33,7 +34,7 @@ export function DisambiguationBar({
     setIsSwapping(candidate.url);
 
     try {
-      const res = await fetch("/api/v1/capture/disambiguate", {
+      const res = await apiFetch("/api/v1/capture/disambiguate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

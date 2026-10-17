@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import { Upload, X, Film, BookOpen, FileText, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { apiFetch } from "@/lib/apiClient";
 
 interface ImporterModalProps {
   isOpen: boolean;
@@ -59,7 +60,7 @@ export function ImporterModal({ isOpen, onClose, onImported }: ImporterModalProp
     setResult(null);
 
     try {
-      const res = await fetch("/api/v1/import", {
+      const res = await apiFetch("/api/v1/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

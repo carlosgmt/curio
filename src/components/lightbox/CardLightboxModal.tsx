@@ -28,6 +28,7 @@ import { CinemaCulturalMode } from "./modes/CinemaCulturalMode";
 import { BookCulturalMode } from "./modes/BookCulturalMode";
 import { VinylCulturalMode } from "./modes/VinylCulturalMode";
 import { RecipeCulturalMode } from "./modes/RecipeCulturalMode";
+import { apiFetch } from "@/lib/apiClient";
 import { PlaceCulturalMode } from "./modes/PlaceCulturalMode";
 import { WineLabelCard } from "../cards/silhouettes/WineLabelCard";
 import { ArtFrameCard } from "../cards/silhouettes/ArtFrameCard";
@@ -100,7 +101,7 @@ export function CardLightboxModal({
     }
 
     // Load connections
-    fetch(`/api/v1/connections?saveId=${card.save.id}`)
+    apiFetch(`/api/v1/connections?saveId=${card.save.id}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.connections) {
@@ -137,7 +138,7 @@ export function CardLightboxModal({
         memo: "/memo/personal",
       };
 
-      const res = await fetch(`/api/v1/saves/${card.save.id}`, {
+      const res = await apiFetch(`/api/v1/saves/${card.save.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -164,7 +165,7 @@ export function CardLightboxModal({
 
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/v1/saves/${card.save.id}`, {
+      const res = await apiFetch(`/api/v1/saves/${card.save.id}`, {
         method: "DELETE",
       });
 

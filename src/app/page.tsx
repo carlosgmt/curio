@@ -14,6 +14,7 @@ import { TypeBuilderModal } from "@/components/shapeshift/TypeBuilderModal";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { UserNav } from "@/components/layout/UserNav";
+import { apiFetch } from "@/lib/apiClient";
 import type { SmartList } from "@/db";
 import type { ListWithSections } from "@/lib/lists/service";
 import {
@@ -63,7 +64,7 @@ export default function Home() {
 
   const fetchCurrentUser = async () => {
     try {
-      const res = await fetch("/api/v1/auth/me");
+      const res = await apiFetch("/api/v1/auth/me");
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
@@ -81,7 +82,7 @@ export default function Home() {
 
   const fetchItems = async () => {
     try {
-      const res = await fetch("/api/v1/capture");
+      const res = await apiFetch("/api/v1/capture");
       if (res.ok) {
         const data = await res.json();
         setItems(data.saves || []);
@@ -95,7 +96,7 @@ export default function Home() {
 
   const fetchLists = async () => {
     try {
-      const res = await fetch("/api/v1/lists");
+      const res = await apiFetch("/api/v1/lists");
       if (res.ok) {
         const data = await res.json();
         setLists(data.lists || []);
@@ -117,7 +118,7 @@ export default function Home() {
       return;
     }
     let isMounted = true;
-    fetch(`/api/v1/lists/${activeListSlug}`)
+    apiFetch(`/api/v1/lists/${activeListSlug}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (isMounted && data?.list) {
@@ -239,7 +240,7 @@ export default function Home() {
               }}
               onOpenOnboarding={() => setIsOnboardingOpen(true)}
               onLogout={async () => {
-                await fetch("/api/v1/auth/logout", { method: "POST" });
+                await apiFetch("/api/v1/auth/logout", { method: "POST" });
                 setUser(null);
                 fetchItems();
                 fetchLists();

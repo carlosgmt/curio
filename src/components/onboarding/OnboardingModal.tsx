@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   Loader2,
 } from "lucide-react";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface OnboardingModalProps {
   isOpen: boolean;
@@ -154,7 +155,7 @@ export function OnboardingModal({
     setIsImporting(true);
     setImportStatus(null);
     try {
-      const res = await fetch("/api/v1/import", {
+      const res = await apiFetch("/api/v1/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ csvText }),
@@ -177,7 +178,7 @@ export function OnboardingModal({
     setError(null);
 
     try {
-      const res = await fetch("/api/v1/user/onboarding", {
+      const res = await apiFetch("/api/v1/user/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

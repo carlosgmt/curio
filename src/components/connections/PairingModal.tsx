@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { X, Link2, Wine, Music, Sparkles, Shirt, Utensils, Search, Loader2 } from "lucide-react";
 import type { ConnectionType } from "@/lib/connections/service";
 import type { CardData } from "../cards/PolymorphicCard";
+import { apiFetch } from "@/lib/apiClient";
 
 interface PairingModalProps {
   sourceCard: CardData | null;
@@ -82,7 +83,7 @@ export function PairingModal({
     setError(null);
 
     try {
-      const res = await fetch("/api/v1/connections", {
+      const res = await apiFetch("/api/v1/connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

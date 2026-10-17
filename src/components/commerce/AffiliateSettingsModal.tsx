@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Sparkles, ShoppingBag, Globe, Check, Loader2, DollarSign } from "lucide-react";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface AffiliateSettingsModalProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export function AffiliateSettingsModal({
     let isMounted = true;
     setIsLoading(true);
 
-    fetch("/api/v1/user/profile")
+    apiFetch("/api/v1/user/profile")
       .then((res) => res.json())
       .then((data) => {
         if (!isMounted) return;
@@ -82,7 +83,7 @@ export function AffiliateSettingsModal({
         },
       };
 
-      const res = await fetch("/api/v1/user/profile", {
+      const res = await apiFetch("/api/v1/user/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

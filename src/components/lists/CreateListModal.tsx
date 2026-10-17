@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { X, Layers, Sparkles, Globe, Lock, EyeOff, Loader2 } from "lucide-react";
 import type { SmartList } from "@/db";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface CreateListModalProps {
   isOpen: boolean;
@@ -46,7 +47,7 @@ export function CreateListModal({
           }
         : undefined;
 
-      const res = await fetch("/api/v1/lists", {
+      const res = await apiFetch("/api/v1/lists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

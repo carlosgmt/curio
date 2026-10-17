@@ -19,6 +19,7 @@ import {
   MapPin,
 } from "lucide-react";
 import type { curioTypes } from "@/db";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface TypeBuilderModalProps {
   isOpen: boolean;
@@ -117,7 +118,7 @@ export function TypeBuilderModal({
       }));
 
     try {
-      const res = await fetch("/api/v1/types", {
+      const res = await apiFetch("/api/v1/types", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

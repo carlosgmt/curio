@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { FolderPlus, Check, Plus, Loader2, X, BookmarkCheck } from "lucide-react";
 import type { SmartList } from "@/db";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface AddToListPopoverProps {
   saveId: string;
@@ -31,7 +32,7 @@ export function AddToListPopover({
     let isMounted = true;
     setLoading(true);
 
-    fetch("/api/v1/lists")
+    apiFetch("/api/v1/lists")
       .then((res) => (res.ok ? res.json() : null))
       .then(async (data) => {
         if (!isMounted || !data?.lists) return;
@@ -43,7 +44,7 @@ export function AddToListPopover({
         await Promise.all(
           userLists.map(async (l) => {
             try {
-              const res = await fetch(`/api/v1/lists/${l.slug}`);
+              const res = await apiFetch(`/api/v1/lists/${l.slug}`);
               if (res.ok) {
                 const listData = await res.json();
                 const hasSave = listData.sections?.some((sec: any) =>
@@ -88,12 +89,12 @@ export function AddToListPopover({
     try {
       if (isCurrentlyAssigned) {
         // Remove item from list
-        await fetch(`/api/v1/lists/${list.slug}/items?saveId=${saveId}`, {
+        await apiFetch(`/api/v1/lists/${list.slug}/items?saveId=${saveId}`, {
           method: "DELETE",
         });
       } else {
         // Add item to list
-        await fetch(`/api/v1/lists/${list.slug}/items`, {
+        await apiFetch(`/api/v1/lists/${list.slug}/items`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ saveId }),
@@ -116,7 +117,7 @@ export function AddToListPopover({
 
     setIsCreating(true);
     try {
-      const res = await fetch("/api/v1/lists", {
+      const res = await apiFetch("/api/v1/lists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: newTitle.trim(), visibility: "PUBLIC" }),
@@ -125,7 +126,7 @@ export function AddToListPopover({
       if (res.ok) {
         const { list } = await res.json();
         // Add save to newly created list
-        await fetch(`/api/v1/lists/${list.slug}/items`, {
+        await apiFetch(`/api/v1/lists/${list.slug}/items`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ saveId }),

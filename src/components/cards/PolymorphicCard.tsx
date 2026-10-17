@@ -16,6 +16,7 @@ import { AddToListPopover } from "../lists/AddToListPopover";
 import type { CandidateFallback } from "./DisambiguationBar";
 import type { ConnectedItem } from "@/lib/connections/service";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface CardData {
   save: {
@@ -89,7 +90,7 @@ export function PolymorphicCard({
     if (save.isPrivateMemo) return;
 
     let isMounted = true;
-    fetch(`/api/v1/connections?saveId=${save.id}`)
+    apiFetch(`/api/v1/connections?saveId=${save.id}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (isMounted && data?.connections) {
@@ -107,7 +108,7 @@ export function PolymorphicCard({
 
   const handleUnlink = async (connectionId: string) => {
     try {
-      const res = await fetch(`/api/v1/connections?connectionId=${connectionId}`, {
+      const res = await apiFetch(`/api/v1/connections?connectionId=${connectionId}`, {
         method: "DELETE",
       });
       if (res.ok) {

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { X, Lock, Mail, User, Sparkles, Loader2, ArrowRight } from "lucide-react";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface AuthModalProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export function AuthModal({
     setError(null);
 
     try {
-      const res = await fetch("/api/v1/auth/login", {
+      const res = await apiFetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -65,7 +66,7 @@ export function AuthModal({
     setError(null);
 
     try {
-      const res = await fetch("/api/v1/auth/register", {
+      const res = await apiFetch("/api/v1/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

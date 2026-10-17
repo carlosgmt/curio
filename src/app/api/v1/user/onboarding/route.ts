@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, users, type SmartList } from "@/db";
+import { db, users, userSaves, globalEntities, type SmartList } from "@/db";
 import { eq, and, ne } from "drizzle-orm";
 import { requireAuth, toSafeUser, AuthError } from "@/lib/auth/service";
 import { createList } from "@/lib/lists/service";
+import { generateEntityKey } from "@/lib/ingest/cascade";
 
 const onboardingSchema = z.object({
   displayName: z.string().min(1).max(50).optional(),
   username: z.string().min(3).max(30).optional(),
   avatarUrl: z.string().url().optional().nullable(),
   archetypes: z.array(z.string()).default([]),
+  seedClassics: z.boolean().optional(),
 });
 
 interface ArchetypeTemplate {
@@ -155,6 +157,118 @@ export async function POST(req: NextRequest) {
           },
         });
         createdLists.push(list);
+      }
+    }
+
+    // Seed 4 Cultural Classics if requested
+    if (parsed.data.seedClassics) {
+      const CLASSICS = [
+        {
+          canonicalUrl: "https://mubi.com/films/in-the-mood-for-love",
+          title: "In the Mood for Love",
+          summary: "Two neighbors form a delicate bond after discovering the infidelity of their respective spouses in 1962 British Hong Kong.",
+          heroImageUrl: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800&auto=format&fit=crop&q=80",
+          coreType: "MEDIA",
+          typePath: "/media/film",
+          coreStructuredData: {
+            director: "Wong Kar-wai",
+            releaseYear: "2000",
+            runtimeMinutes: 98,
+            cinematographer: "Christopher Doyle & Mark Lee Ping-bin",
+            distributor: "CRITERION COLLECTION № 147",
+          },
+          autoTags: ["cinema", "film", "criterion"],
+        },
+        {
+          canonicalUrl: "https://open.spotify.com/album/1weenldZZHIcu659YuYDY5",
+          title: "Kind of Blue",
+          summary: "Miles Davis Quintet with John Coltrane and Bill Evans.",
+          heroImageUrl: "https://images.unsplash.com/photo-1539375665275-f9de415ef9ac?w=800&auto=format&fit=crop&q=80",
+          coreType: "VINYL",
+          typePath: "/media/music/vinyl",
+          coreStructuredData: {
+            artist: "Miles Davis",
+            releaseYear: "1959",
+            rpm: "33 ⅓ RPM",
+            recordLabel: "Columbia Masterworks",
+          },
+          autoTags: ["vinyl", "music", "jazz"],
+        },
+        {
+          canonicalUrl: "https://openlibrary.org/works/OL1991428W",
+          title: "The Days of Abandonment",
+          summary: "A ferocious, razor-sharp meditation on grief, obsession, and the unraveling of a marriage in Turin.",
+          heroImageUrl: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=800&auto=format&fit=crop&q=80",
+          coreType: "BOOK",
+          typePath: "/product/book",
+          coreStructuredData: {
+            author: "Elena Ferrante",
+            publisher: "Europa Editions",
+            isbn: "978-1933372006",
+            obiText: "A masterclass in domestic catastrophe and transcendent reclamation.",
+          },
+          autoTags: ["book", "reading", "literature"],
+        },
+        {
+          canonicalUrl: "https://www.vivino.com/wines/giacomo-conterno-monfortino-barolo-riserva",
+          title: "Barolo Riserva Monfortino",
+          summary: "Unfined and unfiltered monumental expression of Nebbiolo from the legendary Cascina Francia vineyard.",
+          heroImageUrl: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=800&auto=format&fit=crop&q=80",
+          coreType: "PRODUCT",
+          typePath: "/product/beverage/wine",
+          coreStructuredData: {
+            producer: "Giacomo Conterno",
+            cuvee: "Barolo Riserva Monfortino",
+            vintage: "2013",
+            appellation: "DOCG",
+            region: "Serralunga d'Alba, Piedmont",
+            varietal: "100% Nebbiolo",
+          },
+          autoTags: ["wine", "cellar", "barolo"],
+        },
+      ];
+
+      for (const item of CLASSICS) {
+        const { urlHash, entityKey } = generateEntityKey(item.canonicalUrl, item.title);
+        let [entity] = await db
+          .select()
+          .from(globalEntities)
+          .where(eq(globalEntities.canonicalUrl, item.canonicalUrl))
+          .limit(1);
+
+        if (!entity) {
+          [entity] = await db
+            .insert(globalEntities)
+            .values({
+              urlHash,
+              entityKey,
+              canonicalUrl: item.canonicalUrl,
+              title: item.title,
+              summary: item.summary,
+              heroImageUrl: item.heroImageUrl,
+              coreType: item.coreType,
+              typePath: item.typePath,
+              coreStructuredData: item.coreStructuredData,
+            })
+            .returning();
+        }
+
+        const [existingSave] = await db
+          .select({ id: userSaves.id })
+          .from(userSaves)
+          .where(and(eq(userSaves.userId, user.id), eq(userSaves.entityId, entity.id)))
+          .limit(1);
+
+        if (!existingSave) {
+          await db.insert(userSaves).values({
+            userId: user.id,
+            entityId: entity.id,
+            isPrivateMemo: false,
+            autoTags: item.autoTags,
+            enrichmentStatus: "COMPLETE",
+            visibility: "PRIVATE",
+          });
+        }
       }
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Sparkles,
@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Loader2,
+  FileSpreadsheet,
 } from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -121,14 +122,21 @@ export function OnboardingModal({
   const [selectedArchetypes, setSelectedArchetypes] = useState<string[]>([
     "cinema",
     "books",
-    "memos",
+    "vinyl",
   ]);
+  const [seedClassics, setSeedClassics] = useState(true);
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCelebrating, setIsCelebrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialUser?.username) setUsername(initialUser.username);
+    if (initialUser?.displayName) setDisplayName(initialUser.displayName);
+  }, [initialUser]);
 
   if (!isOpen) return null;
 
@@ -185,6 +193,7 @@ export function OnboardingModal({
           displayName: displayName.trim() || undefined,
           username: username.trim() || undefined,
           archetypes: selectedArchetypes,
+          seedClassics,
         }),
       });
 
@@ -193,18 +202,36 @@ export function OnboardingModal({
         throw new Error(data.error || "Onboarding failed");
       }
 
-      onComplete(data.user);
-      onClose();
+      // Celebratory launch sequence
+      setIsCelebrating(true);
+      setTimeout(() => {
+        onComplete(data.user);
+        onClose();
+      }, 1400);
     } catch (err: any) {
-      setError(err.message);
-    } finally {
+      setError(err.message || "Failed to complete onboarding");
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Celebratory Launch Sequence Splash */}
+        {isCelebrating && (
+          <div className="absolute inset-0 z-50 bg-white/95 dark:bg-neutral-950/95 flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-4 shadow-lg animate-bounce">
+              <Check className="w-8 h-8 stroke-[3]" />
+            </div>
+            <h3 className="font-serif text-3xl font-bold text-neutral-900 dark:text-neutral-50 mb-2">
+              Taste Graph Initialized
+            </h3>
+            <p className="text-xs font-mono text-neutral-500 max-w-sm">
+              Provisioned sovereign lists & cultural seeds. Launching your personal library stream...
+            </p>
+          </div>
+        )}
+
         {/* Header & Steps Progress */}
         <div className="p-6 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -213,11 +240,11 @@ export function OnboardingModal({
             </div>
             <div>
               <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 font-serif">
-                {step === 1 && "Claim Your Sovereign Handle"}
+                {step === 1 && "Sovereign Identity Calibrated"}
                 {step === 2 && "Select Your Taste Archetypes"}
                 {step === 3 && "Preview Your Smart Boards"}
-                {step === 4 && "Day-0 Library Import"}
-                {step === 5 && "Privacy & Local Vault"}
+                {step === 4 && "Day-0 Library Seed & Import"}
+                {step === 5 && "Privacy & Sovereign Launch"}
               </h3>
               <p className="text-xs text-neutral-500">Step {step} of 5</p>
             </div>
@@ -247,7 +274,7 @@ export function OnboardingModal({
             </div>
           )}
 
-          {/* Step 1: Claim Handle */}
+          {/* Step 1: Sovereign Identity Calibration */}
           {step === 1 && (
             <div className="space-y-6">
               <div className="text-center max-w-md mx-auto">
@@ -255,14 +282,29 @@ export function OnboardingModal({
                   <Sparkles className="w-7 h-7" />
                 </div>
                 <h4 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
-                  Claim your unique Curio handle
+                  Identity Calibrated
                 </h4>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Your handle establishes your identity across curated boards, synaptic pairings, and peer exchanges.
+                  Your creator handle powers your sovereign public page, RSS syndication, and synaptic pairing attribution.
                 </p>
               </div>
 
               <div className="space-y-4 max-w-md mx-auto">
+                {/* Live Sovereign URL Card */}
+                <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-mono uppercase text-neutral-400 block">
+                      Live Sovereign URL
+                    </span>
+                    <span className="font-mono text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                      curio.page/@{username || "curator"}
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[11px] font-mono font-bold border border-emerald-300/40">
+                    Active
+                  </span>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
                     Creator Handle
@@ -273,13 +315,10 @@ export function OnboardingModal({
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
-                      placeholder="curator"
+                      placeholder="handle"
                       className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-sm text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-neutral-400"
                     />
                   </div>
-                  <p className="text-[11px] text-neutral-400 mt-1 font-mono">
-                    curio.sh/@{username || "handle"}
-                  </p>
                 </div>
 
                 <div>
@@ -290,7 +329,7 @@ export function OnboardingModal({
                     type="text"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="e.g. Elena Rostova"
+                    placeholder="e.g. Roland Barthes"
                     className="w-full px-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400"
                   />
                 </div>
@@ -307,17 +346,17 @@ export function OnboardingModal({
                     What shapes your taste universe?
                   </h4>
                   <p className="text-xs text-neutral-500">
-                    Select 3 or more archetypes to bootstrap your polymorphic card stream.
+                    Select 2 or more archetypes to bootstrap your polymorphic card stream.
                   </p>
                 </div>
                 <span
                   className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                    selectedArchetypes.length >= 3
+                    selectedArchetypes.length >= 2
                       ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300"
                       : "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300"
                   }`}
                 >
-                  {selectedArchetypes.length} selected (min 3)
+                  {selectedArchetypes.length} selected (min 2)
                 </span>
               </div>
 
@@ -370,7 +409,7 @@ export function OnboardingModal({
                   Starter Smart Lists for Your Archetypes
                 </h4>
                 <p className="text-xs text-neutral-500">
-                  Curio will automatically generate these intelligent boards with auto-categorization rules.
+                  Curio will automatically provision these intelligent boards in SQLite with polymorphic auto-rules.
                 </p>
               </div>
 
@@ -407,25 +446,57 @@ export function OnboardingModal({
             </div>
           )}
 
-          {/* Step 4: Import Library */}
+          {/* Step 4: Day-0 Seed & CSV Import */}
           {step === 4 && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
                 <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                  1-Click Day-0 Library Import
+                  Day-0 Library Cold-Start
                 </h4>
                 <p className="text-xs text-neutral-500">
-                  Bring your existing Letterboxd watchlists or Goodreads reading history directly into Curio.
+                  Choose how you'd like to initialize your library. Start with curated cultural gems or import existing files.
                 </p>
               </div>
 
+              {/* Path A: 1-Click Starter Taste Seed */}
+              <div
+                onClick={() => setSeedClassics(!seedClassics)}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                  seedClassics
+                    ? "border-neutral-900 dark:border-neutral-100 bg-neutral-50 dark:bg-neutral-800/40 shadow-xs"
+                    : "border-neutral-200 dark:border-neutral-800 hover:border-neutral-300"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                      Seed with 4 Curio Classics (Recommended)
+                    </h5>
+                    <p className="text-[11px] text-neutral-500 mt-1 leading-relaxed">
+                      Pre-populates your library with 4 cultural masterpieces: <em>In the Mood for Love</em>, <em>Kind of Blue</em>, Elena Ferrante's <em>Days of Abandonment</em>, and <em>Barolo Riserva</em>.
+                    </p>
+                  </div>
+                </div>
+                <div
+                  className={`w-5 h-5 rounded-md border mt-0.5 shrink-0 flex items-center justify-center ${
+                    seedClassics ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900" : "border-neutral-300 dark:border-neutral-700"
+                  }`}
+                >
+                  {seedClassics && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </div>
+              </div>
+
+              {/* Path B: CSV File Dropzone */}
               <div className="p-6 border-2 border-dashed border-neutral-300 dark:border-neutral-700 rounded-3xl text-center hover:border-neutral-400 transition bg-neutral-50/50 dark:bg-neutral-950/50">
                 <Upload className="w-8 h-8 mx-auto text-neutral-400 mb-2" />
                 <p className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                  {csvFileName ? csvFileName : "Drop Letterboxd or Goodreads CSV file here"}
+                  {csvFileName ? csvFileName : "Or drop Letterboxd or Goodreads CSV file here"}
                 </p>
                 <p className="text-[11px] text-neutral-500 mt-1">
-                  Or select a CSV file from your disk
+                  Supports Letterboxd watched.csv, Goodreads export, or Notion CSV exports
                 </p>
                 <label className="mt-3 inline-block px-3.5 py-1.5 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-xs font-semibold cursor-pointer active:scale-95 transition">
                   Browse File
@@ -447,7 +518,7 @@ export function OnboardingModal({
                     type="button"
                     onClick={handleRunImport}
                     disabled={isImporting}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition"
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition cursor-pointer"
                   >
                     {isImporting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     <span>{isImporting ? "Importing..." : "Process Import"}</span>
@@ -463,7 +534,7 @@ export function OnboardingModal({
             </div>
           )}
 
-          {/* Step 5: Privacy & Local Vault */}
+          {/* Step 5: Privacy & Sovereign Launch */}
           {step === 5 && (
             <div className="space-y-6 text-center max-w-md mx-auto py-2">
               <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -472,10 +543,10 @@ export function OnboardingModal({
 
               <div>
                 <h4 className="text-lg font-bold text-neutral-900 dark:text-neutral-100 font-serif">
-                  Step 0 Privacy & Sovereign Vault
+                  Step 0 Privacy Guarantee
                 </h4>
                 <p className="text-xs text-neutral-500 mt-2 leading-relaxed">
-                  Curio strictly enforces Step 0 heuristic classification: private memos, journal entries, and personal reflections are never sent to external search APIs or shared across accounts.
+                  Curio strictly enforces client-side Step 0 privacy: confidential memos, private sketches, and unreleased notes never touch external enrichment APIs or AI training sets.
                 </p>
               </div>
 
@@ -486,7 +557,7 @@ export function OnboardingModal({
                 </div>
                 <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
                   <div className="text-xs font-bold text-neutral-900 dark:text-neutral-100">Autonomous Sync</div>
-                  <div className="text-[11px] text-neutral-500 mt-0.5">Live enrichment with fallback candidates</div>
+                  <div className="text-[11px] text-neutral-500 mt-0.5">Model Context Protocol & RSS enabled</div>
                 </div>
               </div>
             </div>
@@ -499,7 +570,7 @@ export function OnboardingModal({
             <button
               type="button"
               onClick={() => setStep((s) => (s - 1) as any)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 active:scale-95 transition"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 active:scale-95 transition cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
@@ -509,12 +580,22 @@ export function OnboardingModal({
           )}
 
           <div className="flex items-center gap-2">
+            {step === 4 && (
+              <button
+                type="button"
+                onClick={() => setStep(5)}
+                className="px-3.5 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 transition cursor-pointer"
+              >
+                Skip CSV import
+              </button>
+            )}
+
             {step < 5 ? (
               <button
                 type="button"
                 onClick={() => setStep((s) => (s + 1) as any)}
-                disabled={step === 2 && selectedArchetypes.length < 3}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 disabled:opacity-50 hover:bg-neutral-800 dark:hover:bg-neutral-200 active:scale-95 transition"
+                disabled={step === 2 && selectedArchetypes.length < 2}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 disabled:opacity-50 hover:bg-neutral-800 dark:hover:bg-neutral-200 active:scale-95 transition cursor-pointer"
               >
                 <span>Continue</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -524,7 +605,7 @@ export function OnboardingModal({
                 type="button"
                 onClick={handleFinishOnboarding}
                 disabled={isSubmitting}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 disabled:opacity-50 active:scale-95 transition shadow-sm"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 disabled:opacity-50 active:scale-95 transition shadow-sm cursor-pointer"
               >
                 {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span>Launch Curio</span>

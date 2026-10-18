@@ -56,6 +56,42 @@ describe("Dynamic Type Ontology & Vector Classification Service", () => {
     expect(memo.typePath).toBe("/private_memo");
     expect(memo.similarity).toBeGreaterThan(0.92);
     expect(memo.isSynonymConvergence).toBe(true);
+
+    // 9. Video Game
+    const game = await classifyEntityType("Videojuego");
+    expect(game.typePath).toBe("/media/videogame");
+    expect(game.similarity).toBeGreaterThan(0.92);
+    expect(game.isSynonymConvergence).toBe(true);
+
+    // 10. Place / Venue / Hospitality
+    const place = await classifyEntityType("Lugar / Restaurante / Café");
+    expect(place.typePath).toBe("/place");
+    expect(place.similarity).toBeGreaterThan(0.92);
+    expect(place.isSynonymConvergence).toBe(true);
+
+    // 11. General Product
+    const product = await classifyEntityType("Producto / Compra");
+    expect(product.typePath).toBe("/product");
+    expect(product.similarity).toBeGreaterThan(0.92);
+    expect(product.isSynonymConvergence).toBe(true);
+
+    // 12. Garment / Apparel
+    const garment = await classifyEntityType("Ropa / Prenda");
+    expect(garment.typePath).toBe("/product/garment");
+    expect(garment.similarity).toBeGreaterThan(0.92);
+    expect(garment.isSynonymConvergence).toBe(true);
+
+    // 13. Cosmetics & Beauty
+    const cosmetics = await classifyEntityType("Cosmética / Belleza");
+    expect(cosmetics.typePath).toBe("/product/cosmetics");
+    expect(cosmetics.similarity).toBeGreaterThan(0.92);
+    expect(cosmetics.isSynonymConvergence).toBe(true);
+
+    // 14. Consumer Electronics
+    const electronics = await classifyEntityType("Electrónica / Tecnología");
+    expect(electronics.typePath).toBe("/product/electronics");
+    expect(electronics.similarity).toBeGreaterThan(0.92);
+    expect(electronics.isSynonymConvergence).toBe(true);
   });
 
   it("handles subtype inheritance (similarity 0.75 - 0.92)", async () => {

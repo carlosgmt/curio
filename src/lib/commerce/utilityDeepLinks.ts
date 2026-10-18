@@ -19,7 +19,7 @@ export interface DeepLinkEntity {
 export interface CardUtilityResult {
   label: string;
   href: string;
-  iconName: "play" | "music" | "book-open" | "map-pin" | "wine" | "utensils" | "frame" | "external-link" | "lock";
+  iconName: "play" | "music" | "book-open" | "map-pin" | "wine" | "utensils" | "frame" | "external-link" | "lock" | "gamepad-2" | "shopping-bag";
   isInteractive: boolean;
   targetBlank: boolean;
 }
@@ -163,6 +163,43 @@ export function resolveArtLink(entity: DeepLinkEntity, artist?: string, fallback
 }
 
 /**
+ * 8. Video Games: Steam Store & Gaming Platforms
+ */
+export function resolveGameLink(entity: DeepLinkEntity, fallbackTitle = "Game"): string {
+  const canonical = entity.canonicalUrl;
+  if (
+    canonical &&
+    (canonical.includes("steampowered.com") ||
+      canonical.includes("store.playstation.com") ||
+      canonical.includes("nintendo.com") ||
+      canonical.includes("epicgames.com"))
+  ) {
+    return canonical;
+  }
+  const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
+  if (data.storeUrl) return data.storeUrl;
+  const title = entity.title || fallbackTitle;
+  return `https://store.steampowered.com/search/?term=${encodeURIComponent(title)}`;
+}
+
+/**
+ * 9. Physical Products: Garments, Cosmetics, Electronics, and General Goods
+ */
+export function resolveProductLink(entity: DeepLinkEntity, fallbackTitle = "Product"): string {
+  const canonical = entity.canonicalUrl;
+  if (canonical && !canonical.includes("wikipedia.org") && canonical !== "#") {
+    return canonical;
+  }
+  const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
+  if (data.buyUrl) return data.buyUrl;
+  if (data.asin) return `https://www.amazon.com/dp/${data.asin}`;
+  const brand = data.brand || entity.brandOrCreator || "";
+  const title = entity.title || fallbackTitle;
+  const query = [brand, title, data.model || data.ean].filter(Boolean).join(" ").trim() || "Product";
+  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`;
+}
+
+/**
  * Main dispatcher: Resolves canonical label, href, icon, and interactivity for any card
  */
 export function resolveCardUtility({
@@ -185,7 +222,18 @@ export function resolveCardUtility({
     };
   }
 
-  // 1. Film / Cinema
+  // 1. Video Game
+  if (typePath.includes("videogame") || typePath.includes("game") || coreType === "VIDEOGAME") {
+    return {
+      label: customUtilityLabel || "Play on Steam",
+      href: resolveGameLink(entity),
+      iconName: "gamepad-2",
+      isInteractive: Boolean(onUtilityClick),
+      targetBlank: true,
+    };
+  }
+
+  // 2. Film / Cinema
   if (typePath.startsWith("/media/film") || coreType === "MEDIA") {
     return {
       label: customUtilityLabel || "Watch on MUBI",
@@ -196,7 +244,7 @@ export function resolveCardUtility({
     };
   }
 
-  // 2. Vinyl & Music
+  // 3. Vinyl & Music
   if (typePath.startsWith("/media/music") || typePath.includes("vinyl") || coreType === "VINYL") {
     return {
       label: customUtilityLabel || "Play on Spotify",
@@ -207,7 +255,7 @@ export function resolveCardUtility({
     };
   }
 
-  // 3. Books & Essays
+  // 4. Books & Essays
   if (typePath.startsWith("/product/book") || coreType === "BOOK") {
     return {
       label: customUtilityLabel || "Read Sample",
@@ -218,7 +266,7 @@ export function resolveCardUtility({
     };
   }
 
-  // 4. Places & Cartography
+  // 5. Places & Cartography (Restaurants, Cafes, Hotels, Shops, Trails)
   if (typePath.startsWith("/place") || coreType === "PLACE") {
     return {
       label: customUtilityLabel || "Google Maps",
@@ -229,7 +277,7 @@ export function resolveCardUtility({
     };
   }
 
-  // 5. Estate Wine
+  // 6. Estate Wine
   if (typePath.includes("wine") || coreType === "WINE") {
     return {
       label: customUtilityLabel || "Vivino Review",
@@ -240,7 +288,7 @@ export function resolveCardUtility({
     };
   }
 
-  // 6. Culinary / Recipes
+  // 7. Culinary / Recipes
   if (typePath.startsWith("/culinary") || coreType === "CULINARY") {
     return {
       label: customUtilityLabel || "Cook Mode",
@@ -251,12 +299,23 @@ export function resolveCardUtility({
     };
   }
 
-  // 7. Fine Art & Prints
+  // 8. Fine Art & Prints
   if (typePath.includes("art") || coreType === "ART") {
     return {
       label: customUtilityLabel || "View High-Res",
       href: resolveArtLink(entity),
       iconName: "frame",
+      isInteractive: Boolean(onUtilityClick),
+      targetBlank: true,
+    };
+  }
+
+  // 9. Physical Products (Garments, Cosmetics, Electronics, General Goods)
+  if (typePath.startsWith("/product") || coreType === "PRODUCT") {
+    return {
+      label: customUtilityLabel || "Buy Online",
+      href: resolveProductLink(entity),
+      iconName: "shopping-bag",
       isInteractive: Boolean(onUtilityClick),
       targetBlank: true,
     };

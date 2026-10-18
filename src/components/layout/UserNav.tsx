@@ -2,8 +2,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign } from "lucide-react";
+import { User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers } from "lucide-react";
 import { AffiliateSettingsModal } from "@/components/commerce/AffiliateSettingsModal";
+import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
 
 export interface UserNavProps {
   user: {
@@ -18,6 +19,7 @@ export interface UserNavProps {
   onOpenAuth: (tab?: "login" | "register") => void;
   onOpenOnboarding: () => void;
   onOpenAffiliateSettings?: () => void;
+  onOpenTypesSettings?: () => void;
   onLogout: () => void;
 }
 
@@ -26,10 +28,12 @@ export function UserNav({
   onOpenAuth,
   onOpenOnboarding,
   onOpenAffiliateSettings,
+  onOpenTypesSettings,
   onLogout,
 }: UserNavProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [affiliateModalOpen, setAffiliateModalOpen] = useState(false);
+  const [typesModalOpen, setTypesModalOpen] = useState(false);
 
   if (!user) {
     return (
@@ -159,6 +163,22 @@ export function UserNav({
               type="button"
               onClick={() => {
                 setDropdownOpen(false);
+                if (onOpenTypesSettings) {
+                  onOpenTypesSettings();
+                } else {
+                  setTypesModalOpen(true);
+                }
+              }}
+              className="w-full flex items-center gap-2 p-2 rounded-xl text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition text-left cursor-pointer"
+            >
+              <Layers className="w-3.5 h-3.5 text-amber-500" />
+              <span>Types & Schemas</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setDropdownOpen(false);
                 if (onOpenAffiliateSettings) {
                   onOpenAffiliateSettings();
                 } else {
@@ -190,6 +210,12 @@ export function UserNav({
       <AffiliateSettingsModal
         isOpen={affiliateModalOpen}
         onClose={() => setAffiliateModalOpen(false)}
+      />
+
+      {/* Embedded Types & Schemas Modal if used standalone */}
+      <TypesSettingsModal
+        isOpen={typesModalOpen}
+        onClose={() => setTypesModalOpen(false)}
       />
     </div>
   );

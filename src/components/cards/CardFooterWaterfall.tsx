@@ -9,6 +9,7 @@ import {
   Utensils,
   ExternalLink,
   ShoppingBag,
+  Gamepad2,
   Zap,
   Wine,
   Frame,
@@ -78,6 +79,10 @@ export function CardFooterWaterfall({
         return <Utensils className="w-3.5 h-3.5" />;
       case "frame":
         return <Frame className="w-3.5 h-3.5" />;
+      case "gamepad-2":
+        return <Gamepad2 className="w-3.5 h-3.5" />;
+      case "shopping-bag":
+        return <ShoppingBag className="w-3.5 h-3.5" />;
       case "lock":
         return <Lock className="w-3.5 h-3.5" />;
       default:

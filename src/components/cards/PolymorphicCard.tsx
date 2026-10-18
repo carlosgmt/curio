@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { Link2, FolderPlus } from "lucide-react";
 import { VinylDiscCard } from "./silhouettes/VinylDiscCard";
 import { MoviePosterCard } from "./silhouettes/MoviePosterCard";
+import { VideoGameCard } from "./silhouettes/VideoGameCard";
+import { ProductCard } from "./silhouettes/ProductCard";
 import { BookJacketCard } from "./silhouettes/BookJacketCard";
 import { WineLabelCard } from "./silhouettes/WineLabelCard";
 import { ArtFrameCard } from "./silhouettes/ArtFrameCard";
@@ -152,7 +154,28 @@ export function PolymorphicCard({
       );
     }
 
-    // 3. Movie Poster Silhouette (/media/film)
+    // 3. Video Game Jewel Case Silhouette (/media/videogame)
+    if (
+      typePath.includes("videogame") ||
+      typePath.includes("game") ||
+      coreType === "VIDEOGAME" ||
+      tags.includes("game") ||
+      tags.includes("gaming") ||
+      tags.includes("steam") ||
+      title.includes("steam")
+    ) {
+      return (
+        <VideoGameCard
+          save={save}
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 4. Movie Poster Silhouette (/media/film)
     if (
       typePath.includes("film") ||
       typePath.includes("movie") ||
@@ -174,7 +197,7 @@ export function PolymorphicCard({
       );
     }
 
-    // 4. Wine Label Silhouette (/product/beverage/wine)
+    // 5. Wine Label Silhouette (/product/beverage/wine)
     if (
       typePath.includes("wine") ||
       typePath.includes("beverage") ||
@@ -196,7 +219,7 @@ export function PolymorphicCard({
       );
     }
 
-    // 5. Art Frame Silhouette (/product/art)
+    // 6. Art Frame Silhouette (/product/art)
     if (
       typePath.includes("art") ||
       typePath.includes("print") ||
@@ -217,7 +240,7 @@ export function PolymorphicCard({
       );
     }
 
-    // 6. Recipe Index Card Silhouette (/culinary/recipe)
+    // 7. Recipe Index Card Silhouette (/culinary/recipe)
     if (
       typePath.includes("recipe") ||
       typePath.includes("culinary") ||
@@ -239,13 +262,21 @@ export function PolymorphicCard({
       );
     }
 
-    // 7. Map Pass Silhouette (/place/transit_trail)
+    // 8. Map Pass Silhouette (/place, /place/*, transit trails, restaurants, cafes, hotels, shops, bars)
     if (
       typePath.includes("place") ||
       typePath.includes("trail") ||
       typePath.includes("transit") ||
+      typePath.includes("restaurant") ||
+      typePath.includes("cafe") ||
+      typePath.includes("hotel") ||
+      typePath.includes("shop") ||
+      typePath.includes("bar") ||
       coreType === "PLACE" ||
       tags.includes("place") ||
+      tags.includes("restaurant") ||
+      tags.includes("cafe") ||
+      tags.includes("hotel") ||
       tags.includes("trail") ||
       tags.includes("japan") ||
       title.includes("trail") ||
@@ -264,7 +295,37 @@ export function PolymorphicCard({
       );
     }
 
-    // 8. Book Jacket Silhouette (/product/book or default)
+    // 9. Physical Product Silhouette (/product, /product/garment, /product/cosmetics, /product/electronics)
+    if (
+      typePath === "/product" ||
+      typePath.startsWith("/product/garment") ||
+      typePath.startsWith("/product/cosmetic") ||
+      typePath.startsWith("/product/electronic") ||
+      typePath.startsWith("/product/gear") ||
+      typePath.startsWith("/product/home") ||
+      coreType === "PRODUCT" ||
+      tags.includes("product") ||
+      tags.includes("garment") ||
+      tags.includes("apparel") ||
+      tags.includes("clothing") ||
+      tags.includes("cosmetics") ||
+      tags.includes("skincare") ||
+      tags.includes("electronics") ||
+      tags.includes("hardware") ||
+      tags.includes("gadget")
+    ) {
+      return (
+        <ProductCard
+          save={save}
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 10. Book Jacket Silhouette (/product/book or default)
     return (
       <BookJacketCard
         save={save}

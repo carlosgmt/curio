@@ -11,6 +11,7 @@ import { CreateListModal } from "@/components/lists/CreateListModal";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { TypeBuilderModal } from "@/components/shapeshift/TypeBuilderModal";
+import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { UserNav } from "@/components/layout/UserNav";
@@ -32,17 +33,21 @@ import {
   UtensilsCrossed,
   MapPin,
   Lock,
+  Gamepad2,
+  ShoppingBag,
 } from "lucide-react";
 
 type FilterTab =
   | "all"
-  | "vinyl"
   | "cinema"
+  | "games"
+  | "vinyl"
   | "books"
+  | "products"
+  | "places"
   | "wine"
   | "art"
   | "recipes"
-  | "places"
   | "memos";
 
 export default function Home() {
@@ -63,6 +68,7 @@ export default function Home() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "register">("login");
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [isTypesModalOpen, setIsTypesModalOpen] = useState(false);
 
   const fetchCurrentUser = async () => {
     try {
@@ -172,14 +178,6 @@ export default function Home() {
       const tags = (item.save.autoTags || []).map((t) => t.toLowerCase());
 
       switch (activeTab) {
-        case "vinyl":
-          return (
-            typePath.includes("vinyl") ||
-            tags.includes("vinyl") ||
-            tags.includes("album") ||
-            title.includes("vinyl") ||
-            title.includes("lp")
-          );
         case "cinema":
           return (
             typePath.includes("film") ||
@@ -188,8 +186,55 @@ export default function Home() {
             tags.includes("film") ||
             tags.includes("movie")
           );
+        case "games":
+          return (
+            typePath.includes("videogame") ||
+            typePath.includes("game") ||
+            coreType === "VIDEOGAME" ||
+            tags.includes("game") ||
+            tags.includes("gaming") ||
+            tags.includes("steam")
+          );
+        case "vinyl":
+          return (
+            typePath.includes("vinyl") ||
+            tags.includes("vinyl") ||
+            tags.includes("album") ||
+            title.includes("vinyl") ||
+            title.includes("lp")
+          );
         case "books":
           return typePath.includes("book") || coreType === "BOOK" || tags.includes("book");
+        case "products":
+          return (
+            typePath === "/product" ||
+            typePath.startsWith("/product/garment") ||
+            typePath.startsWith("/product/cosmetic") ||
+            typePath.startsWith("/product/electronic") ||
+            coreType === "PRODUCT" ||
+            tags.includes("product") ||
+            tags.includes("garment") ||
+            tags.includes("clothing") ||
+            tags.includes("electronics") ||
+            tags.includes("cosmetics") ||
+            tags.includes("gadget")
+          );
+        case "places":
+          return (
+            typePath.includes("place") ||
+            typePath.includes("trail") ||
+            typePath.includes("restaurant") ||
+            typePath.includes("cafe") ||
+            typePath.includes("hotel") ||
+            typePath.includes("shop") ||
+            typePath.includes("bar") ||
+            coreType === "PLACE" ||
+            tags.includes("place") ||
+            tags.includes("restaurant") ||
+            tags.includes("cafe") ||
+            tags.includes("hotel") ||
+            tags.includes("trail")
+          );
         case "wine":
           return (
             typePath.includes("wine") ||
@@ -207,14 +252,6 @@ export default function Home() {
             coreType === "CULINARY" ||
             tags.includes("recipe")
           );
-        case "places":
-          return (
-            typePath.includes("place") ||
-            typePath.includes("trail") ||
-            coreType === "PLACE" ||
-            tags.includes("place") ||
-            tags.includes("trail")
-          );
         default:
           return true;
       }
@@ -223,13 +260,15 @@ export default function Home() {
 
   const tabs: Array<{ id: FilterTab; label: string; icon: React.ReactNode }> = [
     { id: "all", label: "All Curations", icon: <Layers className="w-3.5 h-3.5" /> },
-    { id: "vinyl", label: "Vinyl LPs", icon: <Disc3 className="w-3.5 h-3.5" /> },
     { id: "cinema", label: "Cinema", icon: <Film className="w-3.5 h-3.5" /> },
+    { id: "games", label: "Video Games", icon: <Gamepad2 className="w-3.5 h-3.5" /> },
+    { id: "vinyl", label: "Vinyl LPs", icon: <Disc3 className="w-3.5 h-3.5" /> },
     { id: "books", label: "Books", icon: <BookOpen className="w-3.5 h-3.5" /> },
+    { id: "products", label: "Products & Gear", icon: <ShoppingBag className="w-3.5 h-3.5" /> },
+    { id: "places", label: "Places & Venues", icon: <MapPin className="w-3.5 h-3.5" /> },
     { id: "wine", label: "Estate Wine", icon: <Wine className="w-3.5 h-3.5" /> },
     { id: "art", label: "Fine Art", icon: <Frame className="w-3.5 h-3.5" /> },
     { id: "recipes", label: "Recipes", icon: <UtensilsCrossed className="w-3.5 h-3.5" /> },
-    { id: "places", label: "Passes & Trails", icon: <MapPin className="w-3.5 h-3.5" /> },
     { id: "memos", label: "Private Vault", icon: <Lock className="w-3.5 h-3.5" /> },
   ];
 
@@ -291,9 +330,19 @@ export default function Home() {
       {/* Header */}
       <div className="max-w-4xl mx-auto mb-10">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-200/60 dark:bg-neutral-800/60 text-neutral-700 dark:text-neutral-300 text-xs font-semibold tracking-wide uppercase">
-            <Sparkles className="w-3.5 h-3.5 text-neutral-900 dark:text-neutral-100" />
-            Autonomous Memory & Taste Graph • PRD v3.2
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-200/60 dark:bg-neutral-800/60 text-neutral-700 dark:text-neutral-300 text-xs font-semibold tracking-wide uppercase">
+              <Sparkles className="w-3.5 h-3.5 text-neutral-900 dark:text-neutral-100" />
+              Autonomous Memory & Taste Graph • PRD v3.2
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsTypesModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold hover:bg-amber-500/20 transition cursor-pointer"
+            >
+              <Layers className="w-3 h-3" />
+              <span>Types & Schemas</span>
+            </button>
           </div>
           <div className="flex items-center gap-3">
             <QuotaIndicator />
@@ -304,6 +353,7 @@ export default function Home() {
                 setIsAuthOpen(true);
               }}
               onOpenOnboarding={() => setIsOnboardingOpen(true)}
+              onOpenTypesSettings={() => setIsTypesModalOpen(true)}
               onLogout={async () => {
                 await apiFetch("/api/v1/auth/logout", { method: "POST" });
                 setUser(null);
@@ -611,6 +661,16 @@ export default function Home() {
           setUser(completedUser);
           fetchItems();
           fetchLists();
+        }}
+      />
+
+      {/* Types & Schemas Settings Modal */}
+      <TypesSettingsModal
+        isOpen={isTypesModalOpen}
+        onClose={() => setIsTypesModalOpen(false)}
+        onOpenTypeBuilder={() => {
+          setIsTypesModalOpen(false);
+          setIsTypeBuilderOpen(true);
         }}
       />
     </main>

@@ -10,6 +10,8 @@ export interface SilhouetteCardProps {
     id: string;
     isPrivateMemo?: boolean;
     personalNotes?: string | null;
+    userCustomValues?: any;
+    typePath?: string | null;
     candidateFallbacks?: CandidateFallback[] | null;
     createdAt: string | Date;
   };

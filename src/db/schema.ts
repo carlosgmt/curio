@@ -54,6 +54,11 @@ export const curioTypes = sqliteTable(
     jsonSchema: text("json_schema", { mode: "json" }).notNull(),
     publicFieldKeys: text("public_field_keys", { mode: "json" }).$type<string[]>().default([]).notNull(),
     extractionPrompt: text("extraction_prompt"),
+    typeEmbedding: text("type_embedding"),
+    localizedAliases: text("localized_aliases", { mode: "json" }).$type<Record<string, string>>().default({}),
+    ownJsonSchema: text("own_json_schema", { mode: "json" }).$type<Record<string, unknown>>().default({}),
+    effectiveJsonSchema: text("effective_json_schema", { mode: "json" }).$type<Record<string, unknown>>().default({}),
+    uiFieldConfig: text("ui_field_config", { mode: "json" }).$type<Array<{ key: string; label: string; primitive: string; isPublicObjective: boolean }>>().default([]),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -104,6 +109,7 @@ export const globalEntities = sqliteTable(
     index("idx_global_entities_price_cents").on(table.priceCents),
     index("idx_global_entities_canonical_ext").on(table.canonicalExternalId),
     index("idx_global_entities_type_path").on(table.typePath),
+    index("idx_global_entities_title").on(table.title),
   ]
 );
 
@@ -177,6 +183,7 @@ export const userSaves = sqliteTable(
     index("idx_user_saves_user_id").on(table.userId),
     index("idx_user_saves_entity_id").on(table.entityId),
     index("idx_user_saves_type_path").on(table.typePath),
+    index("idx_user_saves_private_title").on(table.privateTitle),
   ]
 );
 

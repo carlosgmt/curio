@@ -69,11 +69,21 @@ sqlite.exec(`
 
   CREATE TABLE IF NOT EXISTS curio_types (
     id TEXT PRIMARY KEY NOT NULL,
+    parent_type_id TEXT,
     user_id TEXT REFERENCES users(id),
     name TEXT NOT NULL,
+    type_path TEXT NOT NULL DEFAULT '',
+    root_archetype TEXT NOT NULL DEFAULT 'PRODUCT',
+    default_silhouette TEXT NOT NULL DEFAULT 'generic',
+    identity_rules TEXT,
     json_schema TEXT NOT NULL,
     public_field_keys TEXT NOT NULL DEFAULT '[]',
     extraction_prompt TEXT,
+    type_embedding TEXT,
+    localized_aliases TEXT DEFAULT '{}',
+    own_json_schema TEXT DEFAULT '{}',
+    effective_json_schema TEXT DEFAULT '{}',
+    ui_field_config TEXT DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -174,6 +184,11 @@ ensureColumn("curio_types", "type_path", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("curio_types", "root_archetype", "TEXT NOT NULL DEFAULT 'PRODUCT'");
 ensureColumn("curio_types", "default_silhouette", "TEXT NOT NULL DEFAULT 'generic'");
 ensureColumn("curio_types", "identity_rules", "TEXT");
+ensureColumn("curio_types", "type_embedding", "TEXT");
+ensureColumn("curio_types", "localized_aliases", "TEXT DEFAULT '{}'");
+ensureColumn("curio_types", "own_json_schema", "TEXT DEFAULT '{}'");
+ensureColumn("curio_types", "effective_json_schema", "TEXT DEFAULT '{}'");
+ensureColumn("curio_types", "ui_field_config", "TEXT DEFAULT '[]'");
 
 ensureColumn("global_entities", "canonical_external_id", "TEXT");
 ensureColumn("global_entities", "identity_fingerprint", "TEXT");
@@ -202,6 +217,7 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_global_entities_price_cents ON global_entities (price_cents);
   CREATE INDEX IF NOT EXISTS idx_global_entities_canonical_ext ON global_entities (canonical_external_id);
   CREATE INDEX IF NOT EXISTS idx_global_entities_type_path ON global_entities (type_path);
+  CREATE INDEX IF NOT EXISTS idx_global_entities_title ON global_entities (title);
 
   CREATE INDEX IF NOT EXISTS idx_entity_sources_entity_id ON entity_sources (entity_id);
   CREATE INDEX IF NOT EXISTS idx_entity_sources_url_hash ON entity_sources (url_hash);
@@ -209,6 +225,7 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_user_saves_user_id ON user_saves (user_id);
   CREATE INDEX IF NOT EXISTS idx_user_saves_entity_id ON user_saves (entity_id);
   CREATE INDEX IF NOT EXISTS idx_user_saves_type_path ON user_saves (type_path);
+  CREATE INDEX IF NOT EXISTS idx_user_saves_private_title ON user_saves (private_title);
 
   CREATE INDEX IF NOT EXISTS idx_list_items_list_order ON list_items (list_id, position_index);
 

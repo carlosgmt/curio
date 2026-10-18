@@ -4,11 +4,15 @@ import { executeIngestionCascade } from "@/lib/ingest/cascade";
 import { db, userSaves, globalEntities } from "@/db";
 import { desc, eq, and, or, lt, count } from "drizzle-orm";
 import { requireAuth, AuthError } from "@/lib/auth/service";
+import { classifyOmniboxIntent } from "@/lib/router/intent";
 
 const captureSchema = z.object({
   input: z.string().min(1, "Capture input cannot be empty"),
   userId: z.string().uuid().optional(),
-  customSchemaId: z.string().uuid().optional(),
+  customSchemaId: z.string().optional(),
+  preview: z.boolean().optional(),
+  skipLocalLlm: z.boolean().optional(),
+  forceNew: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -24,11 +28,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isPreview =
+      parsed.data.preview === true ||
+      req.nextUrl.searchParams.get("preview") === "true";
+
+    if (isPreview) {
+      const intentResult = await classifyOmniboxIntent(parsed.data.input, user.id, {
+        skipLocalLlm: true,
+      });
+      return NextResponse.json(
+        {
+          preview: true,
+          ...intentResult,
+        },
+        { status: 200 }
+      );
+    }
+
     const result = await executeIngestionCascade({
       input: parsed.data.input,
       userId: user.id,
       customSchemaId: parsed.data.customSchemaId,
+      skipLocalLlm: parsed.data.skipLocalLlm ?? true,
+      forceNew: parsed.data.forceNew,
     });
+
+    if (result.status === "edited") {
+      return NextResponse.json(
+        {
+          status: "edited",
+          action: "edited",
+          is_private_memo: result.is_private_memo,
+          entity_id: result.entity_id,
+          save: result.save,
+          entity: result.entity,
+          candidate_fallbacks: result.candidate_fallbacks ?? [],
+          editDetails: result.editDetails,
+        },
+        { status: 200 }
+      );
+    }
 
     return NextResponse.json(
       {
@@ -57,6 +96,16 @@ export async function GET(req: NextRequest) {
   try {
     const { user } = await requireAuth(req);
     const url = new URL(req.url);
+
+    // Support non-mutating preview queries via GET /api/v1/capture?q=... or ?preview=true&q=...
+    const previewQuery = url.searchParams.get("q") || url.searchParams.get("input");
+    if (previewQuery) {
+      const intentResult = await classifyOmniboxIntent(previewQuery, user.id, {
+        skipLocalLlm: true,
+      });
+      return NextResponse.json(intentResult, { status: 200 });
+    }
+
     const cursor = url.searchParams.get("cursor");
     const rawLimit = parseInt(url.searchParams.get("limit") || "50", 10);
     const limit = Math.max(1, Math.min(isNaN(rawLimit) ? 50 : rawLimit, 100));

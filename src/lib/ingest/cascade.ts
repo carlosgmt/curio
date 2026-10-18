@@ -1,17 +1,35 @@
 import { createHash } from "crypto";
-import { db, users, globalEntities, userSaves, entitySources, type User, type GlobalEntity, type UserSave } from "@/db";
-import { eq, or } from "drizzle-orm";
+import {
+  db,
+  users,
+  globalEntities,
+  userSaves,
+  entitySources,
+  curioTypes,
+  smartLists,
+  type User,
+  type GlobalEntity,
+  type UserSave,
+} from "@/db";
+import { eq, or, and } from "drizzle-orm";
 import { classifyPrivacyAndModality, type PrivacyClassificationResult } from "../router/privacy";
+import { classifyOmniboxIntent } from "../router/intent";
+import { classifyEntityType } from "../curio-learns/ontology";
+import { extractStructuredCardData } from "../enrichment/extraction";
+import { updateSaveDetails } from "../saves/service";
+import { addItemToList } from "../lists/service";
 import type { CandidateFallback } from "./disambiguation";
 import { enrichCaptureInput } from "../enrichment/dispatcher";
 
 export interface IngestionResult {
-  status: "created" | "existing";
+  status: "created" | "existing" | "edited";
   is_private_memo: boolean;
   entity_id: string | null;
   save: UserSave;
   entity: GlobalEntity | null;
   candidate_fallbacks?: CandidateFallback[];
+  action?: string;
+  editDetails?: any;
 }
 
 export function generateEntityKey(canonicalUrl: string, slug?: string): { urlHash: string; entityKey: string } {
@@ -203,6 +221,7 @@ export async function executeIngestionCascade(params: {
   userId?: string;
   customSchemaId?: string;
   skipLocalLlm?: boolean;
+  forceNew?: boolean;
 }): Promise<IngestionResult> {
   const { input } = params;
   const user = params.userId
@@ -212,6 +231,96 @@ export async function executeIngestionCascade(params: {
   if (!user) {
     throw new Error("Unable to identify or create user profile");
   }
+
+  // STEP -0.5: Omnibox Intent Routing & Active Save Mutator (PRD v3.2 Journey 6)
+  if (!params.forceNew) {
+    const intentResult = await classifyOmniboxIntent(input, user.id, {
+      skipLocalLlm: params.skipLocalLlm,
+    });
+
+  if (intentResult.intent === "EDIT_SAVE" && intentResult.targetSave) {
+    const [existingSave] = await db
+      .select()
+      .from(userSaves)
+      .where(eq(userSaves.id, intentResult.targetSave.saveId))
+      .limit(1);
+
+    if (existingSave) {
+      let linkedEntity: GlobalEntity | null = null;
+      if (existingSave.entityId) {
+        const [ent] = await db
+          .select()
+          .from(globalEntities)
+          .where(eq(globalEntities.id, existingSave.entityId))
+          .limit(1);
+        linkedEntity = ent || null;
+      }
+
+      let updatedSaveRecord = existingSave;
+
+      if (intentResult.action === "RATING" && intentResult.editDetails?.rating !== undefined) {
+        const currentVals = (existingSave.userCustomValues as Record<string, unknown>) || {};
+        const details = await updateSaveDetails(existingSave.id, {
+          userCustomValues: {
+            ...currentVals,
+            rating: intentResult.editDetails.rating,
+          },
+        });
+        if (details?.save) updatedSaveRecord = details.save;
+      } else if (intentResult.action === "NOTE") {
+        const noteToAdd = intentResult.editDetails?.note || input;
+        const currentNotes = existingSave.personalNotes;
+        const mergedNotes = currentNotes ? `${currentNotes}\n${noteToAdd}` : noteToAdd;
+        const details = await updateSaveDetails(existingSave.id, {
+          personalNotes: mergedNotes,
+        });
+        if (details?.save) updatedSaveRecord = details.save;
+      } else if (intentResult.action === "STATUS") {
+        const currentVals = (existingSave.userCustomValues as Record<string, unknown>) || {};
+        const statusVal = intentResult.editDetails?.status || "finished";
+        const details = await updateSaveDetails(existingSave.id, {
+          userCustomValues: {
+            ...currentVals,
+            status: statusVal,
+          },
+          personalNotes: existingSave.personalNotes
+            ? `${existingSave.personalNotes}\n${input}`
+            : input,
+        });
+        if (details?.save) updatedSaveRecord = details.save;
+      } else if (intentResult.action === "LIST_MOVE" && intentResult.editDetails?.targetList) {
+        const listName = intentResult.editDetails.targetList;
+        const [matchedList] = await db
+          .select()
+          .from(smartLists)
+          .where(
+            and(
+              eq(smartLists.userId, user.id),
+              or(
+                eq(smartLists.title, listName),
+                eq(smartLists.slug, listName.toLowerCase().replace(/[^a-z0-9_-]/g, "-"))
+              )
+            )
+          )
+          .limit(1);
+
+        if (matchedList) {
+          await addItemToList(matchedList.id, existingSave.id);
+        }
+      }
+
+      return {
+        status: "edited",
+        action: "edited",
+        is_private_memo: existingSave.isPrivateMemo,
+        entity_id: existingSave.entityId,
+        save: updatedSaveRecord,
+        entity: linkedEntity,
+        editDetails: intentResult.editDetails,
+      };
+    }
+  }
+}
 
   // STEP 0: Privacy & Modality Router
   const privacy = await classifyPrivacyAndModality(input, {
@@ -256,18 +365,62 @@ export async function executeIngestionCascade(params: {
     enrichment = null;
   }
 
+  // Resolve custom schema or dynamic archetype classification
+  let targetType: typeof curioTypes.$inferSelect | null = null;
+  if (params.customSchemaId) {
+    const [customType] = await db
+      .select()
+      .from(curioTypes)
+      .where(or(eq(curioTypes.id, params.customSchemaId), eq(curioTypes.typePath, params.customSchemaId)))
+      .limit(1);
+    targetType = customType || null;
+  }
+
+  // Dynamic entity classification via ontology service if not resolved by customSchemaId
+  let dynamicClassification = null;
+  if (!targetType) {
+    dynamicClassification = await classifyEntityType(query, user.id);
+    if (dynamicClassification && dynamicClassification.typePath !== "/product/generic") {
+      const [typeMatch] = await db
+        .select()
+        .from(curioTypes)
+        .where(eq(curioTypes.typePath, dynamicClassification.typePath))
+        .limit(1);
+      targetType = typeMatch || null;
+    }
+  }
+
   // Discover candidate fallbacks for disambiguation bar (FR-2.3)
   const { primary: fallbackPrimary, runnerUps } = await discoverCandidates(query, privacy.detectedType);
 
   const finalTitle = enrichment?.title || fallbackPrimary.title;
   const finalCanonicalUrl = enrichment?.canonicalUrl || fallbackPrimary.url;
   const finalSummary = enrichment?.summary || fallbackPrimary.snippet;
-  const finalCoreType = enrichment?.coreType || fallbackPrimary.coreType;
-  const finalTypePath = enrichment?.typePath || (finalCoreType === "BOOK" ? "/product/book" : "/product/generic");
+  const finalCoreType =
+    enrichment?.coreType ||
+    (targetType?.typePath?.includes("/book") ? "BOOK" : null) ||
+    (targetType?.typePath?.includes("/film") ? "MEDIA" : null) ||
+    (fallbackPrimary.coreType !== "PRODUCT" ? fallbackPrimary.coreType : null) ||
+    targetType?.rootArchetype ||
+    fallbackPrimary.coreType;
+  const finalTypePath =
+    targetType?.typePath ||
+    enrichment?.typePath ||
+    (dynamicClassification?.typePath !== "/product/generic" ? dynamicClassification?.typePath : null) ||
+    (finalCoreType === "BOOK" ? "/product/book" : "/product/generic");
   const finalHeroImage = enrichment?.heroImageUrl || null;
   const finalPriceCents = enrichment?.priceCents ?? null;
   const finalExternalId = enrichment?.canonicalExternalId || null;
   const finalCreator = enrichment?.brandOrCreator || null;
+
+  // Schema-directed extraction
+  const extractedCardData = extractStructuredCardData({
+    input,
+    rawMetadata: enrichment?.coreStructuredData,
+    typePath: finalTypePath,
+    effectiveSchema: (targetType?.effectiveJsonSchema as any) || (targetType?.jsonSchema as any),
+    uiFieldConfig: (targetType?.uiFieldConfig as any) || [],
+  });
 
   // Compute canonical identity keys from the real canonical URL and real title
   const { urlHash, entityKey } = generateEntityKey(finalCanonicalUrl, finalTitle);
@@ -290,9 +443,16 @@ export async function executeIngestionCascade(params: {
   if (cachedEntity) {
     const save = db.transaction((tx) => {
       // If cached entity was a generic product but live enrichment discovered a specific cultural type
+      const currentExtended = (cachedEntity.extendedAttributes as Record<string, unknown>) || {};
+      const mergedExtended = {
+        ...currentExtended,
+        ...extractedCardData.objectiveAttributes,
+      };
+
       if (
         (cachedEntity.coreType === "PRODUCT" && finalCoreType !== "PRODUCT") ||
-        (cachedEntity.typePath === "/product/generic" && finalTypePath !== "/product/generic")
+        (cachedEntity.typePath === "/product/generic" && finalTypePath !== "/product/generic") ||
+        Object.keys(extractedCardData.objectiveAttributes).length > 0
       ) {
         tx.update(globalEntities)
           .set({
@@ -302,12 +462,14 @@ export async function executeIngestionCascade(params: {
             canonicalExternalId: finalExternalId || cachedEntity.canonicalExternalId,
             heroImageUrl: finalHeroImage || cachedEntity.heroImageUrl,
             summary: finalSummary || cachedEntity.summary,
+            extendedAttributes: mergedExtended,
           })
           .where(eq(globalEntities.id, cachedEntity.id))
           .run();
 
         cachedEntity.coreType = finalCoreType;
         cachedEntity.typePath = finalTypePath;
+        cachedEntity.extendedAttributes = mergedExtended;
         if (finalCreator) cachedEntity.brandOrCreator = finalCreator;
       }
 
@@ -317,10 +479,14 @@ export async function executeIngestionCascade(params: {
         .values({
           userId: user.id,
           entityId: cachedEntity.id,
+          customTypeId: targetType?.id || null,
+          typeId: targetType?.id || null,
           typePath: cachedEntity.typePath,
           isPrivateMemo: false,
           candidateFallbacks: runnerUps,
-          autoTags: [cachedEntity.coreType.toLowerCase()],
+          autoTags: [...new Set([cachedEntity.coreType.toLowerCase(), ...extractedCardData.tags])],
+          userCustomValues: extractedCardData.subjectiveValues || {},
+          personalNotes: extractedCardData.personalNotes || null,
           enrichmentStatus: "ENRICHED",
           visibility: "PRIVATE",
         })
@@ -341,6 +507,9 @@ export async function executeIngestionCascade(params: {
   }
 
   // STEP 2: CACHE MISS — Insert new global entity, source, and save atomically
+  const effectivePriceCents = extractedCardData.price?.cents ?? finalPriceCents;
+  const effectiveCurrency = extractedCardData.price?.currency ?? (enrichment?.currency || "USD");
+
   const { newEntity, save } = db.transaction((tx) => {
     const [insertedEntity] = tx
       .insert(globalEntities)
@@ -361,10 +530,10 @@ export async function executeIngestionCascade(params: {
           provenance: finalCanonicalUrl,
           ...(enrichment?.coreStructuredData || {}),
         },
-        extendedAttributes: {},
-        priceCents: finalPriceCents,
-        currency: enrichment?.currency || "USD",
-        priceVerifiedAt: finalPriceCents ? new Date().toISOString() : null,
+        extendedAttributes: extractedCardData.objectiveAttributes || {},
+        priceCents: effectivePriceCents,
+        currency: effectiveCurrency,
+        priceVerifiedAt: effectivePriceCents ? new Date().toISOString() : null,
       })
       .returning()
       .all();
@@ -393,11 +562,21 @@ export async function executeIngestionCascade(params: {
       .values({
         userId: user.id,
         entityId: insertedEntity.id,
+        customTypeId: targetType?.id || null,
+        typeId: targetType?.id || null,
         typePath: finalTypePath,
         preferredSourceId,
         isPrivateMemo: false,
         candidateFallbacks: runnerUps,
-        autoTags: [insertedEntity.coreType.toLowerCase(), finalTypePath.split("/").pop() || "captured"],
+        autoTags: [
+          ...new Set([
+            insertedEntity.coreType.toLowerCase(),
+            finalTypePath.split("/").pop() || "captured",
+            ...extractedCardData.tags,
+          ]),
+        ],
+        userCustomValues: extractedCardData.subjectiveValues || {},
+        personalNotes: extractedCardData.personalNotes || null,
         enrichmentStatus: "ENRICHED",
         visibility: "PRIVATE",
       })

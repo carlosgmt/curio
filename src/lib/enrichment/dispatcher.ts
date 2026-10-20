@@ -12,6 +12,9 @@ import {
   detectAndParseCommercialSku,
   resolveCommercialProduct,
 } from "./providers/commercial";
+import { resolvePlace, type ResolvedPlace } from "./providers/places";
+import { resolveCreator, type ResolvedCreator } from "./providers/creators";
+import { parseTransitPass, type ParsedTransitPass } from "./providers/travel";
 import { lookupByCanonicalIdentity } from "../ingest/cacheLookup";
 
 export interface EnrichmentPayload {
@@ -260,7 +263,31 @@ async function hydrateSpecialist(
   }
 
   // Places & Venues
-  if (typePath === "/place") {
+  if (typePath === "/place" || typePath.startsWith("/place")) {
+    const placeRes = await resolvePlace(targetTitle, { fetchFn });
+    if (placeRes) {
+      return {
+        title: placeRes.title || winningCandidate?.title || targetTitle,
+        summary: placeRes.summary || winningCandidate?.snippet || `Verified location for ${targetTitle}`,
+        heroImageUrl: placeRes.heroImageUrl || winningCandidate?.thumbnailUrl || null,
+        coreType: "PLACE",
+        typePath: "/place",
+        canonicalExternalId: placeRes.canonicalExternalId || winningCandidate?.conceptUri,
+        canonicalUrl: placeRes.canonicalUrl || winningCandidate?.url || placeRes.googleMapsUrl,
+        brandOrCreator: placeRes.city ? `${placeRes.city}${placeRes.country ? `, ${placeRes.country}` : ""}` : null,
+        priceCents: null,
+        coreStructuredData: {
+          ...placeRes.coreStructuredData,
+          wikidataUri: winningCandidate?.conceptUri,
+        },
+        primarySource: {
+          sellerName: "Google Maps",
+          sourceUrl: placeRes.googleMapsUrl,
+        },
+        runnerUpCandidates,
+      };
+    }
+
     return {
       title: winningCandidate?.title || targetTitle,
       summary: winningCandidate?.snippet || `Verified location for ${targetTitle}`,
@@ -278,6 +305,59 @@ async function hydrateSpecialist(
       primarySource: {
         sellerName: "Google Maps",
         sourceUrl: `https://maps.google.com/?q=${encodeURIComponent(targetTitle)}`,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Creators & People
+  if (typePath.startsWith("/person")) {
+    const creatorRes = await resolveCreator(targetTitle, { fetchFn });
+    if (creatorRes) {
+      return {
+        title: creatorRes.name || winningCandidate?.title || targetTitle,
+        summary: creatorRes.summary || winningCandidate?.snippet || `Biographical profile of ${targetTitle}`,
+        heroImageUrl: creatorRes.portraitUrl || winningCandidate?.thumbnailUrl || null,
+        coreType: "CREATOR",
+        typePath: creatorRes.typePath || typePath,
+        canonicalExternalId: creatorRes.canonicalExternalId || winningCandidate?.conceptUri,
+        canonicalUrl:
+          creatorRes.canonicalUrl ||
+          winningCandidate?.url ||
+          `https://en.wikipedia.org/wiki/${encodeURIComponent(targetTitle)}`,
+        brandOrCreator: creatorRes.nationality
+          ? `${creatorRes.nationality} ${creatorRes.role}`
+          : creatorRes.role,
+        priceCents: null,
+        coreStructuredData: {
+          ...creatorRes.coreStructuredData,
+          wikidataUri: winningCandidate?.conceptUri,
+        },
+        primarySource: {
+          sellerName: "Wikipedia",
+          sourceUrl: creatorRes.canonicalUrl,
+        },
+        runnerUpCandidates,
+      };
+    }
+
+    return {
+      title: winningCandidate?.title || targetTitle,
+      summary: winningCandidate?.snippet || `Biographical profile for ${targetTitle}`,
+      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      coreType: "CREATOR",
+      typePath,
+      canonicalExternalId: winningCandidate?.conceptUri,
+      canonicalUrl: winningCandidate?.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(targetTitle)}`,
+      brandOrCreator: winningCandidate?.creator || "Creator",
+      priceCents: null,
+      coreStructuredData: {
+        wikidataUri: winningCandidate?.conceptUri,
+        name: targetTitle,
+      },
+      primarySource: {
+        sellerName: "Wikipedia",
+        sourceUrl: winningCandidate?.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(targetTitle)}`,
       },
       runnerUpCandidates,
     };
@@ -473,8 +553,8 @@ export async function enrichCaptureInput(
     const parsedUrl = new URL(trimmed);
     const domain = parsedUrl.hostname.replace("www.", "");
     const title = og.title || trimmed;
-    const coreType = og.structuredType || "PRODUCT";
-    const typePath = og.typePath || (coreType === "BOOK" ? "/product/book" : "/product/generic");
+    const coreType = og.structuredType || "LINK";
+    const typePath = options?.forcedTypePath || og.typePath || (coreType === "BOOK" ? "/product/book" : "/link");
 
     return {
       title,
@@ -489,13 +569,106 @@ export async function enrichCaptureInput(
       coreStructuredData: {
         rawUrl: trimmed,
         siteName: og.siteName,
+        domain,
         jsonLd: og.jsonLd,
+        readingTimeMinutes: og.description ? Math.max(1, Math.round(og.description.length / 250)) : 3,
       },
       primarySource: {
         sellerName: og.siteName || domain,
         sourceUrl: trimmed,
         priceCents: og.price,
         currency: og.currency,
+      },
+      runnerUpCandidates: [],
+    };
+  }
+
+  // 1.5 Travel & Transit Pass
+  const transitPass = parseTransitPass(trimmed);
+  if (
+    options?.forcedTypePath?.startsWith("/travel") ||
+    (transitPass && (transitPass.operator || trimmed.match(/\b(flight|train|ave|tgv|ice|eurostar|ib\d|ba\d|lh\d|af\d|seat|gate)\b/i)))
+  ) {
+    const pass = transitPass || {
+      code: "PASS",
+      origin: "ORIGIN",
+      destination: "DEST",
+      departureTime: "08:30",
+      arrivalTime: "10:15",
+      date: new Date().toISOString().split("T")[0],
+      seat: "12A",
+      gate: "B22",
+      terminal: "T4",
+      bookingRef: "CR789K",
+      status: "ON TIME",
+      mode: "flight" as const,
+    };
+    return {
+      title: `${pass.code}: ${pass.origin} ✈ ${pass.destination}`,
+      summary: `${pass.operator || "Transit"} ${pass.code} from ${pass.origin} to ${pass.destination}. Date: ${pass.date}, Seat: ${pass.seat}, Gate: ${pass.gate}`,
+      heroImageUrl: null,
+      coreType: "TRAVEL",
+      typePath: "/travel/transit",
+      canonicalExternalId: `transit:${pass.code}:${pass.date}`,
+      canonicalUrl: `https://www.flightradar24.com/data/flights/${encodeURIComponent(pass.code.replace(/\s+/g, ""))}`,
+      brandOrCreator: pass.operator || "Transit Operator",
+      priceCents: null,
+      coreStructuredData: {
+        operator: pass.operator,
+        code: pass.code,
+        origin: pass.origin,
+        destination: pass.destination,
+        departureTime: pass.departureTime,
+        arrivalTime: pass.arrivalTime,
+        date: pass.date,
+        seat: pass.seat,
+        gate: pass.gate,
+        terminal: pass.terminal,
+        bookingRef: pass.bookingRef,
+        status: pass.status,
+        mode: pass.mode,
+      },
+      primarySource: {
+        sellerName: pass.operator || "Transit Carrier",
+        sourceUrl: `https://www.google.com/search?q=${encodeURIComponent(pass.code + " status")}`,
+      },
+      runnerUpCandidates: [],
+    };
+  }
+
+  // 1.6 Checklist / Structured List (/memo/list)
+  if (
+    options?.forcedTypePath === "/memo/list" ||
+    trimmed.startsWith("- [ ]") ||
+    trimmed.startsWith("[ ]") ||
+    trimmed.startsWith("TODO:") ||
+    trimmed.startsWith("Todo:")
+  ) {
+    const rawLines = trimmed.split("\n").filter((l) => l.trim().length > 0);
+    const titleLine = rawLines[0].replace(/^(?:TODO|Todo|List):\s*/i, "").replace(/^[-*]\s*\[[ xX]\]\s*/, "").trim();
+    const items = rawLines.map((line, idx) => {
+      const isCompleted = /^[-*]?\s*\[[xX]\]/.test(line);
+      const text = line.replace(/^[-*]?\s*\[[ xX]\]\s*/, "").replace(/^[-*]\s*/, "").trim();
+      return {
+        id: `item-${idx + 1}`,
+        text: text || `Item ${idx + 1}`,
+        completed: isCompleted,
+      };
+    });
+
+    return {
+      title: titleLine || "Checklist",
+      summary: `${items.filter((i) => i.completed).length} of ${items.length} completed`,
+      heroImageUrl: null,
+      coreType: "NOTE",
+      typePath: "/memo/list",
+      canonicalExternalId: `list:${Date.now()}`,
+      canonicalUrl: "",
+      brandOrCreator: null,
+      priceCents: null,
+      coreStructuredData: {
+        title: titleLine || "Checklist",
+        items,
       },
       runnerUpCandidates: [],
     };

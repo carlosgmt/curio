@@ -11,8 +11,14 @@ import { WineLabelCard } from "./silhouettes/WineLabelCard";
 import { ArtFrameCard } from "./silhouettes/ArtFrameCard";
 import { RecipeIndexCard } from "./silhouettes/RecipeIndexCard";
 import { MapPassCard } from "./silhouettes/MapPassCard";
+import { PlaceSpotCard } from "./silhouettes/PlaceSpotCard";
 import { PrivateMemoCard } from "./silhouettes/PrivateMemoCard";
 import { QuoteCard } from "./silhouettes/QuoteCard";
+import { ChecklistCard } from "./silhouettes/ChecklistCard";
+import { TravelPassCard } from "./silhouettes/TravelPassCard";
+import { CreatorProfileCard } from "./silhouettes/CreatorProfileCard";
+import { PhotoCard } from "./silhouettes/PhotoCard";
+import { WebLinkCard } from "./silhouettes/WebLinkCard";
 import { SynapsePill } from "../connections/SynapsePill";
 import { CustomFieldsSection } from "./CustomFieldsSection";
 import { AddToListPopover } from "../lists/AddToListPopover";
@@ -143,6 +149,105 @@ export function PolymorphicCard({
         <QuoteCard
           save={save}
           entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 0a. Checklist / Interactive List (/memo/list)
+    if (
+      typePath === "/memo/list" ||
+      typePath.includes("list") ||
+      tags.includes("checklist") ||
+      tags.includes("list") ||
+      (entity?.coreStructuredData && Array.isArray(entity.coreStructuredData.items))
+    ) {
+      return (
+        <ChecklistCard
+          save={save}
+          entity={entity || ({ id: save.id, title: save.privateTitle || "Checklist", coreType: "NOTE", typePath: "/memo/list", canonicalUrl: "" } as any)}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 0b. Web Link / Article Bookmark (/link, /article/web, LINK)
+    if (
+      typePath === "/link" ||
+      typePath.startsWith("/link") ||
+      typePath === "/article/web" ||
+      coreType === "LINK" ||
+      tags.includes("link") ||
+      tags.includes("bookmark")
+    ) {
+      return (
+        <WebLinkCard
+          save={save}
+          entity={entity as any}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 0c. Travel & Transit Boarding Pass (/travel/*, /travel/transit, flight, train)
+    if (
+      typePath.startsWith("/travel") ||
+      typePath === "/travel/transit" ||
+      coreType === "TRAVEL" ||
+      tags.includes("travel") ||
+      tags.includes("flight") ||
+      tags.includes("train")
+    ) {
+      return (
+        <TravelPassCard
+          save={save}
+          entity={entity as any}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 0d. Creator / Cultural Figure (/person/*, CREATOR)
+    if (
+      typePath.startsWith("/person") ||
+      coreType === "CREATOR" ||
+      tags.includes("creator") ||
+      tags.includes("author") ||
+      tags.includes("director") ||
+      tags.includes("musician") ||
+      tags.includes("artist")
+    ) {
+      return (
+        <CreatorProfileCard
+          save={save}
+          entity={entity as any}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 0e. Photo / Full-bleed Photograph (/media/image, /photo)
+    if (
+      typePath === "/media/image" ||
+      typePath === "/photo" ||
+      typePath.startsWith("/media/image") ||
+      tags.includes("photo") ||
+      tags.includes("photography")
+    ) {
+      return (
+        <PhotoCard
+          save={save}
+          entity={entity as any}
           primarySource={primarySource}
           creatorAffiliateTags={effectiveTags}
           onSwapped={onSwapped}
@@ -284,11 +389,10 @@ export function PolymorphicCard({
       );
     }
 
-    // 8. Map Pass Silhouette (/place, /place/*, transit trails, restaurants, cafes, hotels, shops, bars)
+    // 8. Place & Venue Silhouette (/place, /place/*, venue spot)
     if (
       typePath.includes("place") ||
       typePath.includes("trail") ||
-      typePath.includes("transit") ||
       typePath.includes("restaurant") ||
       typePath.includes("cafe") ||
       typePath.includes("hotel") ||
@@ -306,8 +410,19 @@ export function PolymorphicCard({
       title.includes("coffee") ||
       title.includes("cafe")
     ) {
+      if (typePath.includes("trail") || tags.includes("trail") || title.includes("trail")) {
+        return (
+          <MapPassCard
+            save={save}
+            entity={entity}
+            primarySource={primarySource}
+            creatorAffiliateTags={effectiveTags}
+            onSwapped={onSwapped}
+          />
+        );
+      }
       return (
-        <MapPassCard
+        <PlaceSpotCard
           save={save}
           entity={entity}
           primarySource={primarySource}

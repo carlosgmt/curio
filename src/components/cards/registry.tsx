@@ -16,6 +16,11 @@ import { GarmentCard } from "./silhouettes/GarmentCard";
 import { CosmeticsCard } from "./silhouettes/CosmeticsCard";
 import { ElectronicsCard } from "./silhouettes/ElectronicsCard";
 import { QuoteCard } from "./silhouettes/QuoteCard";
+import { ChecklistCard } from "./silhouettes/ChecklistCard";
+import { TravelPassCard } from "./silhouettes/TravelPassCard";
+import { CreatorProfileCard } from "./silhouettes/CreatorProfileCard";
+import { PhotoCard } from "./silhouettes/PhotoCard";
+import { WebLinkCard } from "./silhouettes/WebLinkCard";
 
 export type SilhouetteDensity =
   | "micro"
@@ -40,7 +45,12 @@ export type CanonicalArchetypeId =
   | "garment"
   | "cosmetics"
   | "electronics"
-  | "quote";
+  | "quote"
+  | "checklist"
+  | "travel"
+  | "creator"
+  | "photo"
+  | "link";
 
 export type CulturalPresentationMode =
   | "gallery"
@@ -171,6 +181,11 @@ export class SilhouetteRegistry {
     this.register("electronics", "standard", ElectronicsCard);
     this.register("quote", "standard", QuoteCard);
     this.register("quote", "expanded", QuoteCard);
+    this.register("checklist", "standard", ChecklistCard);
+    this.register("travel", "standard", TravelPassCard);
+    this.register("creator", "standard", CreatorProfileCard);
+    this.register("photo", "standard", PhotoCard);
+    this.register("link", "standard", WebLinkCard);
   }
 
   public register(
@@ -229,8 +244,28 @@ export class SilhouetteRegistry {
 
     const path = (typePath || "").toLowerCase().trim();
 
+    if (path === "/memo/list" || path.includes("list") || path.includes("checklist")) {
+      return "checklist";
+    }
+
     if (path.startsWith("/memo") || path.includes("memo") || path.includes("personal_note")) {
       return "private_memo";
+    }
+
+    if (path.startsWith("/travel") || path.includes("transit") || path.includes("flight") || path.includes("train")) {
+      return "travel";
+    }
+
+    if (path.startsWith("/person") || path.includes("creator") || path.includes("author") || path.includes("director")) {
+      return "creator";
+    }
+
+    if (path === "/media/image" || path.includes("photo") || path.includes("image")) {
+      return "photo";
+    }
+
+    if (path === "/link" || path.startsWith("/link") || path.includes("article/web") || path.includes("weblink")) {
+      return "link";
     }
 
     // 14 Canonical Archetype Taxonomy Rules

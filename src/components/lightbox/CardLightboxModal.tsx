@@ -28,6 +28,11 @@ import {
   Pencil,
   BookmarkCheck,
   Quote as QuoteIcon,
+  ListTodo,
+  Plane,
+  User,
+  Camera,
+  Globe,
 } from "lucide-react";
 import type { CardData } from "../cards/PolymorphicCard";
 import { CinemaCulturalMode } from "./modes/CinemaCulturalMode";
@@ -41,6 +46,12 @@ import { ArtFrameCard } from "../cards/silhouettes/ArtFrameCard";
 import { PrivateMemoCard } from "../cards/silhouettes/PrivateMemoCard";
 import { ProductCard } from "../cards/silhouettes/ProductCard";
 import { QuoteCard } from "../cards/silhouettes/QuoteCard";
+import { ChecklistCard } from "../cards/silhouettes/ChecklistCard";
+import { TravelPassCard } from "../cards/silhouettes/TravelPassCard";
+import { CreatorProfileCard } from "../cards/silhouettes/CreatorProfileCard";
+import { PhotoCard } from "../cards/silhouettes/PhotoCard";
+import { WebLinkCard } from "../cards/silhouettes/WebLinkCard";
+import { PlaceSpotCard } from "../cards/silhouettes/PlaceSpotCard";
 import { SynapsePill } from "../connections/SynapsePill";
 import { CustomFieldsSection } from "../cards/CustomFieldsSection";
 import { AddToListPopover } from "../lists/AddToListPopover";
@@ -76,12 +87,37 @@ const BUILTIN_ARCHETYPES: ArchetypeOption[] = [
   { id: "place", label: "Place", typePath: "/place", icon: <MapPin className="w-3.5 h-3.5" /> },
   { id: "art", label: "Art", typePath: "/product/art", icon: <Frame className="w-3.5 h-3.5" /> },
   { id: "quote", label: "Quote", typePath: "/quote", icon: <QuoteIcon className="w-3.5 h-3.5" /> },
+  { id: "checklist", label: "Checklist", typePath: "/memo/list", icon: <ListTodo className="w-3.5 h-3.5" /> },
+  { id: "travel", label: "Travel Pass", typePath: "/travel/transit", icon: <Plane className="w-3.5 h-3.5" /> },
+  { id: "creator", label: "Creator Profile", typePath: "/person", icon: <User className="w-3.5 h-3.5" /> },
+  { id: "photo", label: "Photo", typePath: "/media/image", icon: <Camera className="w-3.5 h-3.5" /> },
+  { id: "link", label: "Web Link", typePath: "/link", icon: <Globe className="w-3.5 h-3.5" /> },
   { id: "memo", label: "Text Note", typePath: "/memo/personal", icon: <Lock className="w-3.5 h-3.5" /> },
 ];
 
 function detectInitialArchetypeId(card: CardData): string {
   const typePath = (card.entity?.typePath || card.save.typePath || "").toLowerCase();
   const coreType = (card.entity?.coreType || "").toUpperCase();
+
+  if (typePath === "/memo/list" || typePath.includes("list") || (card.entity?.coreStructuredData && Array.isArray(card.entity.coreStructuredData.items))) {
+    return "checklist";
+  }
+
+  if (typePath.startsWith("/travel") || typePath.includes("transit") || coreType === "TRAVEL") {
+    return "travel";
+  }
+
+  if (typePath.startsWith("/person") || coreType === "CREATOR") {
+    return "creator";
+  }
+
+  if (typePath === "/media/image" || typePath.includes("photo") || typePath.includes("image")) {
+    return "photo";
+  }
+
+  if (typePath === "/link" || typePath.startsWith("/link") || typePath.includes("article/web") || coreType === "LINK") {
+    return "link";
+  }
 
   if (typePath.includes("quote") || typePath.startsWith("/quote") || typePath.startsWith("/culture/quote")) {
     return "quote";
@@ -374,6 +410,51 @@ export function CardLightboxModal({
       case "quote":
         return (
           <QuoteCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        );
+      case "checklist":
+        return (
+          <ChecklistCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        );
+      case "travel":
+        return (
+          <TravelPassCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        );
+      case "creator":
+        return (
+          <CreatorProfileCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        );
+      case "photo":
+        return (
+          <PhotoCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        );
+      case "link":
+        return (
+          <WebLinkCard
             save={card.save}
             entity={previewEntity as any}
             primarySource={card.primarySource}

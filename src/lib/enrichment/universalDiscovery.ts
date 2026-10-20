@@ -76,25 +76,68 @@ export function mapDescriptionToOntology(description: string, title?: string): {
     return { coreType: "NOTE", typePath: "/note", badgeLabel: "NOTE" };
   }
 
-  // 1. Cinema & Film (multilingual EN / ES)
+  // 1. Creators & People (Biographies, professions, authors, directors, musicians, artists)
+  // Check persons first so biographies don't falsely map to individual works
   if (
-    /\b(?:film|movie|pelicula|filme|feature film|motion picture|television series|tv series|serie de television|serie de tv|anime|documentary|documental|miniseries|directed by|screenplay|filmmaker|director|screenwriter|actor|actress|actriz|largometraje|cortometraje)\b/i.test(
+    /\b(?:filmmaker|film director|movie director|cinema director|screenwriter and director|director de cine|cineasta)\b/i.test(d) &&
+    !/\b(?:directed by|film by|movie by|pelicula dirigida por|filme dirigido por)\b/i.test(d)
+  ) {
+    return { coreType: "CREATOR", typePath: "/person/director", badgeLabel: "DIRECTOR" };
+  }
+
+  if (
+    /\b(?:musician|singer|songwriter|composer|conductor|pianist|guitarist|trumpeter|drummer|bassist|cellist|violinist|vocalist|rapper|cantante|musico|musica|cantautor|cantautora|compositor|compositora|pianista|guitarrista)\b/i.test(d) &&
+    !/\b(?:album by|song by|recorded by|single by|cancion de|disco de|album de|grabado por)\b/i.test(d)
+  ) {
+    return { coreType: "CREATOR", typePath: "/person/musician", badgeLabel: "MUSICIAN" };
+  }
+
+  if (
+    /\b(?:painter|sculptor|visual artist|printmaker|illustrator|ceramicist|pintor|pintora|escultor|escultora|artista visual|ilustrador)\b/i.test(d) &&
+    !/\b(?:painting by|sculpture by|artwork by|oil on canvas by|pintura de|escultura de|obra de arte de)\b/i.test(d)
+  ) {
+    return { coreType: "CREATOR", typePath: "/person/artist", badgeLabel: "ARTIST" };
+  }
+
+  if (
+    /\b(?:author|writer|novelist|poet|playwright|essayist|biographer|journalist|escritor|escritora|autor|autora|novelista|poeta|dramaturgo|dramaturga|ensayista|biografo)\b/i.test(d) &&
+    !/\b(?:novel by|book by|written work|edition of|literary work|short story by|play by|written by|obra literaria de|libro de|novela de|cuento de|escrita por|escrito por)\b/i.test(d)
+  ) {
+    return { coreType: "CREATOR", typePath: "/person/author", badgeLabel: "AUTHOR" };
+  }
+
+  if (
+    /\b(?:historical figure|philosopher|architect|photographer|fashion designer|curator|filosofo|arquitecto|fotografo|disenador)\b/i.test(d)
+  ) {
+    return { coreType: "CREATOR", typePath: "/person", badgeLabel: "CREATOR" };
+  }
+
+  // 2. Places, Venues & Architecture (Checked before fine art to ensure museums and galleries are places)
+  if (
+    /\b(?:restaurant|cafe|coffee shop|bar|pub|bistro|bakery|hotel|hostel|palace|castle|cathedral|church|temple|monument|theater|theatre|opera house|stadium|arena|park|garden|square|piazza|plaza|street|boulevard|avenue|neighborhood|district|landmark|tourist attraction|historic site|cultural center|library|airport|station|train station|subway station|metro station|city|comune|municipality|capital|museum|art museum|gallery|art gallery|building|mountain|lake|island|province|town|village|ciudad|municipio|restaurante|cafeteria|museo|galeria|palacio|castillo|catedral|iglesia|templo|monumento|teatro|estadio|parque|jardin|calle|avenida|barrio|distrito|biblioteca|aeropuerto|estacion|edificio|montana|lago|isla|provincia|pueblo)\b/i.test(d)
+  ) {
+    return { coreType: "PLACE", typePath: "/place", badgeLabel: "PLACE" };
+  }
+
+  // 3. Cinema & Film (multilingual EN / ES)
+  if (
+    /\b(?:film|movie|pelicula|filme|feature film|motion picture|television series|tv series|serie de television|serie de tv|anime|documentary|documental|miniseries|directed by|screenplay|largometraje|cortometraje)\b/i.test(
       d
     )
   ) {
     return { coreType: "MEDIA", typePath: "/media/film", badgeLabel: "FILM" };
   }
 
-  // 2. Books & Literature (multilingual EN / ES)
+  // 4. Books & Literature (multilingual EN / ES)
   if (
-    /\b(?:novel|novela|novella|book|libro|memoir|memorias|biography|biografia|autobiography|manga|written work|obra literaria|edition of written work|poem|poema|poetry collection|poemario|short story|relato|cuento|play by|literary work|non fiction|author|autor|writer|escritor|novelist|poet|poeta|playwright|dramaturgo)\b/i.test(
+    /\b(?:novel|novela|novella|book|libro|memoir|memorias|biography|biografia|autobiography|manga|written work|obra literaria|edition of written work|poem|poema|poetry collection|poemario|short story|relato|cuento|play by|literary work|non fiction)\b/i.test(
       d
     )
   ) {
     return { coreType: "BOOK", typePath: "/product/book", badgeLabel: "BOOK" };
   }
 
-  // 3. Music: Albums vs Songs (hierarchy: /media/music -> /media/music/album | /media/music/song)
+  // 5. Music: Albums vs Songs (hierarchy: /media/music -> /media/music/album | /media/music/song)
   if (
     /\b(?:album|studio album|album de estudio|live album|album en vivo|compilation album|album recopilatorio|double album|doble album|disco|concept album|extended play|ep|record by|soundtrack|banda sonora|discography|discografia|lp)\b/i.test(
       d
@@ -104,7 +147,7 @@ export function mapDescriptionToOntology(description: string, title?: string): {
     return { coreType: "MEDIA", typePath: "/media/music/album", badgeLabel: "ALBUM" };
   }
   if (
-    /\b(?:song|cancion|original song|single|sencillo|musical composition|composicion|track|pista|ballad|balada|band|banda|musical duo|duo|recorded by|grabado por|interpretado por|musician|musico|singer|cantante|cantaor|songwriter|cantautor|composer|compositor)\b/i.test(
+    /\b(?:song|cancion|original song|single|sencillo|musical composition|composicion|track|pista|ballad|balada|band|banda|musical duo|duo|recorded by|grabado por|interpretado por)\b/i.test(
       d
     ) ||
     /\b(?:cancion)\b/i.test(t)
@@ -112,42 +155,36 @@ export function mapDescriptionToOntology(description: string, title?: string): {
     return { coreType: "MEDIA", typePath: "/media/music/song", badgeLabel: "SONG" };
   }
 
-  // 4. Wine & Beverages
+  // 6. Wine & Beverages
   if (
     /\b(?:wine|vineyard|winery|grape|appellation|cuvee|docg|doc|red wine|white wine|champagne|whisky|bourbon|spirit|alcoholic beverage|vino|bodega|vinedo)\b/i.test(d)
   ) {
     return { coreType: "PRODUCT", typePath: "/product/beverage/wine", badgeLabel: "WINE" };
   }
 
-  // 5. Video Games
+  // 7. Video Games
   if (
     /\b(?:video game|computer game|arcade game|expansion pack|playstation|nintendo|xbox|action game|rpg|videojuego)\b/i.test(d)
   ) {
     return { coreType: "VIDEOGAME", typePath: "/media/videogame", badgeLabel: "GAME" };
   }
 
-  // 6. Fine Art & Sculptures
+  // 8. Fine Art & Sculptures (excluding museums/galleries)
   if (
+    !/\b(?:museum|gallery|art gallery|building|palace|theater|stadium|hotel|cafe|restaurant|park|square|station|airport|museo|galeria)\b/i.test(d) &&
     /\b(?:painting|sculpture|artwork|installation|drawing|oil on canvas|mural|statue|pintura|escultura|obra de arte)\b/i.test(d)
   ) {
     return { coreType: "PRODUCT", typePath: "/product/art", badgeLabel: "ART" };
   }
 
-  // 7. Culinary & Recipes
+  // 9. Culinary & Recipes
   if (
     /\b(?:dish|recipe|food|pastry|cocktail|cuisine|soup|dessert|bread|cheese|receta|plato|gastronomia)\b/i.test(d)
   ) {
     return { coreType: "CULINARY", typePath: "/article/recipe", badgeLabel: "RECIPE" };
   }
 
-  // 8. Places, Venues & Architecture
-  if (
-    /\b(?:restaurant|cafe|hotel|city|comune|municipality|capital|museum|building|park|street|neighborhood|district|mountain|lake|island|province|town|village|ciudad|municipio|restaurante|museo)\b/i.test(d)
-  ) {
-    return { coreType: "PLACE", typePath: "/place", badgeLabel: "PLACE" };
-  }
-
-  // 9. Watches & Horology (Do not match generic words like 'omega' or 'cartier' in title alone)
+  // 10. Watches & Horology
   if (
     /\b(?:wristwatch|watchmaker|watch manufacturer|watch brand|clockmaker|horology|timepiece|chronograph|luxury watch|diving watch|mechanical watch|automatic watch|swiss watch|reloj|relojeria|reloj de pulsera)\b/i.test(
       d
@@ -320,6 +357,27 @@ export async function discoverUniversalEntities(
           score += 70;
         }
 
+        // Place query & candidate boost
+        const hasPlaceQueryTerm = /\b(?:place|museum|gallery|art gallery|cafe|café|bar|pub|bistro|bakery|hotel|palace|castle|cathedral|church|temple|monument|theater|theatre|opera house|stadium|arena|park|garden|square|piazza|plaza|street|boulevard|avenue|neighborhood|district|landmark|attraction|library|airport|station|museo|galeria|restaurante|cafeteria|calle|avenida|plaza|estacion|aeropuerto)\b/i.test(queryLower);
+
+        if (hasPlaceQueryTerm && ontology.typePath === "/place") {
+          score += 80;
+        } else if (hasPlaceQueryTerm && ontology.typePath !== "/place") {
+          score -= 40;
+        } else if (ontology.typePath === "/place") {
+          score += 15;
+        }
+
+        // Creator boost (+80 for person candidate, +50 extra if query has creator terms)
+        const hasCreatorQueryTerm = /\b(?:author|writer|director|filmmaker|musician|singer|composer|artist|painter|sculptor|poet|autor|escritor|cineasta|director|musico|cantante|compositor|pintor|artista)\b/i.test(queryLower);
+
+        if (ontology.typePath.startsWith("/person")) {
+          score += 80;
+          if (hasCreatorQueryTerm) {
+            score += 50;
+          }
+        }
+
         // Check match info & aliases for cross-language matching (e.g. Spanish "Mi vida sin mí" matching Q83630)
         if (item.match?.text && normalizeEntityString(item.match.text) === normalizedQuery) {
           score += 70;
@@ -418,6 +476,27 @@ export async function discoverUniversalEntities(
         }
         if (/\b(?:watch|rolex|speedmaster|seamaster|reloj|chronograph)\b/i.test(queryLower) && ontology.typePath === "/product/watch") {
           score += 70;
+        }
+
+        // Place query & candidate boost
+        const hasPlaceQueryTerm = /\b(?:place|museum|gallery|art gallery|cafe|café|bar|pub|bistro|bakery|hotel|palace|castle|cathedral|church|temple|monument|theater|theatre|opera house|stadium|arena|park|garden|square|piazza|plaza|street|boulevard|avenue|neighborhood|district|landmark|attraction|library|airport|station|museo|galeria|restaurante|cafeteria|calle|avenida|plaza|estacion|aeropuerto)\b/i.test(queryLower);
+
+        if (hasPlaceQueryTerm && ontology.typePath === "/place") {
+          score += 80;
+        } else if (hasPlaceQueryTerm && ontology.typePath !== "/place") {
+          score -= 40;
+        } else if (ontology.typePath === "/place") {
+          score += 15;
+        }
+
+        // Creator boost (+80 for person candidate, +50 extra if query has creator terms)
+        const hasCreatorQueryTerm = /\b(?:author|writer|director|filmmaker|musician|singer|composer|artist|painter|sculptor|poet|autor|escritor|cineasta|director|musico|cantante|compositor|pintor|artista)\b/i.test(queryLower);
+
+        if (ontology.typePath.startsWith("/person")) {
+          score += 80;
+          if (hasCreatorQueryTerm) {
+            score += 50;
+          }
         }
 
         if (ontology.typePath !== "/product/generic") {

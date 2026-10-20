@@ -3,6 +3,14 @@
 import React, { useState } from "react";
 import { Plus, X, Tag, Globe, Check, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
+import {
+  StatBadge,
+  MeterGauge,
+  SpecRow,
+  PriceTag,
+  ActionChecklist,
+  RelationPill,
+} from "./primitives";
 
 export interface CustomFieldsSectionProps {
   saveId: string;
@@ -95,6 +103,104 @@ export function CustomFieldsSection({
   const hasAnyFields =
     Object.keys(localCustomValues).length > 0 || Object.keys(cleanExtended).length > 0;
 
+  const renderFieldBadge = (
+    attrKey: string,
+    attrVal: unknown,
+    isGlobal: boolean,
+    onRemove?: () => void
+  ) => {
+    const k = attrKey.toLowerCase();
+    const strVal = String(attrVal);
+    const numVal = Number(attrVal);
+
+    if (
+      (k.includes("rating") || k.includes("score") || k.includes("cupping")) &&
+      !isNaN(numVal)
+    ) {
+      return (
+        <div key={`${isGlobal ? "global" : "user"}-${attrKey}`} className="flex items-center gap-1">
+          <MeterGauge value={numVal} max={10} label={attrKey} className="min-w-[100px]" />
+          {onRemove && (
+            <button type="button" onClick={onRemove} className="text-neutral-400 hover:text-rose-500 ml-1">
+              <X className="w-2.5 h-2.5" />
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    if (
+      (k.includes("abv") ||
+        k.includes("weight") ||
+        k.includes("temperature") ||
+        k.includes("temp") ||
+        k.includes("wattage")) &&
+      strVal
+    ) {
+      return (
+        <div key={`${isGlobal ? "global" : "user"}-${attrKey}`} className="flex items-center gap-1">
+          <StatBadge label={attrKey} value={strVal} />
+          {onRemove && (
+            <button type="button" onClick={onRemove} className="text-neutral-400 hover:text-rose-500 ml-1">
+              <X className="w-2.5 h-2.5" />
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    if ((k.includes("price") || k.includes("cost")) && !isNaN(numVal)) {
+      return (
+        <div key={`${isGlobal ? "global" : "user"}-${attrKey}`} className="flex items-center gap-1">
+          <PriceTag priceCents={numVal} />
+          {onRemove && (
+            <button type="button" onClick={onRemove} className="text-neutral-400 hover:text-rose-500 ml-1">
+              <X className="w-2.5 h-2.5" />
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    if ((k.includes("paired") || k.includes("related") || k.includes("synapse")) && strVal) {
+      return (
+        <div key={`${isGlobal ? "global" : "user"}-${attrKey}`} className="flex items-center gap-1">
+          <RelationPill relationType={attrKey} targetTitle={strVal} />
+          {onRemove && (
+            <button type="button" onClick={onRemove} className="text-neutral-400 hover:text-rose-500 ml-1">
+              <X className="w-2.5 h-2.5" />
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <span
+        key={`${isGlobal ? "global" : "user"}-${attrKey}`}
+        className={`group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono ${
+          isGlobal
+            ? "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+            : "bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-300"
+        }`}
+      >
+        {isGlobal ? <Globe className="w-2.5 h-2.5 text-indigo-500" /> : <Tag className="w-2.5 h-2.5 text-neutral-400" />}
+        <strong className="font-semibold capitalize">{attrKey.replace(/_/g, " ")}:</strong>{" "}
+        <span>{strVal}</span>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="opacity-0 group-hover/tag:opacity-100 text-neutral-400 hover:text-rose-500 transition cursor-pointer ml-0.5"
+            title={`Remove ${attrKey}`}
+          >
+            <X className="w-2.5 h-2.5" />
+          </button>
+        )}
+      </span>
+    );
+  };
+
   return (
     <div className="mt-2 text-xs">
       {/* Pills Container */}
@@ -102,40 +208,13 @@ export function CustomFieldsSection({
         {/* Promoted Consensus Attributes (Global) */}
         {Object.entries(cleanExtended).map(([attrKey, attrVal]) => {
           if (attrVal === null || attrVal === undefined) return null;
-          return (
-            <span
-              key={`global-${attrKey}`}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-2xs"
-              title="Verified consensus attribute from Curio Learns graph"
-            >
-              <Globe className="w-2.5 h-2.5 text-indigo-500" />
-              <strong className="font-semibold capitalize">{attrKey.replace(/_/g, " ")}:</strong>{" "}
-              {String(attrVal)}
-            </span>
-          );
+          return renderFieldBadge(attrKey, attrVal, true);
         })}
 
         {/* User Specific Custom Attributes */}
         {Object.entries(localCustomValues).map(([attrKey, attrVal]) => {
           if (attrVal === null || attrVal === undefined) return null;
-          return (
-            <span
-              key={`user-${attrKey}`}
-              className="group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-300"
-            >
-              <Tag className="w-2.5 h-2.5 text-neutral-400" />
-              <span className="font-semibold capitalize">{attrKey.replace(/_/g, " ")}:</span>{" "}
-              <span>{String(attrVal)}</span>
-              <button
-                type="button"
-                onClick={() => handleRemoveField(attrKey)}
-                className="opacity-0 group-hover/tag:opacity-100 text-neutral-400 hover:text-rose-500 transition cursor-pointer ml-0.5"
-                title={`Remove ${attrKey}`}
-              >
-                <X className="w-2.5 h-2.5" />
-              </button>
-            </span>
-          );
+          return renderFieldBadge(attrKey, attrVal, false, () => handleRemoveField(attrKey));
         })}
 
         {/* Inline Add Field Trigger */}

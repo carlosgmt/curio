@@ -2,12 +2,16 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Sparkles, Share2, Check, Layers, User, ArrowLeft } from "lucide-react";
+import { Sparkles, Share2, Check, Layers, User, ArrowLeft, BookmarkPlus, ShoppingBag, Loader2 } from "lucide-react";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
+import { SplitBagCheckoutDrawer } from "@/components/commerce/SplitBagCheckoutDrawer";
 import type { ListWithSections } from "@/lib/lists/service";
 
 export function PublicBoardView({ data }: { data: ListWithSections }) {
   const [copied, setCopied] = useState(false);
+  const [cloning, setCloning] = useState(false);
+  const [cloned, setCloned] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const { list, owner, itemCount, sections } = data;
 
   const handleCopyLink = () => {
@@ -15,6 +19,23 @@ export function PublicBoardView({ data }: { data: ListWithSections }) {
       navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleCloneBoard = async () => {
+    setCloning(true);
+    try {
+      const res = await fetch(`/curio/api/v1/lists/${list.slug}/clone`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        setCloned(true);
+        setTimeout(() => setCloned(false), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to clone board:", err);
+    } finally {
+      setCloning(false);
     }
   };
 
@@ -31,6 +52,41 @@ export function PublicBoardView({ data }: { data: ListWithSections }) {
         </Link>
 
         <div className="flex items-center gap-2">
+          {/* Buy Entire Board UCP Drawer Trigger */}
+          <button
+            type="button"
+            onClick={() => setIsCheckoutOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 transition cursor-pointer shadow-2xs"
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            <span>Buy Entire Board</span>
+          </button>
+
+          {/* Save to My Curio Clone Flow */}
+          <button
+            type="button"
+            onClick={handleCloneBoard}
+            disabled={cloning}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-90 transition cursor-pointer shadow-2xs disabled:opacity-50"
+          >
+            {cloning ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Cloning...</span>
+              </>
+            ) : cloned ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400 dark:text-emerald-600" />
+                <span>Saved to Library</span>
+              </>
+            ) : (
+              <>
+                <BookmarkPlus className="w-3.5 h-3.5" />
+                <span>Save to My Curio</span>
+              </>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={handleCopyLink}
@@ -101,6 +157,14 @@ export function PublicBoardView({ data }: { data: ListWithSections }) {
           Every card links to canonical merchant sources with verified curation provenance.
         </p>
       </footer>
+
+      {/* Split-Bag UCP Checkout Slide-Over Drawer */}
+      <SplitBagCheckoutDrawer
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        boardId={list.id}
+        boardTitle={list.title}
+      />
     </main>
   );
 }

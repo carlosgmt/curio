@@ -19,6 +19,9 @@ import { CurioLandingVitrine } from "@/components/landing/CurioLandingVitrine";
 import { apiFetch } from "@/lib/apiClient";
 import type { SmartList } from "@/db";
 import type { ListWithSections } from "@/lib/lists/service";
+import { MasonryLayout, GridLayout, TimelineLayout } from "@/components/layout";
+import { ViewModeSwitcher, type LayoutEngineType } from "@/components/layout/ViewModeSwitcher";
+import type { SilhouetteDensity } from "@/components/cards/registry";
 import {
   Sparkles,
   Layers,
@@ -69,6 +72,8 @@ export default function Home() {
   const [authTab, setAuthTab] = useState<"login" | "register">("login");
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isTypesModalOpen, setIsTypesModalOpen] = useState(false);
+  const [layoutEngine, setLayoutEngine] = useState<LayoutEngineType>("masonry");
+  const [cardDensity, setCardDensity] = useState<SilhouetteDensity>("standard");
 
   const fetchCurrentUser = async () => {
     try {
@@ -496,26 +501,36 @@ export default function Home() {
           </div>
         ) : (
           <div>
-            {/* Archetype Filter Tabs */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-4 mb-8 scrollbar-none">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer ${
-                    activeTab === tab.id
-                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
-                      : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
-                  }`}
-                >
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                </button>
-              ))}
+            {/* Archetype Filter Tabs & View Mode Switcher */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer ${
+                      activeTab === tab.id
+                        ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                        : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+                    }`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <ViewModeSwitcher
+                layout={layoutEngine}
+                density={cardDensity}
+                onLayoutChange={setLayoutEngine}
+                onDensityChange={setCardDensity}
+                className="shrink-0 self-end sm:self-auto"
+              />
             </div>
 
-            {/* Feed Grid */}
+            {/* Feed Layout Engines */}
             {loading ? (
               <div className="text-center py-20 text-neutral-400 text-sm">
                 Loading your taste graph...
@@ -530,35 +545,108 @@ export default function Home() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredItems.map((item) => (
-                  <PolymorphicCard
-                    key={item.save.id}
-                    item={item}
-                    onCardClick={(card) => setSelectedCard(card)}
-                    onConnect={(card) => {
-                      setPairingCard(card);
-                      setIsPairingOpen(true);
-                    }}
-                    onSwapped={() => fetchItems()}
-                    onUnlink={() => fetchItems()}
-                    onCustomFieldsUpdated={(saveId, updatedValues) => {
-                      setItems((prev) =>
-                        prev.map((it) =>
-                          it.save.id === saveId
-                            ? {
-                                ...it,
-                                save: {
-                                  ...it.save,
-                                  userCustomValues: updatedValues,
-                                },
-                              }
-                            : it
-                        )
-                      );
-                    }}
+              <div>
+                {layoutEngine === "masonry" && (
+                  <MasonryLayout
+                    items={filteredItems}
+                    renderItem={(item) => (
+                      <PolymorphicCard
+                        key={item.save.id}
+                        item={item}
+                        onCardClick={(card) => setSelectedCard(card)}
+                        onConnect={(card) => {
+                          setPairingCard(card);
+                          setIsPairingOpen(true);
+                        }}
+                        onSwapped={() => fetchItems()}
+                        onUnlink={() => fetchItems()}
+                        onCustomFieldsUpdated={(saveId, updatedValues) => {
+                          setItems((prev) =>
+                            prev.map((it) =>
+                              it.save.id === saveId
+                                ? {
+                                    ...it,
+                                    save: {
+                                      ...it.save,
+                                      userCustomValues: updatedValues,
+                                    },
+                                  }
+                                : it
+                            )
+                          );
+                        }}
+                      />
+                    )}
                   />
-                ))}
+                )}
+
+                {layoutEngine === "grid" && (
+                  <GridLayout
+                    items={filteredItems}
+                    renderItem={(item) => (
+                      <PolymorphicCard
+                        key={item.save.id}
+                        item={item}
+                        onCardClick={(card) => setSelectedCard(card)}
+                        onConnect={(card) => {
+                          setPairingCard(card);
+                          setIsPairingOpen(true);
+                        }}
+                        onSwapped={() => fetchItems()}
+                        onUnlink={() => fetchItems()}
+                        onCustomFieldsUpdated={(saveId, updatedValues) => {
+                          setItems((prev) =>
+                            prev.map((it) =>
+                              it.save.id === saveId
+                                ? {
+                                    ...it,
+                                    save: {
+                                      ...it.save,
+                                      userCustomValues: updatedValues,
+                                    },
+                                  }
+                                : it
+                            )
+                          );
+                        }}
+                      />
+                    )}
+                  />
+                )}
+
+                {layoutEngine === "timeline" && (
+                  <TimelineLayout
+                    items={filteredItems}
+                    renderItem={(item) => (
+                      <PolymorphicCard
+                        key={item.save.id}
+                        item={item}
+                        onCardClick={(card) => setSelectedCard(card)}
+                        onConnect={(card) => {
+                          setPairingCard(card);
+                          setIsPairingOpen(true);
+                        }}
+                        onSwapped={() => fetchItems()}
+                        onUnlink={() => fetchItems()}
+                        onCustomFieldsUpdated={(saveId, updatedValues) => {
+                          setItems((prev) =>
+                            prev.map((it) =>
+                              it.save.id === saveId
+                                ? {
+                                    ...it,
+                                    save: {
+                                      ...it.save,
+                                      userCustomValues: updatedValues,
+                                    },
+                                  }
+                                : it
+                            )
+                          );
+                        }}
+                      />
+                    )}
+                  />
+                )}
               </div>
             )}
           </div>

@@ -30,6 +30,7 @@ import { VinylCulturalMode } from "./modes/VinylCulturalMode";
 import { RecipeCulturalMode } from "./modes/RecipeCulturalMode";
 import { apiFetch } from "@/lib/apiClient";
 import { PlaceCulturalMode } from "./modes/PlaceCulturalMode";
+import { WineSommelierMode } from "./modes/WineSommelierMode";
 import { WineLabelCard } from "../cards/silhouettes/WineLabelCard";
 import { ArtFrameCard } from "../cards/silhouettes/ArtFrameCard";
 import { PrivateMemoCard } from "../cards/silhouettes/PrivateMemoCard";
@@ -230,10 +231,11 @@ export function CardLightboxModal({
         return <PlaceCulturalMode save={card.save} entity={card.entity} primarySource={card.primarySource} />;
       case "wine":
         return (
-          <WineLabelCard
+          <WineSommelierMode
             save={card.save}
             entity={card.entity as any}
             primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
           />
         );
       case "art":

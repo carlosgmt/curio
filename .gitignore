@@ -12,3 +12,6 @@ dist/
 docs
 docs_drive
 *.bun-build
+.agents/
+public/uploads/*
+!public/uploads/.gitkeep

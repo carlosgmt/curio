@@ -50,6 +50,7 @@ export async function requireAdmin(
           customDomain: null,
           affiliateTags: null,
           googleSyncTokens: null,
+          tasteVector: null,
           createdAt: new Date().toISOString(),
         },
         session: null,

@@ -31,6 +31,12 @@ export async function GET(
 
     return NextResponse.json({ success: true, ...data });
   } catch (error: any) {
+    if (error.message?.includes("PAYWALL_REQUIRED")) {
+      return NextResponse.json(
+        { error: "Payment required to access this paywalled list", isPaywalled: true },
+        { status: 402 }
+      );
+    }
     if (error.message?.includes("FORBIDDEN")) {
       return NextResponse.json({ error: "Access denied: This list is private" }, { status: 403 });
     }

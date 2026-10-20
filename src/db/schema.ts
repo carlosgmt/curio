@@ -1,5 +1,38 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex, customType } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+
+// Standardized 768-Dimension Float32Array Vector Custom Type (Buffer & Uint8Array Safe)
+const float32ArrayCustomDef = {
+  dataType(config?: { dimensions: number }) {
+    return `F32_BLOB(${config?.dimensions ?? 768})`;
+  },
+  fromDriver(value: unknown): number[] {
+    if (!value) return [];
+    // In better-sqlite3, BLOBs are returned as Node Buffer instances (Uint8Array)
+    if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
+      return Array.from(new Float32Array(value.buffer, value.byteOffset, value.byteLength / Float32Array.BYTES_PER_ELEMENT));
+    }
+    if (value instanceof ArrayBuffer) {
+      return Array.from(new Float32Array(value));
+    }
+    if (typeof value === "string") {
+      try { return JSON.parse(value); } catch { return []; }
+    }
+    return [];
+  },
+  toDriver(value: number[] | Float32Array) {
+    if (value instanceof Float32Array) {
+      return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+    }
+    return Buffer.from(new Float32Array(value).buffer);
+  },
+};
+
+export const float32Array = Object.assign(
+  customType<{ data: number[]; config: { dimensions: number } }>(float32ArrayCustomDef),
+  float32ArrayCustomDef
+);
+
 
 // 1. User Profiles, Creator Handles & Monthly AI Quotas
 export const users = sqliteTable("users", {
@@ -29,6 +62,7 @@ export const users = sqliteTable("users", {
     ytMusicEnabled?: boolean;
     googleTvEnabled?: boolean;
   }>(),
+  tasteVector: float32Array("taste_vector", { dimensions: 768 }),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
@@ -54,7 +88,7 @@ export const curioTypes = sqliteTable(
     jsonSchema: text("json_schema", { mode: "json" }).notNull(),
     publicFieldKeys: text("public_field_keys", { mode: "json" }).$type<string[]>().default([]).notNull(),
     extractionPrompt: text("extraction_prompt"),
-    typeEmbedding: text("type_embedding"),
+    typeEmbedding: float32Array("type_embedding", { dimensions: 768 }),
     localizedAliases: text("localized_aliases", { mode: "json" }).$type<Record<string, string>>().default({}),
     ownJsonSchema: text("own_json_schema", { mode: "json" }).$type<Record<string, unknown>>().default({}),
     effectiveJsonSchema: text("effective_json_schema", { mode: "json" }).$type<Record<string, unknown>>().default({}),
@@ -95,6 +129,7 @@ export const globalEntities = sqliteTable(
     bestPriceCents: integer("best_price_cents"),
     currency: text("currency").default("USD"),
     priceVerifiedAt: text("price_verified_at"),
+    embedding: float32Array("embedding", { dimensions: 768 }),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -174,7 +209,7 @@ export const userSaves = sqliteTable(
     hasConvertedPurchase: integer("has_converted_purchase", { mode: "boolean" }).default(false).notNull(),
     enrichmentStatus: text("enrichment_status").default("ENRICHED").notNull(),
     visibility: text("visibility").default("PRIVATE").notNull(),
-    privateEmbedding: text("private_embedding"),
+    privateEmbedding: float32Array("private_embedding", { dimensions: 768 }),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -244,6 +279,10 @@ export const entryConnections = sqliteTable(
     targetSaveId: text("target_save_id").references(() => userSaves.id).notNull(),
     connectionType: text("connection_type").notNull(), // PAIRED_WITH, SOUNDTRACK_TO, WORN_ON, INSPIRED_BY, CONSUMED_AT
     contextNote: text("context_note"),
+    weight: real("weight").default(1.0).notNull(),
+    confidence: real("confidence").default(1.0).notNull(),
+    isBidirectional: integer("is_bidirectional", { mode: "boolean" }).default(true).notNull(),
+    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>().default({}),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -300,6 +339,99 @@ export const userAccounts = sqliteTable(
   ]
 );
 
+// 11. Persistent Checkout Sessions Table
+export const checkoutSessions = sqliteTable(
+  "checkout_sessions",
+  {
+    id: text("id").primaryKey(), // ucp_ses_uuid
+    boardId: text("board_id").references(() => smartLists.id),
+    curatorId: text("curator_id").references(() => users.id).notNull(),
+    buyerUserId: text("buyer_user_id").references(() => users.id),
+    totalCents: integer("total_cents").notNull(),
+    currency: text("currency").notNull().default("USD"),
+    status: text("status", { enum: ["READY", "PENDING", "COMPLETED", "EXPIRED"] }).default("READY").notNull(),
+    ucpLineItems: text("ucp_line_items", { mode: "json" }).$type<Array<{
+      skuId: string;
+      title: string;
+      priceCents: number;
+      currency: string;
+      quantity: number;
+      sellerName: string;
+      imageUrl?: string | null;
+    }>>().notNull(),
+    affiliateItems: text("affiliate_items", { mode: "json" }).$type<Array<{
+      saveId: string;
+      title: string;
+      priceCents?: number | null;
+      sellerName: string;
+      destinationUrl: string;
+      affiliateAttributedUrl: string;
+    }>>().notNull(),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+    expiresAt: text("expires_at").notNull(),
+  },
+  (tbl) => [
+    index("idx_checkout_sessions_curator").on(tbl.curatorId),
+    index("idx_checkout_sessions_board").on(tbl.boardId),
+    index("idx_checkout_sessions_expires").on(tbl.expiresAt),
+  ]
+);
+
+// 12. Entity Price History Table (Time-Series Tracking)
+export const entityPriceHistory = sqliteTable(
+  "entity_price_history",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    entityId: text("entity_id").references(() => globalEntities.id).notNull(),
+    sourceId: text("source_id").references(() => entitySources.id),
+    sellerName: text("seller_name").notNull(),
+    priceCents: integer("price_cents").notNull(),
+    currency: text("currency").notNull().default("USD"),
+    inStock: integer("in_stock", { mode: "boolean" }).default(true).notNull(),
+    recordedAt: text("recorded_at").notNull().default(sql`(datetime('now'))`),
+  },
+  (tbl) => [
+    index("idx_price_history_entity").on(tbl.entityId, tbl.recordedAt),
+  ]
+);
+
+// 13. Background Job Queue & Operator Audit Logs
+export const backgroundJobs = sqliteTable(
+  "background_jobs",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    queueName: text("queue_name").notNull(), // "enrichment", "import", "clustering", "watchdog"
+    payload: text("payload", { mode: "json" }).notNull(),
+    status: text("status", { enum: ["QUEUED", "PROCESSING", "COMPLETED", "FAILED"] }).default("QUEUED").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    maxAttempts: integer("max_attempts").default(3).notNull(),
+    lastError: text("last_error"),
+    scheduledAt: text("scheduled_at").notNull().default(sql`(datetime('now'))`),
+    lockedAt: text("locked_at"),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  },
+  (tbl) => [
+    index("idx_jobs_queue_status").on(tbl.queueName, tbl.status, tbl.scheduledAt),
+  ]
+);
+
+export const auditLogs = sqliteTable(
+  "audit_logs",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    operatorUserId: text("operator_user_id").references(() => users.id).notNull(),
+    action: text("action").notNull(),
+    targetEntityId: text("target_entity_id"),
+    metadata: text("metadata", { mode: "json" }),
+    ipAddress: text("ip_address"),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  },
+  (tbl) => [
+    index("idx_audit_logs_operator").on(tbl.operatorUserId, tbl.createdAt),
+  ]
+);
+
 // Inferred TypeScript types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -319,4 +451,12 @@ export type SmartList = typeof smartLists.$inferSelect;
 export type ListItem = typeof listItems.$inferSelect;
 export type EntryConnection = typeof entryConnections.$inferSelect;
 export type NewEntryConnection = typeof entryConnections.$inferInsert;
+export type CheckoutSession = typeof checkoutSessions.$inferSelect;
+export type NewCheckoutSession = typeof checkoutSessions.$inferInsert;
+export type EntityPriceHistory = typeof entityPriceHistory.$inferSelect;
+export type NewEntityPriceHistory = typeof entityPriceHistory.$inferInsert;
+export type BackgroundJob = typeof backgroundJobs.$inferSelect;
+export type NewBackgroundJob = typeof backgroundJobs.$inferInsert;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type NewAuditLog = typeof auditLogs.$inferInsert;
 

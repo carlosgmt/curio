@@ -1,5 +1,6 @@
 import { db, userSaves, globalEntities } from "@/db";
 import { eq } from "drizzle-orm";
+import { resolveOrCreateCanonicalEntity } from "./resolution";
 
 export interface CandidateFallback {
   title: string;
@@ -30,8 +31,10 @@ export async function swapCandidateFallback(
     throw new Error(`Candidate with url ${targetUrl} not found in fallbacks`);
   }
 
-  const selectedCandidate = fallbacks[selectedIndex];
-  const remainingFallbacks = fallbacks.filter((_, idx) => idx !== selectedIndex);
+  const selectedCandidate = selectedIndex !== -1 ? fallbacks[selectedIndex] : undefined;
+  const remainingFallbacks = selectedIndex !== -1
+    ? fallbacks.filter((_, idx) => idx !== selectedIndex)
+    : fallbacks;
 
   // If there was an existing entity, we can push it into fallbacks
   let updatedFallbacks = remainingFallbacks;
@@ -55,10 +58,43 @@ export async function swapCandidateFallback(
     }
   }
 
+  let targetEntityId = newEntityId;
+  let targetTypePath = save.typePath;
+
+  if (!targetEntityId && selectedCandidate) {
+    // Check if an entity with this canonicalUrl already exists
+    const [existing] = await db
+      .select()
+      .from(globalEntities)
+      .where(eq(globalEntities.canonicalUrl, selectedCandidate.url))
+      .limit(1);
+
+    if (existing) {
+      targetEntityId = existing.id;
+      if (existing.typePath) {
+        targetTypePath = existing.typePath;
+      }
+    } else {
+      const typePath = selectedCandidate.coreType.startsWith("/")
+        ? selectedCandidate.coreType
+        : `/${selectedCandidate.coreType.toLowerCase()}`;
+
+      const res = await resolveOrCreateCanonicalEntity({
+        url: selectedCandidate.url,
+        title: selectedCandidate.title,
+        typePath,
+        structuredAttributes: { summary: selectedCandidate.snippet },
+      });
+      targetEntityId = res.entity.id;
+      targetTypePath = res.entity.typePath || typePath;
+    }
+  }
+
   const [updatedSave] = await db
     .update(userSaves)
     .set({
-      entityId: newEntityId || save.entityId,
+      entityId: targetEntityId || save.entityId,
+      typePath: targetTypePath,
       candidateFallbacks: updatedFallbacks,
       enrichmentStatus: "ENRICHED",
     })

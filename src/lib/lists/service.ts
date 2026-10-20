@@ -1,4 +1,4 @@
-import { db, smartLists, listItems, userSaves, globalEntities, users, curioTypes, type SmartList, type ListItem, type UserSave, type GlobalEntity } from "@/db";
+import { db, smartLists, listItems, userSaves, globalEntities, users, curioTypes, checkoutSessions, type SmartList, type ListItem, type UserSave, type GlobalEntity } from "@/db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 
@@ -317,6 +317,28 @@ export async function getListBySlugWithItems(
   // Privacy gating: Private lists accessible ONLY to the owner
   if (list.visibility === "PRIVATE" && list.userId !== viewerUserId) {
     throw new Error("FORBIDDEN: Private list");
+  }
+
+  // Paywall gating: If list is paywalled, require owner or completed checkout session
+  if (list.isPaywalled && list.userId !== viewerUserId) {
+    let hasAccess = false;
+    if (viewerUserId) {
+      const [paid] = await db
+        .select()
+        .from(checkoutSessions)
+        .where(
+          and(
+            eq(checkoutSessions.boardId, list.id),
+            eq(checkoutSessions.buyerUserId, viewerUserId),
+            eq(checkoutSessions.status, "COMPLETED")
+          )
+        )
+        .limit(1);
+      if (paid) hasAccess = true;
+    }
+    if (!hasAccess) {
+      throw new Error("PAYWALL_REQUIRED: List access requires purchase");
+    }
   }
 
   // Fetch list owner info

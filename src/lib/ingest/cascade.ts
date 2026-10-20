@@ -20,6 +20,7 @@ import { updateSaveDetails } from "../saves/service";
 import { addItemToList } from "../lists/service";
 import type { CandidateFallback } from "./disambiguation";
 import { enrichCaptureInput } from "../enrichment/dispatcher";
+import { recordPriceSnapshot } from "../commerce/pricing";
 
 export interface IngestionResult {
   status: "created" | "existing" | "edited";
@@ -555,6 +556,31 @@ export async function executeIngestionCascade(params: {
         .returning()
         .all();
       preferredSourceId = source.id;
+
+      if (enrichment.primarySource.priceCents != null) {
+        recordPriceSnapshot(
+          {
+            entityId: insertedEntity.id,
+            sourceId: source.id,
+            sellerName: enrichment.primarySource.sellerName,
+            priceCents: enrichment.primarySource.priceCents,
+            currency: enrichment.primarySource.currency || "USD",
+            inStock: true,
+          },
+          tx
+        );
+      }
+    } else if (effectivePriceCents != null) {
+      recordPriceSnapshot(
+        {
+          entityId: insertedEntity.id,
+          sellerName: "Direct",
+          priceCents: effectivePriceCents,
+          currency: effectiveCurrency,
+          inStock: true,
+        },
+        tx
+      );
     }
 
     const [insertedSave] = tx
@@ -593,5 +619,70 @@ export async function executeIngestionCascade(params: {
     save,
     entity: newEntity,
     candidate_fallbacks: runnerUps,
+  };
+}
+
+export interface BackgroundEnrichmentResult {
+  entityId: string | null;
+  typePath: string;
+  extendedAttributes: Record<string, unknown>;
+  candidateFallbacks: CandidateFallback[];
+  autoTags: string[];
+  save: UserSave;
+  entity: GlobalEntity | null;
+}
+
+export async function executeBackgroundEnrichment(
+  saveId: string,
+  input: string,
+  userId: string
+): Promise<BackgroundEnrichmentResult> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  const effectiveUser = user || (await getOrCreateDefaultUser());
+  const res = await executeIngestionCascade({ input, userId: effectiveUser.id });
+
+  let updatedSave: UserSave;
+  if (res.entity) {
+    const [patched] = await db
+      .update(userSaves)
+      .set({
+        entityId: res.entity.id,
+        typeId: res.save.typeId,
+        customTypeId: res.save.customTypeId,
+        typePath: res.save.typePath,
+        preferredSourceId: res.save.preferredSourceId,
+        candidateFallbacks: res.candidate_fallbacks || [],
+        autoTags: res.save.autoTags,
+        userCustomValues: res.save.userCustomValues,
+        personalNotes: res.save.personalNotes,
+        enrichmentStatus: "ENRICHED",
+      })
+      .where(eq(userSaves.id, saveId))
+      .returning();
+
+    // If ingestCaptureInput inserted a secondary save, remove it so saveId remains canonical
+    if (res.save && res.save.id !== saveId) {
+      await db.delete(userSaves).where(eq(userSaves.id, res.save.id));
+    }
+    updatedSave = patched || res.save;
+  } else {
+    const [patched] = await db
+      .update(userSaves)
+      .set({
+        enrichmentStatus: "ENRICHED",
+      })
+      .where(eq(userSaves.id, saveId))
+      .returning();
+    updatedSave = patched || res.save;
+  }
+
+  return {
+    entityId: res.entity?.id || null,
+    typePath: updatedSave.typePath || "/product/generic",
+    extendedAttributes: (res.entity?.extendedAttributes as Record<string, unknown>) || {},
+    candidateFallbacks: res.candidate_fallbacks || [],
+    autoTags: (updatedSave.autoTags as string[]) || [],
+    save: updatedSave,
+    entity: res.entity,
   };
 }

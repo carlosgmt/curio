@@ -26,6 +26,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Undo2,
+  Mic,
+  MicOff,
+  Image as ImageIcon,
 } from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -110,9 +113,100 @@ export function Omnibox({
   const [undoState, setUndoState] = useState<UndoState | null>(null);
   const [undoSuccess, setUndoSuccess] = useState(false);
 
+  // Audio recording & image paste states
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          setIsSubmitting(true);
+          try {
+            const formData = new FormData();
+            formData.append("title", "Pasted Image");
+            formData.append("image", file);
+            const res = await fetch("/api/v1/share-target", {
+              method: "POST",
+              body: formData,
+            });
+            if (res.ok) {
+              onCaptured?.({ status: "created", isOptimistic: false });
+            }
+          } catch (err) {
+            console.error("Paste upload failed:", err);
+          } finally {
+            setIsSubmitting(false);
+          }
+          break;
+        }
+      }
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        if (audioBlob.size > 0) {
+          setIsSubmitting(true);
+          try {
+            const formData = new FormData();
+            formData.append("audio", audioBlob, "recording.webm");
+            const res = await fetch("/api/v1/capture/audio", {
+              method: "POST",
+              body: formData,
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.text) {
+                setInput(data.text);
+              }
+            }
+          } catch (err) {
+            console.error("Audio transcription failed:", err);
+          } finally {
+            setIsSubmitting(false);
+          }
+        }
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.warn("Microphone access denied or unavailable:", err);
+    }
+  };
 
   // Determine if in search mode (starts with "/" or search mode toggled)
   const inSearch = isSearchMode || input.startsWith("/");
@@ -218,6 +312,97 @@ export function Omnibox({
         setInput("");
       }
       return;
+    }
+
+    // If regular capture, use progressive 3-stage SSE streaming for instant optimistic UI
+    if (!forceNew && intentPreview?.intent !== "EDIT_SAVE") {
+      setIsSubmitting(true);
+      try {
+        const streamRes = await fetch("/api/v1/capture/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: trimmed }),
+        });
+
+        if (streamRes.ok && streamRes.body) {
+          const reader = streamRes.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          setInput("");
+          setIntentPreview(null);
+          setShowDisambiguation(false);
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split("\n\n");
+            buffer = events.pop() || "";
+
+            for (const evt of events) {
+              const lines = evt.split("\n");
+              const eventLine = lines.find((l) => l.startsWith("event: "));
+              const dataLine = lines.find((l) => l.startsWith("data: "));
+              if (eventLine && dataLine) {
+                const eventName = eventLine.slice(7).trim();
+                try {
+                  const eventData = JSON.parse(dataLine.slice(6));
+                  if (eventName === "stage1_optimistic") {
+                    onCaptured?.({
+                      status: "created",
+                      isOptimistic: true,
+                      save: {
+                        id: eventData.saveId,
+                        privateTitle: eventData.title,
+                        isPrivateMemo: eventData.isPrivateMemo,
+                        enrichmentStatus: "OPTIMISTIC",
+                      },
+                    });
+                  } else if (eventName === "stage2_head_parsed") {
+                    onCaptured?.({
+                      status: "created",
+                      isOptimistic: true,
+                      save: {
+                        id: eventData.saveId,
+                        privateTitle: eventData.title,
+                        enrichmentStatus: "HEAD_PARSED",
+                      },
+                      entity: {
+                        title: eventData.title,
+                        heroImageUrl: eventData.heroImageUrl,
+                        priceCents: eventData.priceCents,
+                      },
+                    });
+                  } else if (eventName === "stage3_enriched") {
+                    onCaptured?.({
+                      status: "created",
+                      isOptimistic: false,
+                      save: {
+                        id: eventData.saveId,
+                        typePath: eventData.typePath,
+                        candidateFallbacks: eventData.candidateFallbacks,
+                        autoTags: eventData.autoTags,
+                        enrichmentStatus: "ENRICHED",
+                      },
+                      entity: {
+                        id: eventData.entityId,
+                        typePath: eventData.typePath,
+                        extendedAttributes: eventData.extendedAttributes,
+                      },
+                    });
+                  }
+                } catch {}
+              }
+            }
+          }
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (err) {
+        console.warn("SSE stream capture fallback to sync:", err);
+      }
     }
 
     setIsSubmitting(true);
@@ -429,6 +614,7 @@ export function Omnibox({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onFocus={() => {
             if (inSearch && searchResults.length > 0) {
               setShowSearchDropdown(true);
@@ -465,11 +651,23 @@ export function Omnibox({
           <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
+              onClick={toggleRecording}
+              className={`p-2 rounded-2xl transition text-xs flex items-center gap-1 cursor-pointer ${
+                isRecording
+                  ? "bg-red-500 text-white animate-pulse"
+                  : "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              }`}
+              title={isRecording ? "Stop recording voice memo" : "Record voice memo"}
+            >
+              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setIsSearchMode(true);
                 inputRef.current?.focus();
               }}
-              className="p-2 rounded-2xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition text-xs flex items-center gap-1"
+              className="p-2 rounded-2xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition text-xs flex items-center gap-1 cursor-pointer"
               title="Switch to semantic search (/)"
             >
               <Search className="w-4 h-4" />

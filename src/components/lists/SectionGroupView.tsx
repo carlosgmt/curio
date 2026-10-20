@@ -5,10 +5,15 @@ import { Pin, Quote } from "lucide-react";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import type { SectionGroup } from "@/lib/lists/service";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
+import { MasonryLayout, GridLayout, TimelineLayout } from "@/components/layout";
+import type { LayoutEngineType } from "@/components/layout/ViewModeSwitcher";
+import type { SilhouetteDensity } from "@/components/cards/registry";
 
 export interface SectionGroupViewProps {
   sections: SectionGroup[];
   creatorAffiliateTags?: UserAffiliateTags | null;
+  layout?: LayoutEngineType;
+  density?: SilhouetteDensity;
   onConnect?: (card: CardData) => void;
   onSwapped?: (card: CardData) => void;
   onUnlink?: (connectionId: string) => void;
@@ -20,6 +25,8 @@ export interface SectionGroupViewProps {
 export function SectionGroupView({
   sections,
   creatorAffiliateTags,
+  layout = "masonry",
+  density = "standard",
   onConnect,
   onSwapped,
   onUnlink,
@@ -40,6 +47,52 @@ export function SectionGroupView({
     );
   }
 
+  const renderSectionCard = (item: any) => {
+    const cardData: CardData = {
+      save: item.save,
+      entity: item.entity,
+    };
+
+    return (
+      <div key={item.save.id} className="flex flex-col h-full group/card-wrapper">
+        {/* Curator Note & Pin Callout */}
+        {(item.listItem?.curatorNote || item.listItem?.isPinned) && (
+          <div className="mb-2 p-2 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2 shadow-2xs">
+            {item.listItem?.isPinned && (
+              <span
+                className="inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400 shrink-0 mt-0.5"
+                title="Pinned curator pick"
+              >
+                <Pin className="w-3 h-3 fill-current rotate-45" />
+              </span>
+            )}
+            {item.listItem?.curatorNote && (
+              <div className="flex items-start gap-1.5 min-w-0">
+                <Quote className="w-3 h-3 text-amber-500 shrink-0 mt-0.5 opacity-60" />
+                <p className="font-serif italic text-[11px] leading-snug line-clamp-2">
+                  {item.listItem.curatorNote}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Polymorphic Card Silhouette */}
+        <div className="flex-1">
+          <PolymorphicCard
+            item={cardData}
+            creatorAffiliateTags={creatorAffiliateTags}
+            onConnect={onConnect}
+            onSwapped={onSwapped}
+            onUnlink={onUnlink}
+            onAddToList={onAddToList}
+            onCardClick={onCardClick}
+          />
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-12">
       {sections.map((section, idx) => {
@@ -58,54 +111,16 @@ export function SectionGroupView({
               </div>
             )}
 
-            {/* Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {section.items.map((item) => {
-                const cardData: CardData = {
-                  save: item.save,
-                  entity: item.entity,
-                };
-
-                return (
-                  <div key={item.save.id} className="flex flex-col h-full group/card-wrapper">
-                    {/* Curator Note & Pin Callout */}
-                    {(item.listItem?.curatorNote || item.listItem?.isPinned) && (
-                      <div className="mb-2 p-2 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2 shadow-2xs">
-                        {item.listItem?.isPinned && (
-                          <span
-                            className="inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400 shrink-0 mt-0.5"
-                            title="Pinned curator pick"
-                          >
-                            <Pin className="w-3 h-3 fill-current rotate-45" />
-                          </span>
-                        )}
-                        {item.listItem?.curatorNote && (
-                          <div className="flex items-start gap-1.5 min-w-0">
-                            <Quote className="w-3 h-3 text-amber-500 shrink-0 mt-0.5 opacity-60" />
-                            <p className="font-serif italic text-[11px] leading-snug line-clamp-2">
-                              {item.listItem.curatorNote}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Polymorphic Card Silhouette */}
-                    <div className="flex-1">
-                      <PolymorphicCard
-                        item={cardData}
-                        creatorAffiliateTags={creatorAffiliateTags}
-                        onConnect={onConnect}
-                        onSwapped={onSwapped}
-                        onUnlink={onUnlink}
-                        onAddToList={onAddToList}
-                        onCardClick={onCardClick}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Layout Engines */}
+            {layout === "masonry" && (
+              <MasonryLayout items={section.items} renderItem={renderSectionCard} />
+            )}
+            {layout === "grid" && (
+              <GridLayout items={section.items} renderItem={renderSectionCard} />
+            )}
+            {layout === "timeline" && (
+              <TimelineLayout items={section.items} renderItem={renderSectionCard} />
+            )}
           </section>
         );
       })}

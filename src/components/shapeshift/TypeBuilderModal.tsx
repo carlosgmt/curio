@@ -66,6 +66,7 @@ export function TypeBuilderModal({
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [convergenceNotice, setConvergenceNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -137,10 +138,21 @@ export function TypeBuilderModal({
       }
 
       const { type } = await res.json();
-      onTypeCreated?.(type);
-      onClose();
-      setName("");
-      setExtractionPrompt("");
+      if (type?.isSynonymConvergence) {
+        setConvergenceNotice(`Synonym converged with existing archetype "${type.name}". Aliased rather than duplicated!`);
+        setTimeout(() => {
+          onTypeCreated?.(type);
+          onClose();
+          setName("");
+          setExtractionPrompt("");
+          setConvergenceNotice(null);
+        }, 1200);
+      } else {
+        onTypeCreated?.(type);
+        onClose();
+        setName("");
+        setExtractionPrompt("");
+      }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
     } finally {
@@ -178,6 +190,13 @@ export function TypeBuilderModal({
 
         {/* Scrollable Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+          {convergenceNotice && (
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300 text-xs font-medium flex items-center gap-2 animate-in fade-in">
+              <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>{convergenceNotice}</span>
+            </div>
+          )}
+
           {error && (
             <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-300 text-xs font-medium">
               {error}

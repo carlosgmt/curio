@@ -1,6 +1,7 @@
 import { db, userSaves, globalEntities } from "@/db";
 import { eq, desc } from "drizzle-orm";
 import { getLocalLlmConfig } from "@/lib/llm/client";
+import { decryptPrivateField } from "@/lib/security/encryption";
 
 export interface HybridSearchOptions {
   query: string;
@@ -71,54 +72,42 @@ function fnv1a(str: string, seed: number = 0x811c9dc5): number {
 }
 
 /**
- * Generates a deterministic 384-dimensional dense TF-IDF character/word n-gram vector.
+ * Generates a deterministic 768-dimensional dense TF-IDF character/word n-gram vector.
  * Used as an instant local fallback when Ollama is offline or unconfigured.
  */
-export function generateDeterministicEmbedding(text: string, dimensions: number = 384): number[] {
-  if (!text || !text.trim()) {
-    return new Array(dimensions).fill(0);
-  }
-
-  const vec = new Float64Array(dimensions);
+export function generateDeterministicEmbedding(text: string, dimensions: number = 768): number[] {
+  const vector = new Array(dimensions).fill(0);
   const normalized = text.toLowerCase().trim();
+  if (!normalized) return vector;
 
-  // Word tokens
-  const words = normalized.match(/\b\w+\b/g) || [];
-  for (const word of words) {
-    const h1 = fnv1a(word, 0x811c9dc5);
-    const h2 = fnv1a(word, 0x9e3779b9);
-    const idx = h1 % dimensions;
-    const sign = h2 % 2 === 0 ? 1 : -1;
-    vec[idx] += sign * 1.5;
+  // 1. Unigram / Character hashing pass (ensures strings < 3 chars like "AI", "4K", "CD", "Go" produce non-zero unit vectors)
+  for (let i = 0; i < normalized.length; i++) {
+    const code = normalized.charCodeAt(i);
+    let hash = 0x811c9dc5 ^ code;
+    hash = Math.imul(hash, 0x01000193);
+    const idx = Math.abs(hash) % dimensions;
+    vector[idx] += 0.5;
   }
 
-  // Character 3-grams
-  for (let i = 0; i < normalized.length - 2; i++) {
-    const trigram = normalized.slice(i, i + 3);
-    const h1 = fnv1a(trigram, 0x5bd1e995);
-    const h2 = fnv1a(trigram, 0x27d4eb2f);
-    const idx = h1 % dimensions;
-    const sign = h2 % 2 === 0 ? 1 : -1;
-    vec[idx] += sign * 0.8;
+  // 2. FNV-1a 3-gram hashing expanded to 768 dimensions
+  if (normalized.length >= 3) {
+    for (let i = 0; i < normalized.length - 2; i++) {
+      const gram = normalized.slice(i, i + 3);
+      let hash = 0x811c9dc5;
+      for (let j = 0; j < gram.length; j++) {
+        hash ^= gram.charCodeAt(j);
+        hash = Math.imul(hash, 0x01000193);
+      }
+      const idx = Math.abs(hash) % dimensions;
+      vector[idx] += 1.0;
+    }
   }
 
-  // Normalize to unit L2 norm
+  // 3. L2 normalize
   let sumSq = 0;
-  for (let i = 0; i < dimensions; i++) {
-    sumSq += vec[i] * vec[i];
-  }
-
-  if (sumSq === 0) {
-    return Array.from(vec);
-  }
-
-  const norm = Math.sqrt(sumSq);
-  const result: number[] = new Array(dimensions);
-  for (let i = 0; i < dimensions; i++) {
-    result[i] = vec[i] / norm;
-  }
-
-  return result;
+  for (let i = 0; i < dimensions; i++) sumSq += vector[i] * vector[i];
+  const mag = Math.sqrt(sumSq) || 1;
+  return vector.map((v) => v / mag);
 }
 
 /**
@@ -259,29 +248,43 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
 
   // If query is empty, return latest saves
   if (!trimmed) {
-    return records.slice(0, limit).map((r) => ({
-      saveId: r.save.id,
-      title: r.save.privateTitle || r.entity?.title || "Untitled",
-      summary: r.entity?.summary || r.save.personalNotes || null,
-      heroImageUrl: r.entity?.heroImageUrl || null,
-      typePath: r.save.typePath || r.entity?.typePath || null,
-      coreType: r.entity?.coreType || (r.save.isPrivateMemo ? "PRIVATE_MEMO" : "UNKNOWN"),
-      isPrivateMemo: r.save.isPrivateMemo,
-      score: 1.0,
-      semanticScore: 1.0,
-      lexicalScore: 1.0,
-      save: r.save,
-      entity: r.entity,
-    }));
+    return records.slice(0, limit).map((r) => {
+      const decryptedTitle = r.save.privateTitle ? decryptPrivateField(r.save.privateTitle) : null;
+      const decryptedNotes = r.save.personalNotes ? decryptPrivateField(r.save.personalNotes) : null;
+      const title = decryptedTitle || r.entity?.title || "Untitled";
+      const summary = r.entity?.summary || decryptedNotes || null;
+
+      return {
+        saveId: r.save.id,
+        title,
+        summary,
+        heroImageUrl: r.entity?.heroImageUrl || null,
+        typePath: r.save.typePath || r.entity?.typePath || null,
+        coreType: r.entity?.coreType || (r.save.isPrivateMemo ? "PRIVATE_MEMO" : "UNKNOWN"),
+        isPrivateMemo: r.save.isPrivateMemo,
+        score: 1.0,
+        semanticScore: 1.0,
+        lexicalScore: 1.0,
+        save: {
+          ...r.save,
+          privateTitle: decryptedTitle,
+          personalNotes: decryptedNotes,
+        },
+        entity: r.entity,
+      };
+    });
   }
 
   const queryEmbedding = await generateEmbedding(trimmed);
   const scoredItems: HybridSearchResult[] = [];
 
   for (const r of records) {
-    const title = r.save.privateTitle || r.entity?.title || "Untitled";
+    const decryptedTitle = r.save.privateTitle ? decryptPrivateField(r.save.privateTitle) : null;
+    const decryptedNotes = r.save.personalNotes ? decryptPrivateField(r.save.personalNotes) : null;
+
+    const title = decryptedTitle || r.entity?.title || "Untitled";
     const summary = r.entity?.summary || null;
-    const personalNotes = r.save.personalNotes || null;
+    const personalNotes = decryptedNotes;
     const autoTags = r.save.autoTags || [];
     const brand = r.entity?.brandOrCreator || null;
 
@@ -323,7 +326,11 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
         score: Number(finalScore.toFixed(4)),
         semanticScore: Number(semanticScore.toFixed(4)),
         lexicalScore: Number(lexicalScore.toFixed(4)),
-        save: r.save,
+        save: {
+          ...r.save,
+          privateTitle: decryptedTitle,
+          personalNotes: decryptedNotes,
+        },
         entity: r.entity,
       });
     }

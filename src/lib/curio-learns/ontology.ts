@@ -42,13 +42,18 @@ let cachedTypes: CachedTypeEntry[] | null = null;
 let lastCacheRefresh = 0;
 const CACHE_TTL_MS = 60000; // 1 minute
 
+export function invalidateTypeCache(): void {
+  cachedTypes = null;
+  lastCacheRefresh = 0;
+}
+
 /**
  * Ensures all types in the database have their vector embeddings computed and cached.
  */
 export async function seedArchetypeEmbeddings(): Promise<void> {
   const types = await db.select().from(curioTypes);
   for (const t of types) {
-    if (!t.typeEmbedding) {
+    if (!t.typeEmbedding || (Array.isArray(t.typeEmbedding) && t.typeEmbedding.length === 0)) {
       const aliasText = t.localizedAliases
         ? Object.values(t.localizedAliases as Record<string, string>).join(" ")
         : "";
@@ -57,13 +62,13 @@ export async function seedArchetypeEmbeddings(): Promise<void> {
       await db
         .update(curioTypes)
         .set({
-          typeEmbedding: JSON.stringify(embedding),
+          typeEmbedding: embedding,
         })
         .where(eq(curioTypes.id, t.id));
     }
   }
   // Invalidate cache
-  cachedTypes = null;
+  invalidateTypeCache();
 }
 
 /**
@@ -87,13 +92,16 @@ async function getCachedTypes(userId?: string): Promise<CachedTypeEntry[]> {
 
   for (const row of dbRows) {
     let typeEmbedding: number[] | null = null;
-    if (row.typeEmbedding) {
+    if (Array.isArray(row.typeEmbedding) && row.typeEmbedding.length > 0) {
+      typeEmbedding = row.typeEmbedding;
+    } else if (typeof row.typeEmbedding === "string") {
       try {
         typeEmbedding = JSON.parse(row.typeEmbedding);
       } catch {
         typeEmbedding = null;
       }
     }
+
     if (!typeEmbedding) {
       const aliasText = row.localizedAliases
         ? Object.values(row.localizedAliases as Record<string, string>).join(" ")
@@ -102,7 +110,7 @@ async function getCachedTypes(userId?: string): Promise<CachedTypeEntry[]> {
       typeEmbedding = await generateEmbedding(textToEmbed);
       // Asynchronously store back to DB
       db.update(curioTypes)
-        .set({ typeEmbedding: JSON.stringify(typeEmbedding) })
+        .set({ typeEmbedding })
         .where(eq(curioTypes.id, row.id))
         .catch(() => {});
     }

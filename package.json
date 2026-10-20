@@ -17,12 +17,15 @@
     "docker:down": "docker compose down",
     "docker:logs": "docker logs -f curio",
     "admin": "bun run src/cli/admin.ts",
+    "worker": "bun run src/cli/worker.ts",
+    "backup": "bun run src/cli/backup.ts",
     "mcp:build": "bun build --compile src/mcp/server.ts --outfile /Users/carlosgmt/Utilities/MCP/curio-mcp"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/better-sqlite3": "^9.6.0",
     "@typesafe-ai/sdk": "^0.6.0",
+    "archiver": "^8.0.0",
     "better-sqlite3": "^13.0.3",
     "chrono-node": "^2.10.1",
     "class-variance-authority": "^0.7.1",
@@ -48,6 +51,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/react": "^16.3.3",
+    "@types/archiver": "^8.0.0",
     "@types/bun": "^1.4.2",
     "@types/convert-units": "^2.3.12",
     "@types/node": "^20",
@@ -56,6 +61,7 @@
     "drizzle-kit": "^0.30.6",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
+    "happy-dom": "^21.0.3",
     "prettier": "^3.9.8",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",

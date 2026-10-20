@@ -133,3 +133,58 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+export interface ActivityPubActorInput {
+  id: string;
+  username: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  publicKeyPem?: string;
+}
+
+/**
+ * Generates a W3C ActivityStreams 2.0 Person actor profile with public key.
+ */
+export function generateActivityPubActor(
+  user: ActivityPubActorInput,
+  baseUrl: string = "https://curio.app"
+): Record<string, any> {
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  const actorUrl = `${cleanBase}/curio/api/v1/federation/actors/${user.username}`;
+  const profileUrl = `${cleanBase}/curio/@${user.username}`;
+  const pubKey =
+    user.publicKeyPem ||
+    `-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0curioDefaultKeyForFederatedActor${user.id}IDAQAB\n-----END PUBLIC KEY-----\n`;
+
+  return {
+    "@context": [
+      "https://www.w3.org/ns/activitystreams",
+      "https://w3id.org/security/v1",
+    ],
+    id: actorUrl,
+    type: "Person",
+    following: `${actorUrl}/following`,
+    followers: `${actorUrl}/followers`,
+    inbox: `${actorUrl}/inbox`,
+    outbox: `${actorUrl}/outbox`,
+    preferredUsername: user.username,
+    name: user.displayName || user.username,
+    summary: user.bio || `Curio taste profile of ${user.displayName || user.username}`,
+    url: profileUrl,
+    ...(user.avatarUrl
+      ? {
+          icon: {
+            type: "Image",
+            mediaType: "image/jpeg",
+            url: user.avatarUrl,
+          },
+        }
+      : {}),
+    publicKey: {
+      id: `${actorUrl}#main-key`,
+      owner: actorUrl,
+      publicKeyPem: pubKey,
+    },
+  };
+}

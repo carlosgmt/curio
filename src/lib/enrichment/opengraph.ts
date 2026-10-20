@@ -242,3 +242,16 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&#x27;/g, "'")
     .replace(/&#x2F;/g, "/");
 }
+
+export async function extractOpenGraphHead(url: string): Promise<{ title?: string; imageUrl?: string; priceCents?: number }> {
+  try {
+    const meta = await fetchAndExtractMetadata(url);
+    return {
+      title: meta.title,
+      imageUrl: meta.image,
+      priceCents: meta.price ? Math.round(meta.price * 100) : undefined,
+    };
+  } catch {
+    return {};
+  }
+}

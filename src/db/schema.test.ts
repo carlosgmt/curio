@@ -76,4 +76,38 @@ describe("Schema & Canonical Ontology Integrity", () => {
 
     expect(sources.length).toBe(2);
   });
+
+  it("handles float32Array(768) vector serialization and deserialization roundtrips without dimension loss", () => {
+    const { float32Array } = require("./schema");
+    const testVec = Array.from({ length: 768 }, (_, i) => Math.sin(i));
+
+    // toDriver converts to Buffer
+    const buffer = float32Array.toDriver(testVec);
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.byteLength).toBe(768 * 4); // 768 float32 values = 3072 bytes
+
+    // fromDriver handles Node Buffer
+    const restoredFromBuffer = float32Array.fromDriver(buffer);
+    expect(restoredFromBuffer.length).toBe(768);
+    for (let i = 0; i < 768; i++) {
+      expect(Math.abs(restoredFromBuffer[i] - testVec[i])).toBeLessThan(1e-6);
+    }
+
+    // fromDriver handles Uint8Array with byteOffset
+    const subArray = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const restoredFromUint8 = float32Array.fromDriver(subArray);
+    expect(restoredFromUint8.length).toBe(768);
+    for (let i = 0; i < 768; i++) {
+      expect(Math.abs(restoredFromUint8[i] - testVec[i])).toBeLessThan(1e-6);
+    }
+
+    // fromDriver handles JSON string fallback
+    const jsonStr = JSON.stringify(testVec);
+    const restoredFromJson = float32Array.fromDriver(jsonStr);
+    expect(restoredFromJson.length).toBe(768);
+
+    // Empty/null fallback
+    expect(float32Array.fromDriver(null)).toEqual([]);
+    expect(float32Array.fromDriver(undefined)).toEqual([]);
+  });
 });

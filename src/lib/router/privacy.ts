@@ -21,7 +21,7 @@ export interface PrivacyClassificationResult {
 const PRIVATE_PATTERNS = [
   /\b(?:met|meeting|talked to|spoke with|call|phone)\s+[a-z]+/i,
   /\b(?:todo|to-do|task|reminder|remember to|buy groceries|dentist|doctor)\b/i,
-  /\b(?:note to self|personal memo|my thoughts|journal|diary|ideas for)\b/i,
+  /\b(?:note to self|personal memo|my thoughts|private thoughts|personal thoughts|journal|diary|ideas for)\b/i,
   /\b(?:funding|investor|pitch|q[1-4]|budget|salary|nda|confidential)\b/i,
   /\b(?:flight confirmation|hotel reservation|check-in|passport|code:)\b/i,
   /^(?:buy|pick up|get|bring)\s+(?:milk|eggs|groceries|coffee beans|bread)/i,

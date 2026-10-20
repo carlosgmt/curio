@@ -2,11 +2,23 @@ import { db, entryConnections, userSaves, globalEntities } from "@/db";
 import { eq, or, and } from "drizzle-orm";
 
 export type ConnectionType =
+  // Sensory & Culinary
   | "PAIRED_WITH"
   | "SOUNDTRACK_TO"
   | "WORN_ON"
+  | "CONSUMED_AT"
+  // Aesthetic & Artistic
+  | "INFLUENCED_BY"
+  | "CONTEMPORARY_WITH"
+  | "COUNTERPOINT_TO"
+  | "AESTHETIC_SIBLING"
+  | "DERIVATION_OF"
   | "INSPIRED_BY"
-  | "CONSUMED_AT";
+  // Structural & Physical
+  | "MATERIAL_VARIANT"
+  | "EVOLUTION_OF"
+  | "SAME_CREATOR"
+  | "COMPLEMENTARY_TO";
 
 export interface ConnectedItem {
   connectionId: string;
@@ -18,6 +30,10 @@ export interface ConnectedItem {
   heroImageUrl?: string | null;
   coreType: string;
   typePath?: string | null;
+  weight?: number;
+  confidence?: number;
+  isBidirectional?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -29,8 +45,22 @@ export async function createConnection(params: {
   targetSaveId: string;
   connectionType: ConnectionType;
   contextNote?: string;
+  weight?: number;
+  confidence?: number;
+  isBidirectional?: boolean;
+  metadata?: Record<string, unknown>;
 }) {
-  const { userId, sourceSaveId, targetSaveId, connectionType, contextNote } = params;
+  const {
+    userId,
+    sourceSaveId,
+    targetSaveId,
+    connectionType,
+    contextNote,
+    weight = 1.0,
+    confidence = 1.0,
+    isBidirectional = true,
+    metadata = {},
+  } = params;
 
   if (sourceSaveId === targetSaveId) {
     throw new Error("Cannot connect an item to itself.");
@@ -69,6 +99,10 @@ export async function createConnection(params: {
       targetSaveId,
       connectionType,
       contextNote,
+      weight,
+      confidence,
+      isBidirectional,
+      metadata,
     })
     .returning();
 
@@ -109,10 +143,10 @@ export async function getConnectedSaves(saveId: string): Promise<ConnectedItem[]
   const results: ConnectedItem[] = [];
 
   for (const conn of connections) {
-    const isSource = conn.sourceSaveId === saveId;
-    const otherSaveId = isSource ? conn.targetSaveId : conn.sourceSaveId;
+    const isOutgoing = conn.sourceSaveId === saveId;
+    const otherSaveId = isOutgoing ? conn.targetSaveId : conn.sourceSaveId;
 
-    const [otherSave] = await db
+    const [saveRecord] = await db
       .select({
         save: userSaves,
         entity: globalEntities,
@@ -122,18 +156,24 @@ export async function getConnectedSaves(saveId: string): Promise<ConnectedItem[]
       .where(eq(userSaves.id, otherSaveId))
       .limit(1);
 
-    if (otherSave) {
-      const title = otherSave.save.privateTitle || otherSave.entity?.title || "Untitled Card";
+    if (saveRecord) {
       results.push({
         connectionId: conn.id,
         connectionType: conn.connectionType as ConnectionType,
         contextNote: conn.contextNote,
-        direction: isSource ? "outgoing" : "incoming",
+        direction: isOutgoing ? "outgoing" : "incoming",
         saveId: otherSaveId,
-        title,
-        heroImageUrl: otherSave.entity?.heroImageUrl || null,
-        coreType: otherSave.entity?.coreType || "NOTE",
-        typePath: otherSave.save.typePath || otherSave.entity?.typePath || null,
+        title:
+          saveRecord.save.privateTitle ||
+          saveRecord.entity?.title ||
+          "Untitled Element",
+        heroImageUrl: saveRecord.entity?.heroImageUrl || null,
+        coreType: saveRecord.entity?.coreType || "UNKNOWN",
+        typePath: saveRecord.save.typePath || saveRecord.entity?.typePath || null,
+        weight: conn.weight,
+        confidence: conn.confidence,
+        isBidirectional: conn.isBidirectional,
+        metadata: conn.metadata || {},
       });
     }
   }

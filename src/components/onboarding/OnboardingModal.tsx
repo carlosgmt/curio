@@ -132,10 +132,23 @@ export function OnboardingModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCelebrating, setIsCelebrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [calibratorCards, setCalibratorCards] = useState<any[]>([]);
+  const [selectedCalibratorIds, setSelectedCalibratorIds] = useState<string[]>([]);
+  const [selectedBlueprint, setSelectedBlueprint] = useState<string | null>("natural-wine");
 
   useEffect(() => {
     if (initialUser?.username) setUsername(initialUser.username);
     if (initialUser?.displayName) setDisplayName(initialUser.displayName);
+
+    apiFetch("/api/v1/onboarding/calibrate")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.cards) {
+          setCalibratorCards(data.cards);
+          setSelectedCalibratorIds([data.cards[0]?.id, data.cards[3]?.id, data.cards[6]?.id].filter(Boolean));
+        }
+      })
+      .catch(() => {});
   }, [initialUser]);
 
   if (!isOpen) return null;
@@ -200,6 +213,14 @@ export function OnboardingModal({
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Onboarding failed");
+      }
+
+      if (selectedCalibratorIds.length > 0) {
+        await apiFetch("/api/v1/onboarding/calibrate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ acceptedIds: selectedCalibratorIds }),
+        }).catch(() => {});
       }
 
       // Celebratory launch sequence
@@ -451,11 +472,105 @@ export function OnboardingModal({
             <div className="space-y-6">
               <div>
                 <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                  Day-0 Library Cold-Start
+                  Day-0 Library Cold-Start & Taste Calibrator
                 </h4>
                 <p className="text-xs text-neutral-500">
-                  Choose how you'd like to initialize your library. Start with curated cultural gems or import existing files.
+                  Calibrate your sovereign 768-d taste vector by selecting items you love, or launch an instant starter blueprint.
                 </p>
+              </div>
+
+              {/* 15-Card Visual Taste Calibrator Deck */}
+              {calibratorCards.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 uppercase tracking-wider font-mono">
+                      Visual Taste Calibrator ({selectedCalibratorIds.length} accepted)
+                    </span>
+                    <span className="text-[11px] text-neutral-500 font-mono">
+                      768-d unit vector
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/50">
+                    {calibratorCards.map((card) => {
+                      const isSelected = selectedCalibratorIds.includes(card.id);
+                      return (
+                        <div
+                          key={card.id}
+                          onClick={() => {
+                            setSelectedCalibratorIds((prev) =>
+                              prev.includes(card.id)
+                                ? prev.filter((id) => id !== card.id)
+                                : [...prev, card.id]
+                            );
+                          }}
+                          className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all flex flex-col justify-between ${
+                            isSelected
+                              ? "border-neutral-900 dark:border-neutral-100 bg-neutral-900/5 dark:bg-neutral-100/10 shadow-xs ring-1 ring-neutral-900/10"
+                              : "border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 bg-white dark:bg-neutral-900"
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 uppercase">
+                                {card.coreType}
+                              </span>
+                              <div
+                                className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] ${
+                                  isSelected
+                                    ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-transparent font-bold"
+                                    : "border-neutral-300 dark:border-neutral-700"
+                                }`}
+                              >
+                                {isSelected ? "✓" : ""}
+                              </div>
+                            </div>
+                            <div className="text-xs font-bold text-neutral-900 dark:text-neutral-100 line-clamp-1">
+                              {card.title}
+                            </div>
+                            <div className="text-[10px] text-neutral-500 line-clamp-1">
+                              {card.brandOrCreator}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 4 Starter Blueprints */}
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 uppercase tracking-wider font-mono">
+                  Instant Starter Blueprints
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "natural-wine", title: "Natural Wine & Terroir", tag: "Terroir" },
+                    { id: "specialty-coffee", title: "Specialty Coffee Roasters", tag: "Craft" },
+                    { id: "auteur-cinema", title: "Auteur Cinema 35mm", tag: "Cinema" },
+                    { id: "design-objects", title: "Design Objects & Architecture", tag: "Design" },
+                  ].map((bp) => {
+                    const isSelected = selectedBlueprint === bp.id;
+                    return (
+                      <div
+                        key={bp.id}
+                        onClick={() => setSelectedBlueprint(isSelected ? null : bp.id)}
+                        className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                          isSelected
+                            ? "border-neutral-900 dark:border-neutral-100 bg-neutral-900/5 dark:bg-neutral-100/10"
+                            : "border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 bg-white dark:bg-neutral-900"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px] font-bold text-neutral-900 dark:text-neutral-100">
+                          <span className="truncate">{bp.title}</span>
+                          <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-500">
+                            {bp.tag}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Path A: 1-Click Starter Taste Seed */}

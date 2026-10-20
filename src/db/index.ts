@@ -170,6 +170,59 @@ sqlite.exec(`
     target_save_id TEXT NOT NULL REFERENCES user_saves(id) ON DELETE CASCADE,
     connection_type TEXT NOT NULL,
     context_note TEXT,
+    weight REAL NOT NULL DEFAULT 1.0,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    is_bidirectional INTEGER NOT NULL DEFAULT 1,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS checkout_sessions (
+    id TEXT PRIMARY KEY NOT NULL,
+    board_id TEXT REFERENCES smart_lists(id),
+    curator_id TEXT NOT NULL REFERENCES users(id),
+    buyer_user_id TEXT REFERENCES users(id),
+    total_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    status TEXT NOT NULL DEFAULT 'READY',
+    ucp_line_items TEXT NOT NULL,
+    affiliate_items TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS entity_price_history (
+    id TEXT PRIMARY KEY NOT NULL,
+    entity_id TEXT NOT NULL REFERENCES global_entities(id),
+    source_id TEXT REFERENCES entity_sources(id),
+    seller_name TEXT NOT NULL,
+    price_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    in_stock INTEGER NOT NULL DEFAULT 1,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS background_jobs (
+    id TEXT PRIMARY KEY NOT NULL,
+    queue_name TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'QUEUED',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    last_error TEXT,
+    scheduled_at TEXT NOT NULL DEFAULT (datetime('now')),
+    locked_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY NOT NULL,
+    operator_user_id TEXT NOT NULL REFERENCES users(id),
+    action TEXT NOT NULL,
+    target_entity_id TEXT,
+    metadata TEXT,
+    ip_address TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
@@ -178,13 +231,14 @@ sqlite.exec(`
 ensureColumn("users", "password_hash", "TEXT");
 ensureColumn("users", "onboarding_completed", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("users", "is_admin", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("users", "taste_vector", "BLOB");
 
 ensureColumn("curio_types", "parent_type_id", "TEXT");
 ensureColumn("curio_types", "type_path", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("curio_types", "root_archetype", "TEXT NOT NULL DEFAULT 'PRODUCT'");
 ensureColumn("curio_types", "default_silhouette", "TEXT NOT NULL DEFAULT 'generic'");
 ensureColumn("curio_types", "identity_rules", "TEXT");
-ensureColumn("curio_types", "type_embedding", "TEXT");
+ensureColumn("curio_types", "type_embedding", "BLOB");
 ensureColumn("curio_types", "localized_aliases", "TEXT DEFAULT '{}'");
 ensureColumn("curio_types", "own_json_schema", "TEXT DEFAULT '{}'");
 ensureColumn("curio_types", "effective_json_schema", "TEXT DEFAULT '{}'");
@@ -195,11 +249,17 @@ ensureColumn("global_entities", "identity_fingerprint", "TEXT");
 ensureColumn("global_entities", "brand_or_creator", "TEXT");
 ensureColumn("global_entities", "type_path", "TEXT");
 ensureColumn("global_entities", "best_price_cents", "INTEGER");
+ensureColumn("global_entities", "embedding", "BLOB");
 
 ensureColumn("user_saves", "type_id", "TEXT REFERENCES curio_types(id)");
 ensureColumn("user_saves", "type_path", "TEXT");
 ensureColumn("user_saves", "preferred_source_id", "TEXT REFERENCES entity_sources(id)");
-ensureColumn("user_saves", "private_embedding", "TEXT");
+ensureColumn("user_saves", "private_embedding", "BLOB");
+
+ensureColumn("entry_connections", "weight", "REAL DEFAULT 1.0");
+ensureColumn("entry_connections", "confidence", "REAL DEFAULT 1.0");
+ensureColumn("entry_connections", "is_bidirectional", "INTEGER DEFAULT 1");
+ensureColumn("entry_connections", "metadata", "TEXT DEFAULT '{}'");
 
 // 3. Now create indexes safely on all tables/columns
 sqlite.exec(`
@@ -231,6 +291,16 @@ sqlite.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_entry_connections_user ON entry_connections (user_id);
   CREATE INDEX IF NOT EXISTS idx_entry_connections_pair ON entry_connections (source_save_id, target_save_id);
+
+  CREATE INDEX IF NOT EXISTS idx_checkout_sessions_curator ON checkout_sessions (curator_id);
+  CREATE INDEX IF NOT EXISTS idx_checkout_sessions_board ON checkout_sessions (board_id);
+  CREATE INDEX IF NOT EXISTS idx_checkout_sessions_expires ON checkout_sessions (expires_at);
+
+  CREATE INDEX IF NOT EXISTS idx_price_history_entity ON entity_price_history (entity_id, recorded_at);
+
+  CREATE INDEX IF NOT EXISTS idx_jobs_queue_status ON background_jobs (queue_name, status, scheduled_at);
+
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_operator ON audit_logs (operator_user_id, created_at);
 `);
 
 export const db = drizzle(sqlite, { schema });

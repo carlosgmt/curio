@@ -1122,7 +1122,7 @@ export async function seedCanonicalArchetypes() {
     const aliasValues = def.localizedAliases ? Object.values(def.localizedAliases).join(" ") : "";
     const embedText = `${def.name} ${def.typePath} ${def.rootArchetype} ${def.extractionPrompt ?? ""} ${aliasValues}`;
     const embedding = await generateEmbedding(embedText);
-    const typeEmbedding = JSON.stringify(embedding);
+    const typeEmbedding = embedding;
 
     const [existing] = await db
       .select()

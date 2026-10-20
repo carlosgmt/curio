@@ -30,11 +30,11 @@ describe("Vector Embedding & Hybrid Search Engine", () => {
   });
 
   describe("Deterministic Dense Fallback Embeddings", () => {
-    it("generates 384-dimensional unit vector deterministically", () => {
+    it("generates 768-dimensional unit vector deterministically", () => {
       const v1 = generateDeterministicEmbedding("tokyo pour over coffee");
       const v2 = generateDeterministicEmbedding("tokyo pour over coffee");
 
-      expect(v1).toHaveLength(384);
+      expect(v1).toHaveLength(768);
       expect(v1).toEqual(v2);
 
       // Verify unit norm (length = 1.0)
@@ -56,7 +56,7 @@ describe("Vector Embedding & Hybrid Search Engine", () => {
 
     it("returns zero vector for empty or whitespace string", () => {
       const v = generateDeterministicEmbedding("   ");
-      expect(v).toHaveLength(384);
+      expect(v).toHaveLength(768);
       expect(v.every((x) => x === 0)).toBe(true);
     });
   });
@@ -64,7 +64,7 @@ describe("Vector Embedding & Hybrid Search Engine", () => {
   describe("Graceful Ollama Embedding Fallback", () => {
     it("falls back to deterministic embedding when Ollama is offline", async () => {
       const embedding = await generateEmbedding("Dune science fiction novel");
-      expect(embedding).toHaveLength(384);
+      expect(embedding).toHaveLength(768);
       const norm = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
       expect(norm).toBeCloseTo(1.0);
     });

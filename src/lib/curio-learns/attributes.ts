@@ -1,5 +1,7 @@
 import { db, userSaves, globalEntities, curioTypes } from "@/db";
 import { eq, and, sql } from "drizzle-orm";
+import { classifyEntityType, invalidateTypeCache } from "./ontology";
+import { generateDeterministicEmbedding } from "@/lib/search/vector";
 
 export interface RegisterCustomTypeParams {
   name: string;
@@ -171,12 +173,41 @@ export async function evaluateAttributePromotion(
 }
 
 /**
- * Defines a specialized custom subtype in curio_types.
+ * Defines a specialized custom subtype in curio_types with synonym convergence and delta schema computation.
  */
 export async function registerCustomType(
   userId: string,
   data: RegisterCustomTypeParams
-): Promise<typeof curioTypes.$inferSelect> {
+): Promise<typeof curioTypes.$inferSelect & { isSynonymConvergence?: boolean }> {
+  // 1. Synonym Convergence Gate (>0.92)
+  const classification = await classifyEntityType(data.name, userId);
+  if (classification.similarity > 0.92 && classification.typeId) {
+    const [existing] = await db
+      .select()
+      .from(curioTypes)
+      .where(eq(curioTypes.id, classification.typeId))
+      .limit(1);
+
+    if (existing) {
+      const existingAliases = (existing.localizedAliases as Record<string, string>) || {};
+      const slug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 32);
+      if (!Object.values(existingAliases).some((v) => v.toLowerCase() === data.name.toLowerCase())) {
+        const updatedAliases = { ...existingAliases, [slug]: data.name };
+        await db
+          .update(curioTypes)
+          .set({ localizedAliases: updatedAliases })
+          .where(eq(curioTypes.id, existing.id));
+        existing.localizedAliases = updatedAliases;
+        invalidateTypeCache();
+      }
+      return {
+        ...existing,
+        isSynonymConvergence: true,
+      };
+    }
+  }
+
+  // 2. Fetch parent archetype to inherit schemas
   const [parent] = await db
     .select()
     .from(curioTypes)
@@ -192,22 +223,37 @@ export async function registerCustomType(
   const rootArchetype = data.rootArchetype || parent?.rootArchetype || "PRODUCT";
   const defaultSilhouette = data.defaultSilhouette || parent?.defaultSilhouette || "landscape_label";
 
-  const properties: Record<string, any> = {};
+  // Delta Schema Computation:
+  const parentEffectiveSchema = (parent?.effectiveJsonSchema as any) || (parent?.jsonSchema as any) || { properties: {} };
+  const parentProperties: Record<string, any> = parentEffectiveSchema.properties || {};
+
+  const ownProperties: Record<string, any> = {};
   for (const f of data.fields) {
-    properties[f.key] = {
+    ownProperties[f.key] = {
       type: f.type === "number" ? "number" : f.type === "boolean" ? "boolean" : "string",
       title: f.label,
       ...(f.options ? { enum: f.options } : {}),
     };
   }
 
-  const jsonSchema = {
+  const ownJsonSchema = {
     type: "object",
-    properties,
+    properties: ownProperties,
+    required: [],
+  };
+
+  const effectiveJsonSchema = {
+    type: "object",
+    properties: {
+      ...parentProperties,
+      ...ownProperties,
+    },
     required: [],
   };
 
   const publicFieldKeys = data.fields.map((f) => f.key);
+  const textToEmbed = `${data.name} ${typePath} ${rootArchetype} ${data.extractionPrompt || ""}`.trim();
+  const typeEmbedding = generateDeterministicEmbedding(textToEmbed, 768);
 
   const [created] = await db
     .insert(curioTypes)
@@ -218,11 +264,19 @@ export async function registerCustomType(
       typePath,
       rootArchetype,
       defaultSilhouette,
-      jsonSchema,
+      jsonSchema: ownJsonSchema,
+      ownJsonSchema,
+      effectiveJsonSchema,
       publicFieldKeys,
+      typeEmbedding,
       extractionPrompt: data.extractionPrompt || `Extract custom attributes for ${data.name}.`,
     })
     .returning();
 
-  return created;
+  invalidateTypeCache();
+
+  return {
+    ...created,
+    isSynonymConvergence: false,
+  };
 }

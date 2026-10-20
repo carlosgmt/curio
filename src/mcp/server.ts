@@ -2,11 +2,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { db, sqlite, userSaves, globalEntities, smartLists } from "@/db";
+import { db, sqlite, userSaves, globalEntities, smartLists, entryConnections } from "@/db";
 import { getOrCreateDefaultUser, ingestCapture } from "@/lib/ingest/cascade";
 import { hybridSearch, generateEmbedding } from "@/lib/search/vector";
 import { getDatabaseTelemetry } from "@/lib/system/telemetry";
-import { eq } from "drizzle-orm";
+import { getPrecomputedClusters } from "@/lib/graph/clustering";
+import { eq, and, desc } from "drizzle-orm";
 
 export function createCurioMcpServer() {
   const server = new McpServer({
@@ -47,7 +48,7 @@ export function createCurioMcpServer() {
               privateTitle: displayTitle,
               personalNotes: args.notes ? `${args.notes}\n\n${args.content}` : args.content,
               autoTags,
-              privateEmbedding: JSON.stringify(embedding),
+              privateEmbedding: embedding,
               enrichmentStatus: "LOCAL_ONLY",
               visibility: "PRIVATE",
             })
@@ -287,7 +288,99 @@ export function createCurioMcpServer() {
     }
   );
 
+  // Tool 5: get_user_taste_graph
+  server.tool(
+    "get_user_taste_graph",
+    "Retrieves the user's sovereign taste graph, synaptic connections, and taste clusters. Strictly excludes confidential private memos to preserve zero-leakage privacy boundaries.",
+    {
+      limit: z.number().optional().default(50).describe("Maximum number of nodes to return"),
+      includeClusters: z.boolean().optional().default(true).describe("Whether to include taste clusters"),
+    },
+    async (args) => {
+      try {
+        const result = await handleGetUserTasteGraph(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text", text: `Error retrieving taste graph: ${err.message || String(err)}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
   return server;
+}
+
+export async function handleGetUserTasteGraph(args: {
+  limit?: number;
+  includeClusters?: boolean;
+  userId?: string;
+}) {
+  const user = args.userId ? { id: args.userId } : await getOrCreateDefaultUser();
+
+  // 1. Fetch public/curated saves only (STRICT PRIVACY: Exclude private memos)
+  const saves = await db
+    .select({
+      save: userSaves,
+      entity: globalEntities,
+    })
+    .from(userSaves)
+    .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
+    .where(
+      and(
+        eq(userSaves.userId, user.id),
+        eq(userSaves.isPrivateMemo, false)
+      )
+    )
+    .orderBy(desc(userSaves.createdAt))
+    .limit(args.limit || 50);
+
+  const publicSaveIds = new Set(saves.map((s) => s.save.id));
+
+  // 2. Fetch connections between public saves only
+  const allConnections = await db
+    .select()
+    .from(entryConnections)
+    .where(eq(entryConnections.userId, user.id));
+
+  const publicConnections = allConnections.filter(
+    (c) => publicSaveIds.has(c.sourceSaveId) && publicSaveIds.has(c.targetSaveId)
+  );
+
+  // 3. Fetch clusters if requested
+  let clusters: any[] = [];
+  if (args.includeClusters !== false) {
+    clusters = await getPrecomputedClusters(user.id);
+  }
+
+  const nodes = saves.map((s) => ({
+    saveId: s.save.id,
+    title: s.entity?.title || s.save.privateTitle || "Untitled",
+    typePath: s.save.typePath || s.entity?.typePath || "/general",
+    coreType: s.entity?.coreType || "PRODUCT",
+    heroImageUrl: s.entity?.heroImageUrl || null,
+    isPrivateMemo: s.save.isPrivateMemo,
+  }));
+
+  const edges = publicConnections.map((c) => ({
+    connectionId: c.id,
+    sourceSaveId: c.sourceSaveId,
+    targetSaveId: c.targetSaveId,
+    connectionType: c.connectionType,
+    weight: c.weight,
+  }));
+
+  return {
+    success: true,
+    nodeCount: nodes.length,
+    edgeCount: edges.length,
+    nodes,
+    edges,
+    clusters,
+  };
 }
 
 export async function startMcpServer() {

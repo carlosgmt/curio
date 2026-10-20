@@ -17,7 +17,7 @@ services:
       - MEDIA_PATH=/data/media
       - CURIO_ALLOW_ANON=true
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - REBUILD_VERSION=1
+      - REBUILD_VERSION=2
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

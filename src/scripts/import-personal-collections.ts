@@ -407,7 +407,7 @@ async function main() {
       const title = g.name || [g.brand, g.subtype || g.type].filter(Boolean).join(" ") || `Garment #${g.id}`;
       const summary = [g.color, g.material, g.season].filter(Boolean).join(" • ");
       const photoName = garmentPhotoMap.get(g.id);
-      const heroImageUrl = photoName ? `/api/v1/media/garments/${photoName}` : null;
+      const heroImageUrl = photoName ? `/curio/api/v1/media/garments/${photoName}` : null;
       const priceCents = g.price ? Math.round(g.price * 100) : null;
 
       const coreStructuredData = JSON.stringify({
@@ -522,7 +522,7 @@ async function main() {
       for (const gid of garmentIds) {
         const photoName = garmentPhotoMap.get(gid);
         if (photoName) {
-          heroImageUrl = `/api/v1/media/garments/${photoName}`;
+          heroImageUrl = `/curio/api/v1/media/garments/${photoName}`;
           break;
         }
       }

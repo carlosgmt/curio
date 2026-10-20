@@ -49,6 +49,15 @@ describe("Step 0 Privacy & Modality Router", () => {
       expect(result.extractedQuery).toBe(url);
     });
 
+    it("identifies quotation inputs as entities rather than private memos", () => {
+      const quoteInput = '"We suffer more often in imagination than in reality." - Seneca';
+      const result = classifyWithHeuristics(quoteInput);
+      expect(result.intent).toBe("PUBLIC_ENTITY");
+      expect(result.isPrivate).toBe(false);
+      expect(result.suggestedTitle).toBe("We suffer more often in imagination than in reality.");
+      expect(result.extractedQuery).toContain("Seneca");
+    });
+
     it("identifies multi-item roundups", () => {
       const inputs = [
         "Top 10 minimalist desks for small spaces",

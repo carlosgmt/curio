@@ -4,6 +4,7 @@ import { eq, and, or, like, desc, isNull } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/service";
 import { discoverUniversalEntities } from "@/lib/enrichment/universalDiscovery";
 import { fetchItunesMusicMetadata } from "@/lib/enrichment/providers/music";
+import { parseQuoteInput } from "@/lib/types/catalog";
 
 export interface OmniboxSuggestion {
   title: string;
@@ -131,6 +132,29 @@ export async function GET(req: NextRequest) {
     const suggestions: OmniboxSuggestion[] = [];
     const seenTitles = new Set<string>();
 
+    // 0. Detect quote pattern or quotation input
+    const parsedQuoteQuery = parseQuoteInput(query);
+    const hasQuoteChar = query.includes('"') || query.includes('“') || query.includes('”') || query.toLowerCase().startsWith("quote:");
+    const activeQuoteType = activeCurioTypes.find((t) => t.typePath.toLowerCase() === "/quote");
+
+    if ((parsedQuoteQuery || (hasQuoteChar && activeQuoteType)) && query.length >= 3) {
+      const qText = parsedQuoteQuery?.text || query.replace(/^quote:\s*/i, "").replace(/["“”]/g, "").trim();
+      const qAuthor = parsedQuoteQuery?.author || "";
+
+      suggestions.push({
+        title: `"${qText}"`,
+        subtitle: qAuthor ? `Quote • ${qAuthor}` : "Save as Quote",
+        typePath: "/quote",
+        badgeLabel: "QUOTE",
+        heroImageUrl: null,
+        canonicalUrl: "",
+        isExistingSave: false,
+        saveId: null,
+        curioTypeId: activeQuoteType?.id || null,
+      });
+      seenTitles.add(`"${qText}"`.toLowerCase());
+    }
+
     // Add existing user saves first
     if (existingSavesRes.status === "fulfilled" && existingSavesRes.value) {
       for (const save of existingSavesRes.value) {
@@ -147,6 +171,7 @@ export async function GET(req: NextRequest) {
         else if (typePath.includes("watch")) badgeLabel = "WATCH";
         else if (typePath.includes("wine")) badgeLabel = "WINE";
         else if (typePath.includes("place")) badgeLabel = "PLACE";
+        else if (typePath.includes("quote")) badgeLabel = "QUOTE";
 
         suggestions.push({
           title: save.title,

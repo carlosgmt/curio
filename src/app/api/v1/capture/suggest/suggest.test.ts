@@ -140,4 +140,32 @@ describe("Live Omnibox Typeahead / Autocomplete API (/api/v1/capture/suggest)", 
     expect(match.curioTypeId).toBe(customType.id);
     expect(match.badgeLabel).toBe("SPECIALTY COFFEE");
   });
+
+  it("suggests [QUOTE] when quotation input with author is typed in omnibox", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `quote-sug-${timestamp}@curio.local`,
+        username: `quote_${timestamp}`,
+        displayName: "Quote Suggester",
+      })
+      .returning();
+
+    const { token } = await createSession(user.id);
+    const req = new NextRequest(
+      `http://localhost:3000/api/v1/capture/suggest?q=${encodeURIComponent('"We suffer more often in imagination than in reality." - Seneca')}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.suggestions.length).toBeGreaterThan(0);
+
+    const quoteSug = data.suggestions.find((s: any) => s.badgeLabel === "QUOTE");
+    expect(quoteSug).toBeDefined();
+    expect(quoteSug.typePath).toBe("/quote");
+    expect(quoteSug.title).toContain("We suffer more often");
+    expect(quoteSug.subtitle).toContain("Seneca");
+  });
 });

@@ -6,6 +6,7 @@
 
 import { generateJsonCompletion } from "@/lib/llm/client";
 import { discoverUniversalEntities } from "@/lib/enrichment/universalDiscovery";
+import { parseQuoteInput } from "@/lib/types/catalog";
 
 export type ModalityIntent = "PRIVATE_MEMO" | "PUBLIC_ENTITY" | "MULTI_ITEM_SOURCE";
 
@@ -44,7 +45,7 @@ export function classifyWithHeuristics(input: string): PrivacyClassificationResu
 
   // 0. Explicit deterministic prefix override
   const prefixMatch = trimmed.match(
-    /^(film|movie|cinema|book|novel|song|album|music|vinyl|wine|place|game|videogame|memo|note|todo|private):\s*(.+)$/i
+    /^(film|movie|cinema|book|novel|song|album|music|vinyl|wine|place|game|videogame|quote|memo|note|todo|private):\s*(.+)$/i
   );
   if (prefixMatch) {
     const rawPrefix = prefixMatch[1].toLowerCase();
@@ -56,6 +57,17 @@ export function classifyWithHeuristics(input: string): PrivacyClassificationResu
         reasoning: `Deterministic prefix '${rawPrefix}:' forced private memo`,
         isPrivate: true,
         suggestedTitle: cleanQuery.length > 60 ? cleanQuery.substring(0, 57) + "..." : cleanQuery,
+        detectedType: "NOTE",
+      };
+    }
+    if (rawPrefix === "quote") {
+      return {
+        intent: "PUBLIC_ENTITY",
+        confidence: 1.0,
+        reasoning: "Deterministic prefix 'quote:' forced quote route",
+        isPrivate: false,
+        suggestedTitle: cleanQuery,
+        extractedQuery: cleanQuery,
         detectedType: "NOTE",
       };
     }
@@ -90,6 +102,20 @@ export function classifyWithHeuristics(input: string): PrivacyClassificationResu
       suggestedTitle: trimmed,
       extractedQuery: trimmed,
       detectedType: isMulti ? "SOURCE_VIDEO" : "UNKNOWN",
+    };
+  }
+
+  // 1.5. Quotation patterns (e.g. "..." - Author, “...” by Author)
+  const parsedQuote = parseQuoteInput(trimmed);
+  if (parsedQuote) {
+    return {
+      intent: "PUBLIC_ENTITY",
+      confidence: 0.95,
+      reasoning: "Matched quotation pattern with author attribution",
+      isPrivate: false,
+      suggestedTitle: parsedQuote.text,
+      extractedQuery: `${parsedQuote.text} ${parsedQuote.author}`,
+      detectedType: "NOTE",
     };
   }
 
@@ -180,8 +206,8 @@ export async function classifyPrivacyAndModality(
 ): Promise<PrivacyClassificationResult> {
   const trimmed = input.trim();
 
-  // Instant deterministic check for URLs
-  if (URL_PATTERN.test(trimmed)) {
+  // Instant deterministic check for URLs or quotations
+  if (URL_PATTERN.test(trimmed) || parseQuoteInput(trimmed)) {
     return classifyWithHeuristics(trimmed);
   }
 

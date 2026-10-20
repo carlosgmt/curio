@@ -27,9 +27,16 @@ import {
   ShoppingBag,
   Shirt,
   Cpu,
+  Watch,
+  Share2,
+  Upload,
+  Quote as QuoteIcon,
 } from "lucide-react";
 import { PolymorphicCard, type CardData } from "../cards/PolymorphicCard";
 import { TypeBuilderModal } from "../shapeshift/TypeBuilderModal";
+import { CatalogTab } from "./CatalogTab";
+import { ShareTypeModal } from "./ShareTypeModal";
+import { ImportTypeModal } from "./ImportTypeModal";
 import { apiFetch } from "@/lib/apiClient";
 
 export interface TypesSettingsModalProps {
@@ -284,6 +291,35 @@ const PREVIEW_CARDS: Record<string, CardData> = {
       },
     },
   },
+  "/quote": {
+    save: {
+      id: "preview-quote",
+      isPrivateMemo: false,
+      createdAt: new Date(),
+      autoTags: ["quote", "stoicism", "philosophy"],
+      userCustomValues: {
+        text: "We suffer more often in imagination than in reality.",
+        author: "Seneca",
+        date: "c. 65 AD",
+        work: "Letters from a Stoic",
+      },
+    },
+    entity: {
+      id: "ent-quote",
+      title: "We suffer more often in imagination than in reality.",
+      summary: "We suffer more often in imagination than in reality.",
+      coreType: "MEMO",
+      typePath: "/quote",
+      brandOrCreator: "Seneca",
+      canonicalUrl: "https://en.wikiquote.org/wiki/Seneca_the_Younger",
+      coreStructuredData: {
+        text: "We suffer more often in imagination than in reality.",
+        author: "Seneca",
+        date: "c. 65 AD",
+        work: "Letters from a Stoic",
+      },
+    },
+  },
 };
 
 export function TypesSettingsModal({
@@ -293,14 +329,15 @@ export function TypesSettingsModal({
 }: TypesSettingsModalProps) {
   const [types, setTypes] = useState<CurioTypeRecord[]>([]);
   const [selectedTypePath, setSelectedTypePath] = useState<string>("/place");
+  const [mainTab, setMainTab] = useState<"active" | "catalog">("active");
   const [activeTab, setActiveTab] = useState<"preview" | "schema" | "identity" | "aliases">("preview");
   const [searchQuery, setSearchQuery] = useState("");
   const [isTypeBuilderOpen, setIsTypeBuilderOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
+  const fetchTypes = () => {
     setLoading(true);
     apiFetch("/api/v1/types")
       .then((res) => (res.ok ? res.json() : null))
@@ -311,6 +348,11 @@ export function TypesSettingsModal({
       })
       .catch((err) => console.error("Failed to fetch types:", err))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchTypes();
   }, [isOpen]);
 
   const filteredTypes = useMemo(() => {
@@ -344,7 +386,8 @@ export function TypesSettingsModal({
     if (path.includes("recipe")) return <UtensilsCrossed className="w-4 h-4 text-orange-500" />;
     if (path.includes("vinyl")) return <Disc3 className="w-4 h-4 text-purple-500" />;
     if (path.includes("film")) return <Film className="w-4 h-4 text-amber-500" />;
-    if (path.includes("art")) return <Frame className="w-4 h-4 text-indigo-400" />;
+    if (path.includes("quote")) return <QuoteIcon className="w-4 h-4 text-amber-500" />;
+    if (path.includes("watch")) return <Watch className="w-4 h-4 text-blue-500" />;
     if (root === "PRODUCT") return <ShoppingBag className="w-4 h-4 text-blue-500" />;
     if (root === "PLACE") return <MapPin className="w-4 h-4 text-emerald-500" />;
     if (root === "MEMO") return <Lock className="w-4 h-4 text-neutral-400" />;
@@ -390,17 +433,46 @@ export function TypesSettingsModal({
             <div>
               <h2 className="text-base font-bold font-sans tracking-tight flex items-center gap-2">
                 Curio Types & Schemas
-                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300">
-                  {types.length} Active Archetypes
-                </span>
               </h2>
-              <p className="text-xs text-neutral-500 font-sans">
-                Review, inspect, and customize physical silhouettes, JSON schemas, and deduplication rules.
-              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setMainTab("active")}
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold transition cursor-pointer ${
+                    mainTab === "active"
+                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
+                      : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+                  }`}
+                >
+                  My Types ({types.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMainTab("catalog")}
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold transition cursor-pointer flex items-center gap-1 ${
+                    mainTab === "catalog"
+                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
+                      : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <span>Type Catalog</span>
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold transition cursor-pointer shadow-2xs"
+              title="Import a shared schema JSON bundle"
+            >
+              <Upload className="w-3.5 h-3.5 text-neutral-500" />
+              <span>Import Schema</span>
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -426,8 +498,13 @@ export function TypesSettingsModal({
           </div>
         </div>
 
-        {/* 2-Column Main Workspace */}
-        <div className="flex-1 flex overflow-hidden">
+        {/* Main Body: Type Catalog OR 2-Column Active Archetypes Workspace */}
+        {mainTab === "catalog" ? (
+          <div className="flex-1 overflow-y-auto p-6 bg-neutral-50/30 dark:bg-neutral-950/20">
+            <CatalogTab onTypeInstalled={fetchTypes} />
+          </div>
+        ) : (
+          <div className="flex-1 flex overflow-hidden">
           {/* Left Column: Archetypes List */}
           <div className="w-72 sm:w-80 border-r border-neutral-200 dark:border-neutral-800 flex flex-col bg-neutral-50/40 dark:bg-neutral-950/20 shrink-0">
             {/* Search Box */}
@@ -572,6 +649,17 @@ export function TypesSettingsModal({
                     <span>Aliases</span>
                   </button>
                 </div>
+
+                {/* Share / Export Schema Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsShareModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-200 transition cursor-pointer shrink-0"
+                  title="Export and share this schema bundle"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Share Type</span>
+                </button>
               </div>
 
               {/* Tab Content Body */}
@@ -800,6 +888,7 @@ export function TypesSettingsModal({
             </div>
           )}
         </div>
+      )}
       </div>
 
       {/* Embedded Type Builder Modal for creating custom subtypes */}
@@ -810,6 +899,20 @@ export function TypesSettingsModal({
           setTypes((prev) => [...prev, newType as any]);
           setSelectedTypePath(newType.typePath);
         }}
+      />
+
+      {/* Share / Export Schema Modal */}
+      <ShareTypeModal
+        typeRecord={selectedType}
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+      />
+
+      {/* Import Schema Modal */}
+      <ImportTypeModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportSuccess={() => fetchTypes()}
       />
     </div>
   );

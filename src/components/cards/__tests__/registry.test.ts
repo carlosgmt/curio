@@ -28,6 +28,8 @@ describe("SilhouetteRegistry & Dynamic Component Resolver (FR-2.0 / FR-2.1)", ()
       { typePath: "/product/garment/outerwear", expected: "garment" },
       { typePath: "/product/cosmetics/skincare", expected: "cosmetics" },
       { typePath: "/product/electronics/audio", expected: "electronics" },
+      { typePath: "/quote", expected: "quote" },
+      { typePath: "/culture/quote", expected: "quote" },
       { typePath: "/product/generic", expected: "product" },
     ];
 

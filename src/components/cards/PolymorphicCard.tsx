@@ -12,6 +12,7 @@ import { ArtFrameCard } from "./silhouettes/ArtFrameCard";
 import { RecipeIndexCard } from "./silhouettes/RecipeIndexCard";
 import { MapPassCard } from "./silhouettes/MapPassCard";
 import { PrivateMemoCard } from "./silhouettes/PrivateMemoCard";
+import { QuoteCard } from "./silhouettes/QuoteCard";
 import { SynapsePill } from "../connections/SynapsePill";
 import { CustomFieldsSection } from "./CustomFieldsSection";
 import { AddToListPopover } from "../lists/AddToListPopover";
@@ -39,6 +40,7 @@ export interface CardData {
     heroImageUrl?: string | null;
     coreType: string;
     typePath?: string | null;
+    brandOrCreator?: string | null;
     canonicalUrl: string;
     priceCents?: number | null;
     currency?: string | null;
@@ -129,6 +131,25 @@ export function PolymorphicCard({
   const tags = (save.autoTags || []).map((t) => t.toLowerCase());
 
   const renderSilhouette = () => {
+    // 0. Dedicated Quote Silhouette (/quote, /culture/quote, tags: quote)
+    if (
+      typePath.includes("quote") ||
+      tags.includes("quote") ||
+      typePath === "/quote" ||
+      typePath.startsWith("/quote/") ||
+      typePath.startsWith("/culture/quote")
+    ) {
+      return (
+        <QuoteCard
+          save={save}
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
     // 1. Private Memo Vault Silhouette (PRD v3.2 FR-1.2 Privacy Gating)
     if (save.isPrivateMemo || !entity) {
       return <PrivateMemoCard save={save} />;

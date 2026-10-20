@@ -90,4 +90,74 @@ describe("Custom Types & Hierarchical Ontology Service", () => {
     const lookup = await getTypeById(tempType.id);
     expect(lookup).toBeNull();
   });
+
+  it("lists secondary catalog types including Quote, Watch, Coffee, Fragrance, Podcast", async () => {
+    const { getCatalogTypes, getCatalogTypeByPath } = await import("./catalog");
+    const catalog = getCatalogTypes();
+    expect(catalog.length).toBeGreaterThanOrEqual(5);
+
+    const paths = catalog.map((c) => c.typePath);
+    expect(paths).toContain("/quote");
+    expect(paths).toContain("/product/watch");
+    expect(paths).toContain("/product/beverage/coffee");
+    expect(paths).toContain("/product/cosmetics/fragrance");
+    expect(paths).toContain("/media/podcast");
+
+    const quoteDef = getCatalogTypeByPath("/quote");
+    expect(quoteDef).toBeDefined();
+    expect(quoteDef?.fields.map((f) => f.key)).toEqual(["text", "author", "date", "work"]);
+  });
+
+  it("installs, exports, imports with overlay, and uninstalls a secondary catalog type", async () => {
+    const user = await getOrCreateDefaultUser();
+    const {
+      installCatalogType,
+      uninstallCatalogType,
+      exportTypeAsSchemaSpec,
+      importSchemaSpec,
+      isTypeInstalled,
+      listAllTypes,
+    } = await import("./service");
+
+    // 1. Install Quote type
+    const installed = await installCatalogType(user.id, "quote");
+    expect(installed).toBeDefined();
+    expect(installed.name).toBe("Quote");
+    expect(installed.typePath).toBe("/quote");
+    expect(installed.userId).toBe(user.id);
+
+    const userTypes = await listAllTypes(user.id);
+    expect(isTypeInstalled("/quote", userTypes, user.id)).toBe(true);
+
+    // 2. Export Schema Spec
+    const exportedSpec = await exportTypeAsSchemaSpec(installed.id, user.id);
+    expect(exportedSpec.schemaVersion).toBe("1.0");
+    expect(exportedSpec.curioType.name).toBe("Quote");
+    expect(exportedSpec.curioType.typePath).toBe("/quote");
+    expect(exportedSpec.curioType.fields.map((f) => f.key)).toContain("author");
+
+    // 3. Import Schema Spec with contract + overlay
+    // Simulate an imported schema with an added upstream field 'translator'
+    const modifiedSpec = JSON.parse(JSON.stringify(exportedSpec));
+    modifiedSpec.curioType.fields.push({
+      key: "translator",
+      label: "Translator",
+      type: "string",
+    });
+    modifiedSpec.curioType.jsonSchema.properties.translator = { type: "string", title: "Translator" };
+
+    const imported = await importSchemaSpec(user.id, modifiedSpec);
+    expect(imported).toBeDefined();
+    const effectiveSchema = imported.effectiveJsonSchema as any;
+    expect(effectiveSchema.properties.translator).toBeDefined();
+    expect(effectiveSchema.properties.author).toBeDefined();
+
+    // 4. Uninstall catalog type
+    const uninstalled = await uninstallCatalogType(user.id, "/quote");
+    expect(uninstalled).toBe(true);
+
+    const afterUserTypes = await listAllTypes(user.id);
+    expect(isTypeInstalled("/quote", afterUserTypes, user.id)).toBe(false);
+  });
 });
+

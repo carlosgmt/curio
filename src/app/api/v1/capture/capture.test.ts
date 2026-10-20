@@ -189,4 +189,45 @@ describe("Capture API & Intent Execution (/api/v1/capture)", () => {
     expect(data.save.personalNotes).toBe("Private thought about upcoming architecture review");
     expect(data.entity_id).toBeNull();
   });
+
+  it("captures quote input and maps to /quote when Quote type is installed", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `quote-cap-${timestamp}@curio.local`,
+        username: `quote_cap_${timestamp}`,
+        displayName: "Quote Capture Tester",
+      })
+      .returning();
+
+    const { token } = await createSession(user.id);
+    const authHeaders = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    // Install Quote type for this user
+    const { installCatalogType } = await import("@/lib/types/service");
+    await installCatalogType(user.id, "quote");
+
+    // Capture quotation
+    const quotePayload = {
+      input: '"We suffer more often in imagination than in reality." - Seneca (c. 65 AD)',
+    };
+    const req = new NextRequest("http://localhost:3000/api/v1/capture", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify(quotePayload),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.status).toBe("created");
+    expect(data.save.typePath).toBe("/quote");
+    expect(data.save.userCustomValues.text).toBe("We suffer more often in imagination than in reality.");
+    expect(data.save.userCustomValues.author).toBe("Seneca");
+    expect(data.save.userCustomValues.date).toBe("c. 65 AD");
+  });
 });

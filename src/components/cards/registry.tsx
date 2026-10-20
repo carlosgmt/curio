@@ -15,6 +15,7 @@ import { ProductCard } from "./silhouettes/ProductCard";
 import { GarmentCard } from "./silhouettes/GarmentCard";
 import { CosmeticsCard } from "./silhouettes/CosmeticsCard";
 import { ElectronicsCard } from "./silhouettes/ElectronicsCard";
+import { QuoteCard } from "./silhouettes/QuoteCard";
 
 export type SilhouetteDensity =
   | "micro"
@@ -38,7 +39,8 @@ export type CanonicalArchetypeId =
   | "product"
   | "garment"
   | "cosmetics"
-  | "electronics";
+  | "electronics"
+  | "quote";
 
 export type CulturalPresentationMode =
   | "gallery"
@@ -167,6 +169,8 @@ export class SilhouetteRegistry {
     this.register("garment", "standard", GarmentCard);
     this.register("cosmetics", "standard", CosmeticsCard);
     this.register("electronics", "standard", ElectronicsCard);
+    this.register("quote", "standard", QuoteCard);
+    this.register("quote", "expanded", QuoteCard);
   }
 
   public register(
@@ -312,6 +316,13 @@ export class SilhouetteRegistry {
       path.startsWith("/product/electronics")
     ) {
       return "electronics";
+    }
+    if (
+      path.includes("quote") ||
+      path.startsWith("/quote") ||
+      path.startsWith("/culture/quote")
+    ) {
+      return "quote";
     }
 
     return "product";

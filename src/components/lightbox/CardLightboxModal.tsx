@@ -27,6 +27,7 @@ import {
   Shirt,
   Pencil,
   BookmarkCheck,
+  Quote as QuoteIcon,
 } from "lucide-react";
 import type { CardData } from "../cards/PolymorphicCard";
 import { CinemaCulturalMode } from "./modes/CinemaCulturalMode";
@@ -39,6 +40,7 @@ import { WineSommelierMode } from "./modes/WineSommelierMode";
 import { ArtFrameCard } from "../cards/silhouettes/ArtFrameCard";
 import { PrivateMemoCard } from "../cards/silhouettes/PrivateMemoCard";
 import { ProductCard } from "../cards/silhouettes/ProductCard";
+import { QuoteCard } from "../cards/silhouettes/QuoteCard";
 import { SynapsePill } from "../connections/SynapsePill";
 import { CustomFieldsSection } from "../cards/CustomFieldsSection";
 import { AddToListPopover } from "../lists/AddToListPopover";
@@ -73,16 +75,21 @@ const BUILTIN_ARCHETYPES: ArchetypeOption[] = [
   { id: "recipe", label: "Recipe", typePath: "/culinary/recipe", icon: <UtensilsCrossed className="w-3.5 h-3.5" /> },
   { id: "place", label: "Place", typePath: "/place", icon: <MapPin className="w-3.5 h-3.5" /> },
   { id: "art", label: "Art", typePath: "/product/art", icon: <Frame className="w-3.5 h-3.5" /> },
+  { id: "quote", label: "Quote", typePath: "/quote", icon: <QuoteIcon className="w-3.5 h-3.5" /> },
   { id: "memo", label: "Text Note", typePath: "/memo/personal", icon: <Lock className="w-3.5 h-3.5" /> },
 ];
 
 function detectInitialArchetypeId(card: CardData): string {
+  const typePath = (card.entity?.typePath || card.save.typePath || "").toLowerCase();
+  const coreType = (card.entity?.coreType || "").toUpperCase();
+
+  if (typePath.includes("quote") || typePath.startsWith("/quote") || typePath.startsWith("/culture/quote")) {
+    return "quote";
+  }
+
   if (card.save.isPrivateMemo || !card.entity) {
     return "memo";
   }
-
-  const typePath = (card.entity?.typePath || card.save.typePath || "").toLowerCase();
-  const coreType = (card.entity?.coreType || "").toUpperCase();
 
   if (typePath.includes("/media/music/song") || typePath.includes("track")) {
     return "song";
@@ -362,6 +369,15 @@ export function CardLightboxModal({
             save={card.save}
             entity={previewEntity as any}
             primarySource={card.primarySource}
+          />
+        );
+      case "quote":
+        return (
+          <QuoteCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
           />
         );
       case "memo":

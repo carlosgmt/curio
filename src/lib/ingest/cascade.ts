@@ -11,7 +11,7 @@ import {
   type GlobalEntity,
   type UserSave,
 } from "@/db";
-import { eq, or, and } from "drizzle-orm";
+import { eq, or, and, isNull } from "drizzle-orm";
 import { classifyPrivacyAndModality, type PrivacyClassificationResult } from "../router/privacy";
 import { classifyOmniboxIntent } from "../router/intent";
 import { classifyEntityType } from "../curio-learns/ontology";
@@ -22,6 +22,7 @@ import type { CandidateFallback } from "./disambiguation";
 import { enrichCaptureInput } from "../enrichment/dispatcher";
 import { detectAndParseCommercialSku } from "../enrichment/providers/commercial";
 import { recordPriceSnapshot } from "../commerce/pricing";
+import { parseQuoteInput } from "@/lib/types/catalog";
 import {
   lookupLocalEntityCache,
   lookupByCanonicalIdentity,
@@ -376,8 +377,8 @@ export async function executeIngestionCascade(params: {
 }
 
   const effectiveTitle = params.targetCandidate?.title?.trim() || input.trim();
-  const effectiveForcedType = params.forcedTypePath || params.targetCandidate?.typePath;
-  const effectiveCurioTypeId = params.curioTypeId || params.targetCandidate?.curioTypeId || params.customSchemaId;
+  let effectiveForcedType = params.forcedTypePath || params.targetCandidate?.typePath;
+  let effectiveCurioTypeId = params.curioTypeId || params.targetCandidate?.curioTypeId || params.customSchemaId;
 
   // STEP 0: Privacy & Modality Router
   let privacy: PrivacyClassificationResult;
@@ -452,6 +453,27 @@ export async function executeIngestionCascade(params: {
     targetType = matchedType || null;
   }
 
+  // Resolve quote type if input matches quotation pattern and user has active /quote type
+  const parsedQuote = parseQuoteInput(input);
+  if (parsedQuote && !effectiveForcedType) {
+    const [activeQuoteType] = await db
+      .select()
+      .from(curioTypes)
+      .where(
+        and(
+          eq(curioTypes.typePath, "/quote"),
+          or(isNull(curioTypes.userId), eq(curioTypes.userId, user.id))
+        )
+      )
+      .limit(1);
+
+    if (activeQuoteType) {
+      effectiveForcedType = "/quote";
+      effectiveCurioTypeId = activeQuoteType.id;
+      targetType = activeQuoteType;
+    }
+  }
+
   // =========================================================================
   // LAYER 0: Pre-Network Local Global Cache Lookup (<2ms, $0.00, 0 network calls)
   // =========================================================================
@@ -492,6 +514,16 @@ export async function executeIngestionCascade(params: {
       effectiveSchema: (targetType?.effectiveJsonSchema as any) || (targetType?.jsonSchema as any),
       uiFieldConfig: (targetType?.uiFieldConfig as any) || [],
     });
+
+    if ((hitEntity.typePath === "/quote" || targetType?.typePath === "/quote") && parsedQuote) {
+      extractedCardData.subjectiveValues = {
+        ...extractedCardData.subjectiveValues,
+        text: parsedQuote.text,
+        author: parsedQuote.author,
+        ...(parsedQuote.date ? { date: parsedQuote.date } : {}),
+        ...(parsedQuote.work ? { work: parsedQuote.work } : {}),
+      };
+    }
 
     let hitFallbacks = localCacheHit.siblings;
     if (!hitFallbacks || hitFallbacks.length === 0) {
@@ -573,15 +605,6 @@ export async function executeIngestionCascade(params: {
       ? enrichment.runnerUpCandidates
       : defaultRunnerUps;
 
-  const finalTitle = params.targetCandidate?.title || enrichment?.title || fallbackPrimary.title;
-  let finalCanonicalUrl = enrichment?.canonicalUrl;
-  if (!finalCanonicalUrl) {
-    if (params.targetCandidate?.canonicalUrl && !params.targetCandidate.canonicalUrl.includes("/search")) {
-      finalCanonicalUrl = params.targetCandidate.canonicalUrl;
-    } else {
-      finalCanonicalUrl = fallbackPrimary.url;
-    }
-  }
   const finalSummary = enrichment?.summary || fallbackPrimary.snippet;
   const finalCoreType =
     enrichment?.coreType ||
@@ -636,10 +659,26 @@ export async function executeIngestionCascade(params: {
     }
   }
 
+  const finalTitle = parsedQuote && finalTypePath === "/quote"
+    ? parsedQuote.text
+    : (params.targetCandidate?.title || enrichment?.title || fallbackPrimary.title);
+  let finalCanonicalUrl = enrichment?.canonicalUrl;
+  if (!finalCanonicalUrl) {
+    if (parsedQuote && finalTypePath === "/quote") {
+      finalCanonicalUrl = `https://en.wikiquote.org/wiki/Special:Search?search=${encodeURIComponent(parsedQuote.author)}`;
+    } else if (params.targetCandidate?.canonicalUrl && !params.targetCandidate.canonicalUrl.includes("/search")) {
+      finalCanonicalUrl = params.targetCandidate.canonicalUrl;
+    } else {
+      finalCanonicalUrl = fallbackPrimary.url;
+    }
+  }
+
   const finalHeroImage = params.targetCandidate?.heroImageUrl || enrichment?.heroImageUrl || null;
   const finalPriceCents = enrichment?.priceCents ?? null;
   const finalExternalId = enrichment?.canonicalExternalId || null;
-  const finalCreator = enrichment?.brandOrCreator || null;
+  const finalCreator = parsedQuote && finalTypePath === "/quote"
+    ? parsedQuote.author
+    : (enrichment?.brandOrCreator || null);
 
   // Schema-directed extraction
   const extractedCardData = extractStructuredCardData({
@@ -649,6 +688,23 @@ export async function executeIngestionCascade(params: {
     effectiveSchema: (targetType?.effectiveJsonSchema as any) || (targetType?.jsonSchema as any),
     uiFieldConfig: (targetType?.uiFieldConfig as any) || [],
   });
+
+  if (finalTypePath === "/quote" && parsedQuote) {
+    extractedCardData.subjectiveValues = {
+      ...extractedCardData.subjectiveValues,
+      text: parsedQuote.text,
+      author: parsedQuote.author,
+      ...(parsedQuote.date ? { date: parsedQuote.date } : {}),
+      ...(parsedQuote.work ? { work: parsedQuote.work } : {}),
+    };
+    extractedCardData.objectiveAttributes = {
+      ...extractedCardData.objectiveAttributes,
+      text: parsedQuote.text,
+      author: parsedQuote.author,
+      ...(parsedQuote.date ? { date: parsedQuote.date } : {}),
+      ...(parsedQuote.work ? { work: parsedQuote.work } : {}),
+    };
+  }
 
   // Compute canonical identity keys and deterministic identityFingerprint
   const { urlHash, entityKey } = generateEntityKey(finalCanonicalUrl, finalTitle);

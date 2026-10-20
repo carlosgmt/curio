@@ -8,6 +8,7 @@ import {
   resolveRecipeLink,
   resolveArtLink,
   resolveCardUtility,
+  resolveTypeActionProviders,
   getCinemaSearchLinks,
   getDiscogsSearchLink,
 } from "./utilityDeepLinks";
@@ -135,5 +136,43 @@ describe("Utility Deep-Link Engine", () => {
       expect(result.label).toBe("Vivino Review");
       expect(result.href).toContain("vivino.com");
     });
+
+    it("resolves Music (/media/music/album) with coreType=MEDIA to Spotify and never JustWatch", () => {
+      const albumEntity = {
+        title: "Wish You Were Here",
+        coreType: "MEDIA",
+        typePath: "/media/music/album",
+        brandOrCreator: "Pink Floyd",
+      };
+      const result = resolveCardUtility({ entity: albumEntity });
+      expect(result.iconName).toBe("music");
+      expect(result.label).toBe("Play on Spotify");
+      expect(result.href).toContain("open.spotify.com/search/");
+      expect(result.href).not.toContain("justwatch.com");
+    });
+
+    it("provides 3 action providers per type and never links buyAction to Wikipedia", () => {
+      const filmProviders = resolveTypeActionProviders({
+        title: "The Godfather",
+        coreType: "MEDIA",
+        typePath: "/media/film",
+        canonicalUrl: "https://en.wikipedia.org/wiki/The_Godfather",
+      });
+      expect(filmProviders.infoAction.href).toBe("https://en.wikipedia.org/wiki/The_Godfather");
+      expect(filmProviders.playAction?.href).toContain("justwatch.com");
+      expect(filmProviders.buyAction?.href).toContain("amazon.com");
+      expect(filmProviders.buyAction?.href).not.toContain("wikipedia.org");
+
+      const watchProviders = resolveTypeActionProviders({
+        title: "Rolex Submariner",
+        coreType: "PRODUCT",
+        typePath: "/product/watch",
+        canonicalUrl: "https://en.wikipedia.org/wiki/Rolex_Submariner",
+      });
+      expect(watchProviders.buyAction?.label).toBe("Shop Chrono24");
+      expect(watchProviders.buyAction?.href).toContain("chrono24.com");
+      expect(watchProviders.buyAction?.href).not.toContain("wikipedia.org");
+    });
   });
 });
+

@@ -181,15 +181,20 @@ describe("4-Layer Cache-First Funnel & Commercial SKU Resolution", () => {
     expect(structured.sku).toBe("xyz");
   });
 
-  it("Commercial Watch SKU ('Rolex Explorer 2 226570' and 'Rolex Explorer 2 xyz'): parses Rolex, Explorer II, and reference code", async () => {
+  it("Commercial Watch SKU ('Rolex Explorer 2 226570', 'Rolex Explorer 2 xyz', and bare 'Rolex'): parses Rolex into /product/watch", async () => {
     const refAnalysis = detectAndParseCommercialSku("Rolex Explorer 2 226570");
     expect(refAnalysis).not.toBeNull();
     expect(refAnalysis?.category).toBe("watch_luxury");
-    expect(refAnalysis?.typePath).toBe("/product");
+    expect(refAnalysis?.typePath).toBe("/product/watch");
     expect(refAnalysis?.brand).toBe("Rolex");
     expect(refAnalysis?.model).toBe("Explorer II");
     expect(refAnalysis?.referenceCode).toBe("226570");
     expect(refAnalysis?.sku).toBe("226570");
+
+    const bareRolex = detectAndParseCommercialSku("Rolex");
+    expect(bareRolex).not.toBeNull();
+    expect(bareRolex?.typePath).toBe("/product/watch");
+    expect(bareRolex?.canonicalTitle).toBe("Rolex");
 
     const xyzAnalysis = detectAndParseCommercialSku("Rolex Explorer 2 xyz");
     expect(xyzAnalysis).not.toBeNull();
@@ -222,7 +227,7 @@ describe("4-Layer Cache-First Funnel & Commercial SKU Resolution", () => {
     });
 
     expect(watchRes.entity).not.toBeNull();
-    expect(watchRes.entity?.typePath).toBe("/product");
+    expect(watchRes.entity?.typePath).toBe("/product/watch");
     expect(watchRes.entity?.brandOrCreator).toBe("Rolex");
     expect(watchRes.entity?.title).toContain("Explorer II");
     expect(watchRes.entity?.title).toContain("226570");

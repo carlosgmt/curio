@@ -22,8 +22,20 @@ describe("Universal Entity Discovery & Ontology Mapper", () => {
 
     expect(mapDescriptionToOntology("1965 song by The Beatles")).toEqual({
       coreType: "MEDIA",
-      typePath: "/media/music/vinyl",
+      typePath: "/media/music/song",
       badgeLabel: "SONG",
+    });
+
+    expect(mapDescriptionToOntology("1975 studio album by Pink Floyd")).toEqual({
+      coreType: "MEDIA",
+      typePath: "/media/music/album",
+      badgeLabel: "ALBUM",
+    });
+
+    expect(mapDescriptionToOntology("Swiss luxury watchmaker and manufacturer")).toEqual({
+      coreType: "PRODUCT",
+      typePath: "/product/watch",
+      badgeLabel: "WATCH",
     });
 
     expect(mapDescriptionToOntology("Italian red wine from Piedmont")).toEqual({
@@ -81,9 +93,9 @@ describe("Universal Entity Discovery & Ontology Mapper", () => {
     expect(candidates.length).toBeGreaterThanOrEqual(3);
 
     const typePaths = candidates.map((c) => c.typePath);
-    // Should contain book, song or vinyl, and film
+    // Should contain book, song/album, and film
     expect(typePaths).toContain("/product/book");
-    expect(typePaths.some((p) => p === "/media/music/vinyl" || p === "/media/film")).toBe(true);
+    expect(typePaths.some((p) => p.startsWith("/media/music") || p === "/media/film")).toBe(true);
   });
 
   it("discovers cross-type candidates for 'Barolo' (Wine and Place)", async () => {

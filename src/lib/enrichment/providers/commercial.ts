@@ -1,11 +1,11 @@
 import type { EnrichmentPayload } from "../dispatcher";
 import type { DiscoveredCandidate, CandidateFallback } from "../universalDiscovery";
 
-export type CommercialCategory = "garment" | "watch_luxury" | "electronics" | "cosmetics";
+export type CommercialCategory = "garment" | "watch" | "watch_luxury" | "electronics" | "cosmetics";
 
 export interface CommercialSkuAnalysis {
   category: CommercialCategory;
-  typePath: "/product/garment" | "/product" | "/product/electronics" | "/product/cosmetics";
+  typePath: "/product/garment" | "/product/watch" | "/product" | "/product/electronics" | "/product/cosmetics";
   coreType: "PRODUCT";
   brand: string;
   model: string;
@@ -307,6 +307,30 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
   },
   {
+    pattern: /\btag\s+heuer\b/i,
+    canonical: "TAG Heuer",
+    category: "watch_luxury",
+    defaultPriceCents: 550000,
+    sellerName: "Chrono24",
+    sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
+  },
+  {
+    pattern: /\bbreitling\b/i,
+    canonical: "Breitling",
+    category: "watch_luxury",
+    defaultPriceCents: 690000,
+    sellerName: "Chrono24",
+    sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
+  },
+  {
+    pattern: /\bvacheron\s+constantin\b/i,
+    canonical: "Vacheron Constantin",
+    category: "watch_luxury",
+    defaultPriceCents: 2500000,
+    sellerName: "Chrono24",
+    sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
+  },
+  {
     pattern: /\bherman\s+miller\b/i,
     canonical: "Herman Miller",
     category: "watch_luxury",
@@ -464,10 +488,8 @@ export function detectAndParseCommercialSku(query: string): CommercialSkuAnalysi
     return null;
   }
 
-  const lower = trimmed.toLowerCase();
-
   // ---------------------------------------------------------------------------
-  // 1. Check Watch / Luxury Reference SKUs (e.g. "Rolex Explorer 2 226570" or "Rolex Explorer 2 xyz")
+  // 1. Check Watch / Luxury Reference SKUs (e.g. "Rolex Explorer 2 226570" or "Rolex")
   // ---------------------------------------------------------------------------
   for (const brandSpec of WATCH_AND_LUXURY_BRANDS) {
     const brandMatch = trimmed.match(brandSpec.pattern);
@@ -508,13 +530,11 @@ export function detectAndParseCommercialSku(query: string): CommercialSkuAnalysi
       let referenceCode: string | null = null;
 
       if (model) {
-        // Any remaining token(s) after brand + known model is the reference/SKU code (e.g. "226570", "16570", "xyz")
         if (nonColorTokens.length > 0) {
           referenceCode = nonColorTokens.join(" ").trim();
           sku = referenceCode;
         }
       } else if (nonColorTokens.length > 0) {
-        // Check if last token looks like a reference code
         const lastTok = nonColorTokens[nonColorTokens.length - 1];
         if (/\d/.test(lastTok) || (nonColorTokens.length >= 2 && lastTok.length <= 8)) {
           referenceCode = lastTok;
@@ -529,14 +549,23 @@ export function detectAndParseCommercialSku(query: string): CommercialSkuAnalysi
         model = brandSpec.canonical;
       }
 
-      const productLineQuery = `${brandSpec.canonical} ${model}`.trim();
-      const canonicalTitle = referenceCode
-        ? `${brandSpec.canonical} ${model} Ref. ${referenceCode}`
+      const isSameAsBrand = model.toLowerCase() === brandSpec.canonical.toLowerCase();
+      const productLineQuery = isSameAsBrand
+        ? brandSpec.canonical
+        : `${brandSpec.canonical} ${model}`.trim();
+      const baseTitle = isSameAsBrand
+        ? brandSpec.canonical
         : `${brandSpec.canonical} ${model}`;
+      const canonicalTitle = referenceCode
+        ? `${baseTitle} Ref. ${referenceCode}`
+        : baseTitle;
+
+      const isNonWatchLuxury =
+        brandSpec.canonical === "Herman Miller" || brandSpec.canonical === "Rimowa";
 
       return {
         category: "watch_luxury",
-        typePath: "/product",
+        typePath: isNonWatchLuxury ? "/product" : "/product/watch",
         coreType: "PRODUCT",
         brand: brandSpec.canonical,
         model,
@@ -843,8 +872,8 @@ export async function resolveCommercialProduct(
     };
   }
 
-  // 2. Watch & Luxury Reference SKU Hydration (/product -> ProductCard)
-  if (skuAnalysis.category === "watch_luxury") {
+  // 2. Watch & Luxury Reference SKU Hydration (/product/watch or /product -> ProductCard)
+  if (skuAnalysis.category === "watch_luxury" || skuAnalysis.category === "watch") {
     const brandSlug = skuAnalysis.brand.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     const modelSlug = skuAnalysis.model.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     const refSlug = (skuAnalysis.referenceCode || "base").toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -856,26 +885,52 @@ export async function resolveCommercialProduct(
       ? `${skuAnalysis.model} • Ref. ${skuAnalysis.referenceCode}`
       : skuAnalysis.model;
 
+    let heroImageUrl = wiki?.thumbnailUrl || null;
+    let wikiSummary = wiki?.snippet || null;
+
+    if (!heroImageUrl) {
+      const fetchFn = options?.fetchFn ?? fetch;
+      try {
+        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+          skuAnalysis.productLineQuery.replace(/\s+/g, "_")
+        )}`;
+        const sumRes = await fetchFn(summaryUrl, {
+          headers: { Accept: "application/json" },
+        });
+        if (sumRes.ok) {
+          const sumData = await sumRes.json();
+          if (sumData?.thumbnail?.source) {
+            heroImageUrl = sumData.thumbnail.source;
+          }
+          if (!wikiSummary && sumData?.extract) {
+            wikiSummary = sumData.extract;
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+
     const runnerUps: CandidateFallback[] = [
       ...(options?.runnerUpCandidates || []),
       {
-        title: `${skuAnalysis.brand} ${skuAnalysis.model} — WatchCharts Market Index`,
+        title: `${skuAnalysis.canonicalTitle} — WatchCharts Market Index`,
         url: `https://watchcharts.com/watches/search?q=${encodedQuery}`,
         snippet: `Secondary market pricing history and reference analytics for ${skuAnalysis.canonicalTitle}`,
         coreType: "PRODUCT",
-        typePath: "/product",
-        badgeLabel: "PRODUCT",
+        typePath: skuAnalysis.typePath,
+        badgeLabel: skuAnalysis.typePath === "/product/watch" ? "WATCH" : "PRODUCT",
       },
     ];
 
     return {
       title: skuAnalysis.canonicalTitle,
       summary:
-        wiki?.snippet ||
-        `${skuAnalysis.brand} ${skuAnalysis.model}${skuAnalysis.referenceCode ? ` (Reference ${skuAnalysis.referenceCode})` : ""} — precision timepiece & collector reference.`,
-      heroImageUrl: wiki?.thumbnailUrl || null,
+        wikiSummary ||
+        `${skuAnalysis.canonicalTitle}${skuAnalysis.referenceCode ? ` (Reference ${skuAnalysis.referenceCode})` : ""} — precision timepiece & horological reference.`,
+      heroImageUrl,
       coreType: "PRODUCT",
-      typePath: "/product",
+      typePath: skuAnalysis.typePath,
       canonicalExternalId,
       canonicalUrl: chronoUrl,
       brandOrCreator: skuAnalysis.brand,
@@ -889,6 +944,7 @@ export async function resolveCommercialProduct(
         color: skuAnalysis.color,
         colorHex: skuAnalysis.colorHex,
         specsSummary,
+        category: skuAnalysis.typePath === "/product/watch" ? "Watch" : "Product",
         availability: "in_stock",
         wikidataUri: wiki?.conceptUri || null,
       },

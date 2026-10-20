@@ -75,13 +75,20 @@ export function mapDescriptionToOntology(description: string, title?: string): {
     return { coreType: "BOOK", typePath: "/product/book", badgeLabel: "BOOK" };
   }
 
-  // 3. Music, Vinyl, Tracks
+  // 3. Music: Albums vs Songs (hierarchy: /media/music -> /media/music/album | /media/music/song)
   if (
-    /\b(?:song|original song|single|album|studio album|extended play|ep|musical composition|band|musical duo|record by|recorded by|soundtrack|musician|singer|songwriter|composer)\b/i.test(
+    /\b(?:album|studio album|live album|compilation album|double album|concept album|extended play|ep|record by|soundtrack|discography|lp)\b/i.test(
       d
     )
   ) {
-    return { coreType: "MEDIA", typePath: "/media/music/vinyl", badgeLabel: "SONG" };
+    return { coreType: "MEDIA", typePath: "/media/music/album", badgeLabel: "ALBUM" };
+  }
+  if (
+    /\b(?:song|original song|single|musical composition|track|ballad|band|musical duo|recorded by|musician|singer|songwriter|composer)\b/i.test(
+      d
+    )
+  ) {
+    return { coreType: "MEDIA", typePath: "/media/music/song", badgeLabel: "SONG" };
   }
 
   // 4. Wine & Beverages
@@ -117,6 +124,18 @@ export function mapDescriptionToOntology(description: string, title?: string): {
     /\b(?:restaurant|cafe|café|hotel|city|comune|municipality|capital|museum|building|park|street|neighborhood|district|mountain|lake|island|province|town|village)\b/i.test(d)
   ) {
     return { coreType: "PLACE", typePath: "/place", badgeLabel: "PLACE" };
+  }
+
+  // 9. Watches & Horology
+  if (
+    /\b(?:wristwatch|watchmaker|watch manufacturer|watch brand|clockmaker|horology|timepiece|chronograph|luxury watch|diving watch|mechanical watch|automatic watch|swiss watch)\b/i.test(
+      d
+    ) ||
+    /\b(?:rolex|omega|patek philippe|audemars piguet|vacheron constantin|jaeger-lecoultre|tudor|iwc|breitling|tag heuer|grand seiko|seiko|casio|g-shock|submariner|daytona|datejust|speedmaster|seamaster|royal oak|nautilus)\b/i.test(
+      t
+    )
+  ) {
+    return { coreType: "PRODUCT", typePath: "/product/watch", badgeLabel: "WATCH" };
   }
 
   // Title fallback checks if description was too sparse
@@ -246,10 +265,19 @@ export async function discoverUniversalEntities(
         if (/\b(?:book|novel|memoir|author)\b/i.test(queryLower) && ontology.typePath === "/product/book") {
           score += 70;
         }
-        if (/\b(?:song|album|vinyl|music|track)\b/i.test(queryLower) && ontology.typePath === "/media/music/vinyl") {
+        if (/\b(?:song|album|vinyl|music|track)\b/i.test(queryLower) && ontology.typePath.startsWith("/media/music")) {
           score += 70;
+          if (/\b(?:album|vinyl|lp)\b/i.test(queryLower) && ontology.typePath === "/media/music/album") {
+            score += 25;
+          }
+          if (/\b(?:song|track|single)\b/i.test(queryLower) && ontology.typePath === "/media/music/song") {
+            score += 25;
+          }
         }
         if (/\b(?:wine|vineyard|cuvée|château)\b/i.test(queryLower) && ontology.typePath.includes("wine")) {
+          score += 70;
+        }
+        if (/\b(?:watch|rolex|omega|tudor|seiko|patek|chronograph)\b/i.test(queryLower) && ontology.typePath === "/product/watch") {
           score += 70;
         }
 
@@ -329,10 +357,19 @@ export async function discoverUniversalEntities(
         if (/\b(?:book|novel|memoir|author)\b/i.test(queryLower) && ontology.typePath === "/product/book") {
           score += 70;
         }
-        if (/\b(?:song|album|vinyl|music|track)\b/i.test(queryLower) && ontology.typePath === "/media/music/vinyl") {
+        if (/\b(?:song|album|vinyl|music|track)\b/i.test(queryLower) && ontology.typePath.startsWith("/media/music")) {
           score += 70;
+          if (/\b(?:album|vinyl|lp)\b/i.test(queryLower) && ontology.typePath === "/media/music/album") {
+            score += 25;
+          }
+          if (/\b(?:song|track|single)\b/i.test(queryLower) && ontology.typePath === "/media/music/song") {
+            score += 25;
+          }
         }
         if (/\b(?:wine|vineyard|cuvée|château)\b/i.test(queryLower) && ontology.typePath.includes("wine")) {
+          score += 70;
+        }
+        if (/\b(?:watch|rolex|omega|tudor|seiko|patek|chronograph)\b/i.test(queryLower) && ontology.typePath === "/product/watch") {
           score += 70;
         }
 

@@ -413,9 +413,10 @@ export async function getListBySlugWithItems(
 
       let match = true;
 
-      // Filter: coreType
+      // Filter: coreType or typePath
       if (rules.coreType || list.slug === "films") {
         const targetCoreType = (rules.coreType || "MEDIA").toUpperCase();
+        const targetTypeLower = (rules.coreType || "").toLowerCase();
         const entityCoreType = record.entity?.coreType?.toUpperCase();
         const typePath = (record.save.typePath || record.entity?.typePath || "").toLowerCase();
 
@@ -428,7 +429,13 @@ export async function getListBySlugWithItems(
             typePath.includes("cinema");
           if (!isMedia) match = false;
         } else {
-          if (entityCoreType !== targetCoreType) {
+          const matchesCoreOrSubtype =
+            entityCoreType === targetCoreType ||
+            (targetTypeLower &&
+              (typePath === targetTypeLower ||
+                typePath.startsWith(`${targetTypeLower}/`) ||
+                typePath.endsWith(`/${targetTypeLower}`)));
+          if (!matchesCoreOrSubtype) {
             match = false;
           }
         }

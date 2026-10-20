@@ -164,16 +164,28 @@ async function hydrateSpecialist(
     };
   }
 
-  // Music & Vinyl
+  // Music: Album, Song & Vinyl
   if (typePath === "/media/music/vinyl" || typePath.startsWith("/media/music")) {
-    const musicRes = await resolveMusicBrainz(targetTitle, { fetchFn });
+    const isSong = typePath === "/media/music/song";
+    const musicRes = await resolveMusicBrainz(targetTitle, {
+      fetchFn,
+      subType: isSong ? "song" : "album",
+      creatorHint: winningCandidate?.creator || undefined,
+    });
+    const effectiveMusicTypePath =
+      typePath === "/media/music/song"
+        ? "/media/music/song"
+        : typePath === "/media/music/album"
+        ? "/media/music/album"
+        : musicRes?.typePath || "/media/music/album";
+
     if (musicRes) {
       return {
         title: musicRes.title,
         summary: musicRes.summary,
-        heroImageUrl: musicRes.coverUrl,
+        heroImageUrl: musicRes.coverUrl || winningCandidate?.thumbnailUrl || null,
         coreType: "MEDIA",
-        typePath: "/media/music/vinyl",
+        typePath: effectiveMusicTypePath,
         canonicalExternalId: musicRes.canonicalExternalId || winningCandidate?.conceptUri,
         canonicalUrl:
           musicRes.canonicalUrl ||
@@ -196,14 +208,14 @@ async function hydrateSpecialist(
 
     return {
       title: winningCandidate?.title || targetTitle,
-      summary: winningCandidate?.snippet || `Music track: ${targetTitle}`,
+      summary: winningCandidate?.snippet || `${isSong ? "Song" : "Album"}: ${targetTitle}`,
       heroImageUrl: winningCandidate?.thumbnailUrl || null,
       coreType: "MEDIA",
-      typePath: "/media/music/vinyl",
+      typePath: effectiveMusicTypePath,
       canonicalExternalId: winningCandidate?.conceptUri,
       canonicalUrl: winningCandidate?.url || `https://www.discogs.com/search/?q=${encodeURIComponent(targetTitle)}`,
       brandOrCreator: winningCandidate?.creator,
-      priceCents: 2999,
+      priceCents: isSong ? 129 : 2999,
       currency: "USD",
       coreStructuredData: {
         wikidataUri: winningCandidate?.conceptUri,
@@ -213,7 +225,7 @@ async function hydrateSpecialist(
       primarySource: {
         sellerName: "Discogs",
         sourceUrl: `https://www.discogs.com/search/?q=${encodeURIComponent(targetTitle)}&type=release`,
-        priceCents: 2999,
+        priceCents: isSong ? 129 : 2999,
       },
       runnerUpCandidates,
     };
@@ -349,16 +361,70 @@ async function hydrateSpecialist(
     };
   }
 
-  // Fallback Product / Generic
+  // Fallback Product / Watch / Generic
+  const finalTitle = winningCandidate?.title || targetTitle.charAt(0).toUpperCase() + targetTitle.slice(1);
+  let heroImageUrl = winningCandidate?.thumbnailUrl || null;
+  let summary = winningCandidate?.snippet || null;
+
+  if (!heroImageUrl) {
+    try {
+      const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+        finalTitle.replace(/\s+/g, "_")
+      )}`;
+      const sumRes = await fetchFn(summaryUrl, {
+        headers: { Accept: "application/json" },
+      });
+      if (sumRes.ok) {
+        const sumData = await sumRes.json();
+        if (sumData?.thumbnail?.source) {
+          heroImageUrl = sumData.thumbnail.source;
+        }
+        if (sumData?.extract) {
+          summary = sumData.extract;
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  const effectiveTypePath =
+    typePath && typePath !== "/product/generic"
+      ? typePath
+      : winningCandidate?.typePath || "/product/generic";
+  const isWatch = effectiveTypePath === "/product/watch";
+
   return {
-    title: winningCandidate?.title || targetTitle.charAt(0).toUpperCase() + targetTitle.slice(1),
-    summary: winningCandidate?.snippet || `Curated item: ${targetTitle}`,
-    heroImageUrl: winningCandidate?.thumbnailUrl || null,
+    title: finalTitle,
+    summary: summary || `Curated item: ${targetTitle}`,
+    heroImageUrl,
     coreType: winningCandidate?.coreType || "PRODUCT",
-    typePath: winningCandidate?.typePath || "/product/generic",
-    canonicalUrl: winningCandidate?.url || `https://duckduckgo.com/?q=${encodeURIComponent(targetTitle)}`,
-    coreStructuredData: { query: targetTitle, wikidataUri: winningCandidate?.conceptUri },
-    priceCents: 2900,
+    typePath: effectiveTypePath,
+    canonicalExternalId: winningCandidate?.conceptUri || null,
+    canonicalUrl:
+      winningCandidate?.url ||
+      (isWatch
+        ? `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(finalTitle)}`
+        : `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(finalTitle)}`),
+    brandOrCreator: winningCandidate?.creator || finalTitle,
+    coreStructuredData: {
+      query: targetTitle,
+      brand: winningCandidate?.creator || finalTitle,
+      category: isWatch ? "Watch" : "Product",
+      wikidataUri: winningCandidate?.conceptUri,
+    },
+    priceCents: isWatch ? 650000 : 2900,
+    primarySource: isWatch
+      ? {
+          sellerName: "Chrono24",
+          sourceUrl: `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(finalTitle)}`,
+          priceCents: 650000,
+        }
+      : {
+          sellerName: "Google Shopping",
+          sourceUrl: `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(finalTitle)}`,
+          priceCents: 2900,
+        },
     runnerUpCandidates,
   };
 }

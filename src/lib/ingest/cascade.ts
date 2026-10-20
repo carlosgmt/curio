@@ -20,6 +20,7 @@ import { updateSaveDetails } from "../saves/service";
 import { addItemToList } from "../lists/service";
 import type { CandidateFallback } from "./disambiguation";
 import { enrichCaptureInput } from "../enrichment/dispatcher";
+import { detectAndParseCommercialSku } from "../enrichment/providers/commercial";
 import { recordPriceSnapshot } from "../commerce/pricing";
 import {
   lookupLocalEntityCache,
@@ -386,6 +387,28 @@ export async function executeIngestionCascade(params: {
 
   if (localCacheHit.primary) {
     const hitEntity = localCacheHit.primary;
+    const skuCheck = detectAndParseCommercialSku(query);
+    if (
+      skuCheck &&
+      skuCheck.typePath !== "/product" &&
+      (hitEntity.typePath === "/product" || hitEntity.typePath === "/product/generic")
+    ) {
+      await db
+        .update(globalEntities)
+        .set({ typePath: skuCheck.typePath })
+        .where(eq(globalEntities.id, hitEntity.id));
+      hitEntity.typePath = skuCheck.typePath;
+    }
+
+    if (!targetType && hitEntity.typePath) {
+      const [matchedType] = await db
+        .select()
+        .from(curioTypes)
+        .where(eq(curioTypes.typePath, hitEntity.typePath))
+        .limit(1);
+      if (matchedType) targetType = matchedType;
+    }
+
     const hitCoreData = (hitEntity.coreStructuredData as Record<string, any>) || {};
     const extractedCardData = extractStructuredCardData({
       input,
@@ -444,10 +467,16 @@ export async function executeIngestionCascade(params: {
     enrichment = null;
   }
 
-  // Dynamic entity classification via ontology service if not resolved by customSchemaId
+  // Dynamic entity classification via ontology service (with enriched entity context) if not resolved by customSchemaId
   let dynamicClassification = null;
   if (!targetType) {
-    dynamicClassification = await classifyEntityType(query, user.id);
+    dynamicClassification = await classifyEntityType(query, user.id, {
+      typePath: enrichment?.typePath,
+      title: enrichment?.title,
+      summary: enrichment?.summary,
+      brandOrCreator: enrichment?.brandOrCreator,
+      category: enrichment?.coreStructuredData?.category,
+    });
     if (dynamicClassification && dynamicClassification.typePath !== "/product/generic") {
       const [typeMatch] = await db
         .select()
@@ -479,11 +508,50 @@ export async function executeIngestionCascade(params: {
     (fallbackPrimary.coreType !== "PRODUCT" ? fallbackPrimary.coreType : null) ||
     targetType?.rootArchetype ||
     fallbackPrimary.coreType;
-  const finalTypePath =
-    targetType?.typePath ||
-    enrichment?.typePath ||
-    (dynamicClassification?.typePath !== "/product/generic" ? dynamicClassification?.typePath : null) ||
-    (finalCoreType === "BOOK" ? "/product/book" : "/product/generic");
+
+  // Prefer the more specific subtype path when both enrichment and targetType exist
+  const enrichPath =
+    enrichment?.typePath && enrichment.typePath !== "/product/generic"
+      ? enrichment.typePath
+      : null;
+  const targetPath =
+    targetType?.typePath && targetType.typePath !== "/product/generic"
+      ? targetType.typePath
+      : null;
+  const dynPath =
+    dynamicClassification?.typePath && dynamicClassification.typePath !== "/product/generic"
+      ? dynamicClassification.typePath
+      : null;
+
+  let finalTypePath: string;
+  if (params.customSchemaId && targetPath) {
+    finalTypePath = targetPath;
+  } else if (enrichPath && targetPath) {
+    // If one is a more specific child of the other (e.g. /product/watch vs /product), pick the deeper path
+    finalTypePath =
+      enrichPath.startsWith(targetPath + "/") || enrichPath.split("/").length > targetPath.split("/").length
+        ? enrichPath
+        : targetPath;
+  } else {
+    finalTypePath =
+      enrichPath ||
+      targetPath ||
+      dynPath ||
+      (finalCoreType === "BOOK" ? "/product/book" : "/product/generic");
+  }
+
+  // Ensure targetType matches finalTypePath if a curio_types record exists for finalTypePath
+  if (!targetType || targetType.typePath !== finalTypePath) {
+    const [exactType] = await db
+      .select()
+      .from(curioTypes)
+      .where(eq(curioTypes.typePath, finalTypePath))
+      .limit(1);
+    if (exactType) {
+      targetType = exactType;
+    }
+  }
+
   const finalHeroImage = enrichment?.heroImageUrl || null;
   const finalPriceCents = enrichment?.priceCents ?? null;
   const finalExternalId = enrichment?.canonicalExternalId || null;
@@ -547,7 +615,9 @@ export async function executeIngestionCascade(params: {
 
       if (
         (cachedEntity.coreType === "PRODUCT" && finalCoreType !== "PRODUCT") ||
-        (cachedEntity.typePath === "/product/generic" && finalTypePath !== "/product/generic") ||
+        ((cachedEntity.typePath === "/product/generic" || cachedEntity.typePath === "/product") &&
+          finalTypePath !== "/product/generic" &&
+          finalTypePath !== "/product") ||
         Object.keys(extractedCardData.objectiveAttributes).length > 0
       ) {
         tx.update(globalEntities)

@@ -134,12 +134,13 @@ export function PolymorphicCard({
       return <PrivateMemoCard save={save} />;
     }
 
-    // 2. Vinyl Disc Silhouette (/media/music/vinyl)
+    // 2. Music Album / Song / Vinyl Silhouette (/media/music/*)
     if (
       typePath.includes("vinyl") ||
       typePath.includes("music") ||
       tags.includes("vinyl") ||
       tags.includes("album") ||
+      tags.includes("song") ||
       title.includes("vinyl") ||
       title.includes("lp")
     ) {
@@ -295,16 +296,13 @@ export function PolymorphicCard({
       );
     }
 
-    // 9. Physical Product Silhouette (/product, /product/garment, /product/cosmetics, /product/electronics)
+    // 9. Physical Product Silhouette (/product, /product/watch, /product/garment, /product/cosmetics, /product/electronics, custom /product/*)
     if (
       typePath === "/product" ||
-      typePath.startsWith("/product/garment") ||
-      typePath.startsWith("/product/cosmetic") ||
-      typePath.startsWith("/product/electronic") ||
-      typePath.startsWith("/product/gear") ||
-      typePath.startsWith("/product/home") ||
+      (typePath.startsWith("/product/") && !typePath.startsWith("/product/book")) ||
       coreType === "PRODUCT" ||
       tags.includes("product") ||
+      tags.includes("watch") ||
       tags.includes("garment") ||
       tags.includes("apparel") ||
       tags.includes("clothing") ||

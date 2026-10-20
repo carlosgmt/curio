@@ -115,7 +115,26 @@ export async function updateSaveDetails(
   const patch: Record<string, unknown> = {};
   if (updates.privateTitle !== undefined) patch.privateTitle = updates.privateTitle;
   if (updates.personalNotes !== undefined) patch.personalNotes = updates.personalNotes;
-  if (updates.typePath !== undefined) patch.typePath = updates.typePath;
+  if (updates.typePath !== undefined) {
+    patch.typePath = updates.typePath;
+    if (updates.typePath) {
+      const [matchedType] = await db
+        .select()
+        .from(curioTypes)
+        .where(eq(curioTypes.typePath, updates.typePath))
+        .limit(1);
+      if (matchedType) {
+        patch.typeId = matchedType.id;
+        patch.customTypeId = matchedType.userId ? matchedType.id : null;
+      }
+      if (existing.entityId) {
+        await db
+          .update(globalEntities)
+          .set({ typePath: updates.typePath })
+          .where(eq(globalEntities.id, existing.entityId));
+      }
+    }
+  }
   if (updates.userCustomValues !== undefined) patch.userCustomValues = updates.userCustomValues;
   if (updates.isPrivateMemo !== undefined) patch.isPrivateMemo = updates.isPrivateMemo;
 

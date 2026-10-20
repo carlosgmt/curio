@@ -3,8 +3,7 @@
 import React, { useState } from "react";
 import { Disc3, Music2, Volume2, ShoppingBag, ExternalLink, Play, Pause } from "lucide-react";
 import type { CulturalModeProps } from "./CinemaCulturalMode";
-import { buildAffiliateUrl } from "@/components/cards/CardFooterWaterfall";
-import { getDiscogsSearchLink } from "@/lib/commerce/utilityDeepLinks";
+import { CardFooterWaterfall } from "@/components/cards/CardFooterWaterfall";
 
 interface Track {
   number?: string | number;
@@ -34,62 +33,89 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
     ? data.tracklist
     : defaultTracklist;
 
-  const vinylStoreUrl = primarySource?.sourceUrl
-    ? buildAffiliateUrl(primarySource.sourceUrl, primarySource.sellerName, primarySource.affiliateTemplate, creatorAffiliateTags)
-    : getDiscogsSearchLink([artist, entity?.title].filter(Boolean).join(" ").trim() || "Vinyl LP");
-
   return (
     <div className="flex flex-col h-full bg-neutral-950 text-white rounded-3xl overflow-hidden border border-neutral-800 shadow-2xl">
-      {/* Turntable Plinth Stage */}
-      <div className="relative p-8 bg-gradient-to-b from-neutral-900 via-neutral-950 to-neutral-950 flex flex-col items-center justify-center overflow-hidden border-b border-neutral-800/80">
+      {/* Turntable Plinth & Album Cover Jacket Stage */}
+      <div className="relative p-6 sm:p-8 bg-gradient-to-b from-neutral-900 via-neutral-950 to-neutral-950 flex flex-col items-center justify-center overflow-hidden border-b border-neutral-800/80">
         {/* Needle Drop Arm (Visual) */}
         <div
-          className={`absolute top-6 right-8 w-2 h-36 origin-top bg-gradient-to-b from-neutral-400 to-amber-400 rounded-full shadow-2xl transition-transform duration-700 pointer-events-none z-20 ${
+          className={`absolute top-6 right-8 w-2 h-36 origin-top bg-gradient-to-b from-neutral-400 to-amber-400 rounded-full shadow-2xl transition-transform duration-700 pointer-events-none z-30 ${
             isPlaying ? "rotate-20" : "-rotate-12 opacity-70"
           }`}
         >
           <div className="w-4 h-6 -ml-1 mt-32 rounded bg-neutral-900 border border-amber-300 shadow-md" />
         </div>
 
-        {/* 12" Physical Grooved Vinyl Disc */}
+        {/* Album Jacket + Grooved Vinyl Disc */}
         <div
           onClick={() => setIsPlaying(!isPlaying)}
-          className={`relative w-56 h-56 sm:w-64 sm:h-64 rounded-full shadow-2xl transition-transform duration-700 ease-out flex items-center justify-center cursor-pointer border-4 border-neutral-950 ${
-            isPlaying ? "animate-[spin_4s_linear_infinite]" : "hover:rotate-6"
-          }`}
-          style={{
-            background:
-              "repeating-radial-gradient(circle at center, #171717 0, #171717 3px, #262626 4px, #0a0a0a 5px, #1f1f1f 7px)",
-          }}
+          className="relative flex items-center justify-center w-full max-w-[300px] h-52 sm:h-56 cursor-pointer"
           title={isPlaying ? "Stop Turntable" : "Drop Needle"}
         >
-          {/* Subtle light reflection on grooves */}
-          <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/5 to-transparent pointer-events-none" />
-
-          {/* Center Label Plaque */}
-          <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-amber-500 text-neutral-950 p-2 flex flex-col items-center justify-center text-center shadow-inner overflow-hidden border-2 border-amber-300">
+          {/* Square Album Cover Jacket Sleeve */}
+          <div className="relative z-20 w-44 h-44 sm:w-48 sm:h-48 -ml-10 rounded-xl overflow-hidden shadow-2xl border border-white/15 bg-neutral-900 shrink-0">
             {entity?.heroImageUrl ? (
               <img
                 src={entity.heroImageUrl}
                 alt={entity.title}
-                className="absolute inset-0 w-full h-full object-cover opacity-85"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover"
               />
-            ) : null}
-            <div className="relative z-10 bg-amber-500/90 rounded-full p-2 w-full h-full flex flex-col items-center justify-center">
-              <span className="text-[10px] font-bold uppercase tracking-tight line-clamp-1">
-                {artist}
-              </span>
-              <span className="text-[8px] font-mono text-neutral-800">
-                {releaseYear} • {rpm}
-              </span>
-              {/* Spindle hole */}
-              <div className="w-4 h-4 rounded-full bg-neutral-950 border border-neutral-800 shadow-inner mt-1" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-neutral-800 via-neutral-900 to-amber-950/60 p-4 flex flex-col justify-between">
+                <Disc3 className="w-6 h-6 text-amber-400/80" />
+                <div>
+                  <p className="text-[10px] font-mono uppercase tracking-widest text-amber-400/90 truncate">
+                    {artist}
+                  </p>
+                  <p className="text-sm font-serif font-bold text-white line-clamp-2 leading-snug mt-0.5">
+                    {entity?.title}
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-tr from-black/20 via-transparent to-white/10 pointer-events-none" />
+          </div>
+
+          {/* 12" Physical Grooved Vinyl Disc peeking from sleeve */}
+          <div
+            className={`relative z-10 -ml-20 w-44 h-44 sm:w-48 sm:h-48 rounded-full shadow-2xl transition-transform duration-700 ease-out flex items-center justify-center border-4 border-neutral-950 shrink-0 ${
+              isPlaying ? "translate-x-6 animate-[spin_4s_linear_infinite]" : "hover:translate-x-3 hover:rotate-6"
+            }`}
+            style={{
+              background:
+                "repeating-radial-gradient(circle at center, #171717 0, #171717 3px, #262626 4px, #0a0a0a 5px, #1f1f1f 7px)",
+            }}
+          >
+            {/* Subtle light reflection on grooves */}
+            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/10 to-transparent pointer-events-none" />
+
+            {/* Center Label Plaque */}
+            <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-amber-500 text-neutral-950 p-1.5 flex flex-col items-center justify-center text-center shadow-inner overflow-hidden border-2 border-amber-300">
+              {entity?.heroImageUrl ? (
+                <>
+                  <img
+                    src={entity.heroImageUrl}
+                    alt={entity.title}
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div className="relative z-10 w-3.5 h-3.5 rounded-full bg-neutral-950 border border-white/40 shadow-inner" />
+                </>
+              ) : (
+                <div className="relative z-10 rounded-full p-1 w-full h-full flex flex-col items-center justify-center">
+                  <span className="text-[8px] font-bold uppercase tracking-tight line-clamp-1">
+                    {artist}
+                  </span>
+                  <div className="w-3.5 h-3.5 rounded-full bg-neutral-950 border border-neutral-800 shadow-inner mt-0.5" />
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Play / Needle Trigger */}
-        <div className="mt-6 flex items-center gap-3 z-10">
+        <div className="mt-5 flex items-center gap-3 z-10">
           <button
             type="button"
             onClick={() => setIsPlaying(!isPlaying)}
@@ -116,12 +142,12 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
       </div>
 
       {/* Tracklist Inspector & Pressing Specs */}
-      <div className="p-5 space-y-4 flex-1 overflow-y-auto">
+      <div className="p-5 space-y-4 flex-1 overflow-y-auto flex flex-col justify-between">
         <div>
           <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
             Tracklist ({tracks.length} Tracks)
           </span>
-          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+          <div className="space-y-1.5 max-h-40 overflow-y-auto">
             {tracks.map((track, i) => (
               <div
                 key={i}
@@ -143,23 +169,22 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
           </div>
         </div>
 
-        {/* Pressing Specs & Merchant CTAs */}
-        <div className="pt-3 border-t border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="font-mono text-[10px] text-neutral-400 space-y-0.5">
-            <p>LABEL: <strong className="text-neutral-300">{recordLabel}</strong></p>
-            <p>CATALOG: <strong className="text-neutral-300">{catalogNumber}</strong></p>
+        {/* Pressing Specs & 3-Action Providers */}
+        <div className="pt-3 border-t border-neutral-800 space-y-2">
+          <div className="flex items-center justify-between font-mono text-[10px] text-neutral-400">
+            <span>LABEL: <strong className="text-neutral-300">{recordLabel}</strong></span>
+            <span>CATALOG: <strong className="text-neutral-300">{catalogNumber}</strong></span>
           </div>
 
-          <a
-            href={vinylStoreUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-neutral-950 transition cursor-pointer shadow-md"
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span>Find Vinyl LP Pressing</span>
-            <ExternalLink className="w-3 h-3 ml-0.5 opacity-60" />
-          </a>
+          {entity && (
+            <div className="bg-white/95 dark:bg-neutral-900 rounded-xl px-3 py-1 text-neutral-900 dark:text-neutral-100">
+              <CardFooterWaterfall
+                entity={entity}
+                primarySource={primarySource}
+                creatorAffiliateTags={creatorAffiliateTags}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

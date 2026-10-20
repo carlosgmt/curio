@@ -149,12 +149,22 @@ async function getCachedTypes(userId?: string): Promise<CachedTypeEntry[]> {
   return entries;
 }
 
+export interface ClassificationEnrichmentContext {
+  typePath?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  brandOrCreator?: string | null;
+  category?: string | null;
+}
+
 /**
- * Classifies input text into a Curio Type using vector similarity, synonym convergence, and subtype inheritance.
+ * Classifies input text into a Curio Type using vector similarity, synonym convergence,
+ * subtype inheritance, and enriched entity context matching for custom types.
  */
 export async function classifyEntityType(
   queryOrText: string,
-  userId?: string
+  userId?: string,
+  enrichmentContext?: ClassificationEnrichmentContext
 ): Promise<EntityTypeClassification> {
   const trimmed = queryOrText.trim();
   if (!trimmed) {
@@ -172,8 +182,49 @@ export async function classifyEntityType(
   }
 
   const types = await getCachedTypes(userId);
-  const queryEmbedding = await generateEmbedding(trimmed);
   const normalizedQuery = trimmed.toLowerCase();
+
+  // 0. If enrichment already resolved a specific subtype path (e.g. /product/watch or /media/music/album)
+  // and a custom or canonical type exists at that exact typePath, bind directly to it!
+  if (
+    enrichmentContext?.typePath &&
+    enrichmentContext.typePath !== "/product/generic" &&
+    enrichmentContext.typePath !== "/product"
+  ) {
+    const exactPathMatch = types.find(
+      (t) => t.typePath.toLowerCase() === enrichmentContext.typePath!.toLowerCase()
+    );
+    if (exactPathMatch) {
+      return {
+        typeId: exactPathMatch.id,
+        typePath: exactPathMatch.typePath,
+        name: exactPathMatch.name,
+        rootArchetype: exactPathMatch.rootArchetype,
+        defaultSilhouette: exactPathMatch.defaultSilhouette,
+        similarity: 0.96,
+        isSynonymConvergence: false,
+        isSubtypeInherited: true,
+        effectiveJsonSchema: exactPathMatch.effectiveJsonSchema,
+        uiFieldConfig: exactPathMatch.uiFieldConfig,
+      };
+    }
+  }
+
+  const queryEmbedding = await generateEmbedding(trimmed);
+  const contextString = [
+    trimmed,
+    enrichmentContext?.title,
+    enrichmentContext?.summary,
+    enrichmentContext?.brandOrCreator,
+    enrichmentContext?.category,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const contextTokens = contextString
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 3);
 
   let bestEntry: CachedTypeEntry | null = null;
   let bestSimilarity = -1;
@@ -213,21 +264,42 @@ export async function classifyEntityType(
       }
     }
 
-    // 5. Lexical / Subtype boost for partial / word overlaps
-    // E.g., "orange wine" matches "wine" in entry.typePath or entry.name
+    // 5. Lexical / Subtype boost for partial / word overlaps in query or enriched context
     const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
     const nameTokens = entry.name.toLowerCase().split(/\s+/).filter(Boolean);
-    const pathTokens = entry.typePath.toLowerCase().split(/[\/_]+/).filter(Boolean);
+    const pathTokens = entry.typePath.toLowerCase().split(/[\/_-]+/).filter(Boolean);
 
-    const hasCommonToken = queryTokens.some(
+    const hasQueryCommonToken = queryTokens.some(
       (qt) => nameTokens.includes(qt) || pathTokens.includes(qt)
     );
 
-    if (hasCommonToken && maxSim < 0.85) {
+    if (hasQueryCommonToken && maxSim < 0.85) {
       maxSim = Math.max(maxSim, 0.85);
+    } else if (enrichmentContext && pathTokens.length >= 2) {
+      // Check if specific subtype leaf token (e.g. "watch" in "/product/watch") appears in enriched summary/category
+      const leafToken = pathTokens[pathTokens.length - 1];
+      const matchesLeaf =
+        leafToken &&
+        leafToken !== "product" &&
+        leafToken !== "media" &&
+        (contextTokens.includes(leafToken) ||
+          contextTokens.includes(`${leafToken}es`) ||
+          contextTokens.includes(`${leafToken}s`) ||
+          (leafToken === "watch" &&
+            contextTokens.some((ct) =>
+              ["watch", "watches", "wristwatch", "timepiece", "horological", "watchmaker", "chronograph"].includes(ct)
+            )));
+      if (matchesLeaf && maxSim < 0.89) {
+        maxSim = Math.max(maxSim, 0.89);
+      }
     }
 
-    if (maxSim > bestSimilarity) {
+    if (
+      maxSim > bestSimilarity ||
+      (Math.abs(maxSim - bestSimilarity) < 0.02 &&
+        bestEntry &&
+        entry.typePath.split("/").length > bestEntry.typePath.split("/").length)
+    ) {
       bestSimilarity = maxSim;
       bestEntry = entry;
     }

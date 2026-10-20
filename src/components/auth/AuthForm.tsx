@@ -278,11 +278,13 @@ export function AuthForm({
                 <input
                   type="text"
                   required
+                  minLength={4}
+                  maxLength={30}
                   value={registerUsername}
                   onChange={(e) =>
                     setRegisterUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))
                   }
-                  placeholder="handle"
+                  placeholder="handle (min 4 chars)"
                   className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-sm font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-400 dark:focus:ring-neutral-600 transition"
                 />
               </div>

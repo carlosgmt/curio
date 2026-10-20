@@ -66,6 +66,15 @@ describe("Authentication & Session Service", () => {
         password: "password123",
       })
     ).rejects.toThrow("already taken");
+
+    // Rejects handle shorter than 4 characters
+    expect(
+      registerUser({
+        email: `short-${timestamp}@curio.local`,
+        username: "cat",
+        password: "password123",
+      })
+    ).rejects.toThrow("Username must be 4-30 characters");
   });
 
   it("authenticates via login with username or email and validates session", async () => {

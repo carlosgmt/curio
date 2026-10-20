@@ -99,9 +99,9 @@ export async function registerUser(input: RegisterInput): Promise<AuthResult> {
     username = username.replace(/^@+/, "");
   }
 
-  if (!username || username.length < 3 || username.length > 30 || !/^[a-z0-9_-]+$/.test(username)) {
+  if (!username || username.length < 4 || username.length > 30 || !/^[a-z0-9_-]+$/.test(username)) {
     throw new AuthError(
-      "Username must be 3-30 characters and contain only letters, numbers, underscores, and hyphens",
+      "Username must be 4-30 characters and contain only letters, numbers, underscores, and hyphens",
       400
     );
   }

@@ -5,6 +5,7 @@ import { resolveFilm } from "../lib/enrichment/providers/cinema";
 import { resolveBook } from "../lib/enrichment/providers/books";
 import { extractOpenGraph } from "../lib/enrichment/opengraph";
 import { generateEmbedding } from "../lib/search/vector";
+import { hashPassword } from "../lib/auth/service";
 
 function printBox(title: string, rows: Array<[string, string | number]>) {
   const col1Width = 32;
@@ -254,6 +255,55 @@ async function runReindex() {
   console.log(`\n\x1b[32m✓ Reindexed ${count} saves in ${durationSec}s\x1b[0m\n`);
 }
 
+async function runSetPassword(args: string[]) {
+  const username = args[1]?.toLowerCase().replace(/^@/, "");
+  const newPassword = args[2];
+  const newEmail = args[3]?.toLowerCase();
+
+  if (!username || !newPassword) {
+    console.log("Usage: bun run src/cli/admin.ts set-password <username> <new-password> [new-email]");
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    console.log("\x1b[31mError: Password must be at least 6 characters long.\x1b[0m");
+    return;
+  }
+
+  const hash = hashPassword(newPassword);
+  let result;
+  if (newEmail) {
+    result = sqlite
+      .prepare("UPDATE users SET password_hash = ?, is_admin = 1, email = ? WHERE lower(username) = ?")
+      .run(hash, newEmail, username);
+  } else {
+    result = sqlite
+      .prepare("UPDATE users SET password_hash = ?, is_admin = 1 WHERE lower(username) = ?")
+      .run(hash, username);
+  }
+
+  if (result.changes > 0) {
+    console.log(`\n\x1b[32m✓ Successfully set password and granted admin role for user @${username}${newEmail ? ` (email: ${newEmail})` : ""}\x1b[0m\n`);
+  } else {
+    console.log(`\n\x1b[31mError: User @${username} not found in database.\x1b[0m\n`);
+  }
+}
+
+async function runListUsers() {
+  console.log("\n\x1b[1m\x1b[36m=== Curio Registered Users ===\x1b[0m\n");
+  const users = sqlite
+    .prepare("SELECT id, email, username, display_name, password_hash, is_admin, created_at FROM users ORDER BY created_at ASC")
+    .all() as Array<any>;
+
+  for (const u of users) {
+    const hasPassword = Boolean(u.password_hash);
+    const adminTag = u.is_admin ? " [ADMIN]" : "";
+    const passTag = hasPassword ? "\x1b[32m[Password Set]\x1b[0m" : "\x1b[33m[No Password / Legacy Seed]\x1b[0m";
+    console.log(`• @${u.username}${adminTag} (${u.display_name || "No Name"}) - ${u.email} ${passTag}`);
+  }
+  console.log("");
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || "stats";
@@ -271,13 +321,21 @@ async function main() {
     case "reindex":
       await runReindex();
       break;
+    case "set-password":
+      await runSetPassword(args);
+      break;
+    case "users":
+      await runListUsers();
+      break;
     default:
       console.log(`
 Curio Admin CLI:
-  bun run src/cli/admin.ts stats                 Show system telemetry and WAL metrics
-  bun run src/cli/admin.ts triage                Inspect incomplete/failed saves
-  bun run src/cli/admin.ts re-enrich [--all]     Batch re-enrich metadata & hero art
-  bun run src/cli/admin.ts reindex               Rebuild vector embeddings in SQLite
+  bun run src/cli/admin.ts stats                           Show system telemetry and WAL metrics
+  bun run src/cli/admin.ts users                           List registered users and password state
+  bun run src/cli/admin.ts set-password <user> <pass>      Set password & grant admin role
+  bun run src/cli/admin.ts triage                          Inspect incomplete/failed saves
+  bun run src/cli/admin.ts re-enrich [--all]               Batch re-enrich metadata & hero art
+  bun run src/cli/admin.ts reindex                         Rebuild vector embeddings in SQLite
 `);
       break;
   }

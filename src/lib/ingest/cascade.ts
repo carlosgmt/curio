@@ -21,6 +21,12 @@ import { addItemToList } from "../lists/service";
 import type { CandidateFallback } from "./disambiguation";
 import { enrichCaptureInput } from "../enrichment/dispatcher";
 import { recordPriceSnapshot } from "../commerce/pricing";
+import {
+  lookupLocalEntityCache,
+  lookupByCanonicalIdentity,
+  recordAliasOnEntity,
+} from "./cacheLookup";
+import { computeIdentityFingerprint } from "./resolution";
 
 export interface IngestionResult {
   status: "created" | "existing" | "edited";
@@ -67,12 +73,13 @@ export async function getOrCreateDefaultUser(): Promise<User> {
  */
 async function discoverCandidates(
   query: string,
-  detectedType?: string
+  detectedType?: string,
+  options?: { skipNetwork?: boolean }
 ): Promise<{ primary: CandidateFallback; runnerUps: CandidateFallback[] }> {
   const trimmed = query.trim();
 
-  // If Tavily API Key is available, use live search
-  if (process.env.TAVILY_API_KEY) {
+  // If Tavily API Key is available and network is allowed, use live search
+  if (process.env.TAVILY_API_KEY && !options?.skipNetwork) {
     try {
       const res = await fetch("https://api.tavily.com/search", {
         method: "POST",
@@ -223,6 +230,7 @@ export async function executeIngestionCascade(params: {
   customSchemaId?: string;
   skipLocalLlm?: boolean;
   forceNew?: boolean;
+  fetchFn?: typeof fetch;
 }): Promise<IngestionResult> {
   const { input } = params;
   const user = params.userId
@@ -355,18 +363,9 @@ export async function executeIngestionCascade(params: {
     };
   }
 
-  // INVERTED CASCADE: Run live external metadata enrichment first
   const query = privacy.extractedQuery || input;
-  let enrichment;
-  try {
-    enrichment = await enrichCaptureInput(query, {
-      detectedType: privacy.detectedType,
-    });
-  } catch {
-    enrichment = null;
-  }
 
-  // Resolve custom schema or dynamic archetype classification
+  // Resolve custom schema if provided
   let targetType: typeof curioTypes.$inferSelect | null = null;
   if (params.customSchemaId) {
     const [customType] = await db
@@ -375,6 +374,74 @@ export async function executeIngestionCascade(params: {
       .where(or(eq(curioTypes.id, params.customSchemaId), eq(curioTypes.typePath, params.customSchemaId)))
       .limit(1);
     targetType = customType || null;
+  }
+
+  // =========================================================================
+  // LAYER 0: Pre-Network Local Global Cache Lookup (<2ms, $0.00, 0 network calls)
+  // =========================================================================
+  const localCacheHit = await lookupLocalEntityCache(query, {
+    forcedTypePath: targetType?.typePath,
+    detectedType: privacy.detectedType,
+  });
+
+  if (localCacheHit.primary) {
+    const hitEntity = localCacheHit.primary;
+    const hitCoreData = (hitEntity.coreStructuredData as Record<string, any>) || {};
+    const extractedCardData = extractStructuredCardData({
+      input,
+      rawMetadata: hitCoreData,
+      typePath: hitEntity.typePath || "/product/generic",
+      effectiveSchema: (targetType?.effectiveJsonSchema as any) || (targetType?.jsonSchema as any),
+      uiFieldConfig: (targetType?.uiFieldConfig as any) || [],
+    });
+
+    let hitFallbacks = localCacheHit.siblings;
+    if (!hitFallbacks || hitFallbacks.length === 0) {
+      const { runnerUps: localRunnerUps } = await discoverCandidates(query, hitEntity.coreType, {
+        skipNetwork: true,
+      });
+      hitFallbacks = localRunnerUps;
+    }
+
+    const [insertedSave] = await db
+      .insert(userSaves)
+      .values({
+        userId: user.id,
+        entityId: hitEntity.id,
+        customTypeId: targetType?.id || null,
+        typeId: targetType?.id || null,
+        typePath: targetType?.typePath || hitEntity.typePath,
+        isPrivateMemo: false,
+        candidateFallbacks: hitFallbacks,
+        autoTags: [...new Set([hitEntity.coreType.toLowerCase(), ...extractedCardData.tags])],
+        userCustomValues: extractedCardData.subjectiveValues || {},
+        personalNotes: extractedCardData.personalNotes || null,
+        enrichmentStatus: "ENRICHED",
+        visibility: "PRIVATE",
+      })
+      .returning();
+
+    return {
+      status: "created",
+      is_private_memo: false,
+      entity_id: hitEntity.id,
+      save: insertedSave,
+      entity: hitEntity,
+      candidate_fallbacks: hitFallbacks,
+    };
+  }
+
+  // =========================================================================
+  // LAYER 1 & LAYER 2: Commercial SKU Router / Universal Graph + Specialist
+  // =========================================================================
+  let enrichment;
+  try {
+    enrichment = await enrichCaptureInput(query, {
+      detectedType: privacy.detectedType,
+      fetchFn: params.fetchFn,
+    });
+  } catch {
+    enrichment = null;
   }
 
   // Dynamic entity classification via ontology service if not resolved by customSchemaId
@@ -392,7 +459,11 @@ export async function executeIngestionCascade(params: {
   }
 
   // Discover candidate fallbacks for disambiguation bar (FR-2.3)
-  const { primary: fallbackPrimary, runnerUps: defaultRunnerUps } = await discoverCandidates(query, privacy.detectedType);
+  const { primary: fallbackPrimary, runnerUps: defaultRunnerUps } = await discoverCandidates(
+    query,
+    privacy.detectedType,
+    { skipNetwork: Boolean(params.fetchFn) }
+  );
   const runnerUps: CandidateFallback[] =
     enrichment?.runnerUpCandidates && enrichment.runnerUpCandidates.length > 0
       ? enrichment.runnerUpCandidates
@@ -427,23 +498,43 @@ export async function executeIngestionCascade(params: {
     uiFieldConfig: (targetType?.uiFieldConfig as any) || [],
   });
 
-  // Compute canonical identity keys from the real canonical URL and real title
+  // Compute canonical identity keys and deterministic identityFingerprint
   const { urlHash, entityKey } = generateEntityKey(finalCanonicalUrl, finalTitle);
+  const identityFingerprint = computeIdentityFingerprint(
+    finalTypePath,
+    finalTitle,
+    finalCreator || undefined,
+    {
+      ...(enrichment?.coreStructuredData || {}),
+      ...(extractedCardData.objectiveAttributes || {}),
+    }
+  );
 
-  // STEP 1: Global Entity Cache Check
-  const [cachedEntity] = await db
-    .select()
-    .from(globalEntities)
-    .where(
-      or(
-        eq(globalEntities.canonicalUrl, finalCanonicalUrl),
-        eq(globalEntities.urlHash, urlHash),
-        finalExternalId
-          ? eq(globalEntities.canonicalExternalId, finalExternalId)
-          : eq(globalEntities.entityKey, entityKey)
-      )
-    )
-    .limit(1);
+  // =========================================================================
+  // LAYER 1.5: Canonical Identity Cache Check (with Distinguisher Guard)
+  // =========================================================================
+  let cachedEntity: GlobalEntity | null = null;
+  if (enrichment?.cachedEntityId) {
+    const [found] = await db
+      .select()
+      .from(globalEntities)
+      .where(eq(globalEntities.id, enrichment.cachedEntityId))
+      .limit(1);
+    cachedEntity = found || null;
+  }
+
+  if (!cachedEntity) {
+    cachedEntity = await lookupByCanonicalIdentity({
+      canonicalExternalId: finalExternalId,
+      wikidataUri: enrichment?.coreStructuredData?.wikidataUri || null,
+      identityFingerprint,
+      canonicalUrl: finalCanonicalUrl,
+      queryToRegisterAsAlias: query,
+      distinguisherQuery: query,
+    });
+  } else {
+    await recordAliasOnEntity(cachedEntity, query);
+  }
 
   if (cachedEntity) {
     const save = db.transaction((tx) => {
@@ -465,6 +556,7 @@ export async function executeIngestionCascade(params: {
             typePath: finalTypePath,
             brandOrCreator: finalCreator || cachedEntity.brandOrCreator,
             canonicalExternalId: finalExternalId || cachedEntity.canonicalExternalId,
+            identityFingerprint: cachedEntity.identityFingerprint || identityFingerprint,
             heroImageUrl: finalHeroImage || cachedEntity.heroImageUrl,
             summary: finalSummary || cachedEntity.summary,
             extendedAttributes: mergedExtended,
@@ -511,7 +603,9 @@ export async function executeIngestionCascade(params: {
     };
   }
 
-  // STEP 2: CACHE MISS — Insert new global entity, source, and save atomically
+  // =========================================================================
+  // LAYER 3: CACHE MISS — Insert new global entity with fingerprint & aliases
+  // =========================================================================
   const effectivePriceCents = extractedCardData.price?.cents ?? finalPriceCents;
   const effectiveCurrency = extractedCardData.price?.currency ?? (enrichment?.currency || "USD");
 
@@ -525,12 +619,15 @@ export async function executeIngestionCascade(params: {
         coreType: finalCoreType,
         typePath: finalTypePath,
         canonicalExternalId: finalExternalId,
+        identityFingerprint,
         brandOrCreator: finalCreator,
         title: finalTitle,
         summary: finalSummary,
         heroImageUrl: finalHeroImage,
         coreStructuredData: {
           rawQuery: input,
+          aliases: [query],
+          runnerUpCandidates: runnerUps,
           extractedAt: new Date().toISOString(),
           provenance: finalCanonicalUrl,
           ...(enrichment?.coreStructuredData || {}),

@@ -8,6 +8,11 @@ import {
   type DiscoveredCandidate,
   type CandidateFallback,
 } from "./universalDiscovery";
+import {
+  detectAndParseCommercialSku,
+  resolveCommercialProduct,
+} from "./providers/commercial";
+import { lookupByCanonicalIdentity } from "../ingest/cacheLookup";
 
 export interface EnrichmentPayload {
   title: string;
@@ -28,6 +33,7 @@ export interface EnrichmentPayload {
     currency?: string | null;
   };
   runnerUpCandidates?: CandidateFallback[];
+  cachedEntityId?: string | null;
 }
 
 export interface EnrichCaptureOptions {
@@ -35,6 +41,7 @@ export interface EnrichCaptureOptions {
   forcedTypePath?: string;
   universalCandidates?: DiscoveredCandidate[];
   fetchFn?: typeof fetch;
+  skipCache?: boolean;
 }
 
 /**
@@ -453,7 +460,36 @@ export async function enrichCaptureInput(
     return hydrateSpecialist(trimmed, options.forcedTypePath, null, fetchFn, []);
   }
 
-  // 4. Universal Knowledge Graph Discovery (Single-call Wikidata + Wikipedia)
+  // 4. LAYER 1A: Commercial SKU Detector (Garments, Watches/Luxury, Electronics, Cosmetics)
+  const skuAnalysis = detectAndParseCommercialSku(trimmed);
+  if (skuAnalysis) {
+    // For garments and cosmetics, resolve deterministically without encyclopedic Wikipedia noise
+    if (skuAnalysis.category === "garment" || skuAnalysis.category === "cosmetics") {
+      return resolveCommercialProduct(trimmed, skuAnalysis, { fetchFn });
+    }
+
+    // For watches, luxury & electronics, optionally pull product-line imagery & history from Universal Graph
+    const lineCandidates =
+      options?.universalCandidates ??
+      (await discoverUniversalEntities(skuAnalysis.productLineQuery, { fetchFn, limit: 3 }).catch(() => []));
+    const wikiCandidate = lineCandidates[0] || null;
+    const lineRunnerUps: CandidateFallback[] = lineCandidates.slice(1).map((c) => ({
+      title: c.year ? `${c.title} (${c.year})` : c.title,
+      url: c.url,
+      snippet: c.snippet,
+      coreType: c.coreType,
+      typePath: c.typePath,
+      badgeLabel: c.badgeLabel,
+    }));
+
+    return resolveCommercialProduct(trimmed, skuAnalysis, {
+      fetchFn,
+      wikiCandidate,
+      runnerUpCandidates: lineRunnerUps,
+    });
+  }
+
+  // 5. LAYER 1B: Universal Knowledge Graph Discovery (Single-call Wikidata + Wikipedia)
   const candidates =
     options?.universalCandidates ??
     (await discoverUniversalEntities(trimmed, { fetchFn }).catch(() => []));
@@ -469,6 +505,39 @@ export async function enrichCaptureInput(
       badgeLabel: c.badgeLabel,
     }));
 
+    // LAYER 1.5: Second Local Cache Gate (Canonical ID / Wikidata Q-ID Deduplication)
+    // E.g. "Mi vida sin mi" -> Wikidata Q83630 -> hits existing "My Life Without Me" entity,
+    // registers "Mi vida sin mi" as an alias, and skips deep specialist hydration (TMDB/OpenLibrary)!
+    if (!options?.skipCache) {
+      const cachedByCanonical = await lookupByCanonicalIdentity({
+        canonicalExternalId: winning.conceptUri,
+        wikidataUri: winning.conceptUri,
+        canonicalUrl: winning.url,
+        queryToRegisterAsAlias: trimmed,
+        distinguisherQuery: trimmed,
+      }).catch(() => null);
+
+      if (cachedByCanonical) {
+        const coreData = (cachedByCanonical.coreStructuredData as Record<string, any>) || {};
+        return {
+          title: cachedByCanonical.title,
+          summary: cachedByCanonical.summary,
+          heroImageUrl: cachedByCanonical.heroImageUrl,
+          coreType: cachedByCanonical.coreType,
+          typePath: cachedByCanonical.typePath || winning.typePath,
+          canonicalExternalId: cachedByCanonical.canonicalExternalId || winning.conceptUri,
+          canonicalUrl: cachedByCanonical.canonicalUrl,
+          brandOrCreator: cachedByCanonical.brandOrCreator,
+          priceCents: cachedByCanonical.priceCents,
+          currency: cachedByCanonical.currency || "USD",
+          coreStructuredData: coreData,
+          runnerUpCandidates,
+          cachedEntityId: cachedByCanonical.id,
+        };
+      }
+    }
+
+    // LAYER 2: Deep Specialist Hydration (Only on True Cache Miss)
     return hydrateSpecialist(winning.title, winning.typePath, winning, fetchFn, runnerUpCandidates);
   }
 

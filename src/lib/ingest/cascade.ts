@@ -52,10 +52,10 @@ export async function getOrCreateDefaultUser(): Promise<User> {
   const [created] = await db
     .insert(users)
     .values({
-      email: "carlos@curio.local",
-      username: "carlosgmt",
-      displayName: "Carlos",
-      isPro: true,
+      email: "guest@curio.local",
+      username: "guest",
+      displayName: "Guest",
+      isPro: false,
       aiCreditsRemaining: 25,
     })
     .returning();

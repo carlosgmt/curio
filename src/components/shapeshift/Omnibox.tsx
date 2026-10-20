@@ -100,6 +100,7 @@ export interface OmniboxSuggestion {
   canonicalUrl: string;
   isExistingSave: boolean;
   saveId: string | null;
+  curioTypeId?: string | null;
 }
 
 export function Omnibox({
@@ -258,7 +259,7 @@ export function Omnibox({
           const items: OmniboxSuggestion[] = data.suggestions || [];
           setSuggestions(items);
           setShowSuggestions(items.length > 0);
-          setSelectedSuggestionIndex(-1);
+          setSelectedSuggestionIndex(items.length > 0 ? 0 : -1);
         }
       } catch (err) {
         console.error("Suggestion fetch error:", err);
@@ -267,6 +268,44 @@ export function Omnibox({
 
     return () => clearTimeout(timer);
   }, [input, inSearch]);
+
+  const executeCaptureAsTextNote = async () => {
+    const trimmed = input.trim();
+    if (!trimmed || isSubmitting) return;
+
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setIsSubmitting(true);
+    try {
+      const res = await apiFetch("/api/v1/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: trimmed,
+          isPrivateMemo: true,
+          forcedTypePath: "/memo/personal",
+          forceNew: true,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to capture text note");
+      }
+
+      const data = await res.json();
+      setInput("");
+      setIntentPreview(null);
+      setShowDisambiguation(false);
+
+      if (onCaptured) {
+        onCaptured(data);
+      }
+    } catch (err) {
+      console.error("Text note capture error:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSelectSuggestion = async (sug: OmniboxSuggestion) => {
     setShowSuggestions(false);
@@ -283,7 +322,10 @@ export function Omnibox({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input: sug.canonicalUrl || sug.title,
+          input: sug.title,
+          forcedTypePath: sug.typePath,
+          curioTypeId: sug.curioTypeId,
+          targetCandidate: sug,
           forceNew: true,
         }),
       });
@@ -438,6 +480,17 @@ export function Omnibox({
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (showSuggestions && suggestions.length > 0) {
+      if (selectedSuggestionIndex === suggestions.length) {
+        executeCaptureAsTextNote();
+        return;
+      }
+      const targetIndex = selectedSuggestionIndex >= 0 ? selectedSuggestionIndex : 0;
+      if (suggestions[targetIndex]) {
+        handleSelectSuggestion(suggestions[targetIndex]);
+        return;
+      }
+    }
     executeCapture(false);
   };
 
@@ -453,30 +506,38 @@ export function Omnibox({
       return;
     }
 
-    // Navigate live typeahead suggestions
+    // Shift + Enter immediately captures as a Text Note
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault();
+      executeCaptureAsTextNote();
+      return;
+    }
+
+    // Navigate live typeahead suggestions & bottom text note row
     if (showSuggestions && suggestions.length > 0) {
+      const totalItems = suggestions.length + 1; // includes dedicated text note row
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+        setSelectedSuggestionIndex((prev) => (prev + 1) % totalItems);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedSuggestionIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
+        setSelectedSuggestionIndex((prev) => (prev <= 0 ? totalItems - 1 : prev - 1));
         return;
       }
-      if (e.key === "Enter" && !e.shiftKey && selectedSuggestionIndex >= 0 && suggestions[selectedSuggestionIndex]) {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        handleSelectSuggestion(suggestions[selectedSuggestionIndex]);
+        if (selectedSuggestionIndex === suggestions.length) {
+          executeCaptureAsTextNote();
+        } else {
+          const targetIndex = selectedSuggestionIndex >= 0 ? selectedSuggestionIndex : 0;
+          if (suggestions[targetIndex]) {
+            handleSelectSuggestion(suggestions[targetIndex]);
+          }
+        }
         return;
       }
-    }
-
-    // Shift + Enter forces "Add as New Card"
-    if (e.key === "Enter" && e.shiftKey) {
-      e.preventDefault();
-      executeCapture(true);
-      return;
     }
   };
 
@@ -715,10 +776,10 @@ export function Omnibox({
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <span>Entity Suggestions</span>
             </span>
-            <span className="text-[10px]">↑↓ to navigate • ↵ to select</span>
+            <span className="text-[10px]">Top result selected by default</span>
           </div>
 
-          <div className="max-h-72 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/60">
+          <div className="max-h-80 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/60">
             {suggestions.map((sug, idx) => {
               const isSelected = selectedSuggestionIndex === idx;
               return (
@@ -729,7 +790,7 @@ export function Omnibox({
                   onMouseEnter={() => setSelectedSuggestionIndex(idx)}
                   className={`w-full text-left p-3 transition flex items-center justify-between gap-3 cursor-pointer ${
                     isSelected
-                      ? "bg-neutral-100 dark:bg-neutral-800/90 text-neutral-900 dark:text-white"
+                      ? "bg-neutral-100 dark:bg-neutral-800/90 text-neutral-900 dark:text-white ring-1 ring-inset ring-neutral-300 dark:ring-neutral-700"
                       : "hover:bg-neutral-50 dark:hover:bg-neutral-800/50 text-neutral-800 dark:text-neutral-200"
                   }`}
                 >
@@ -762,10 +823,14 @@ export function Omnibox({
                     </div>
                   </div>
 
-                  <div className="shrink-0">
+                  <div className="shrink-0 flex items-center gap-2">
                     {sug.isExistingSave ? (
                       <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/60">
                         In saves
+                      </span>
+                    ) : idx === 0 && isSelected ? (
+                      <span className="text-[10px] font-mono font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-300/60 dark:border-amber-700/60">
+                        ↵ Top Result
                       </span>
                     ) : (
                       <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 hidden sm:inline">
@@ -776,6 +841,50 @@ export function Omnibox({
                 </button>
               );
             })}
+
+            {/* Dedicated bottom row: Save as text note */}
+            <button
+              type="button"
+              onClick={executeCaptureAsTextNote}
+              onMouseEnter={() => setSelectedSuggestionIndex(suggestions.length)}
+              className={`w-full text-left p-3 transition flex items-center justify-between gap-3 cursor-pointer ${
+                selectedSuggestionIndex === suggestions.length
+                  ? "bg-neutral-100 dark:bg-neutral-800/90 text-neutral-900 dark:text-white ring-1 ring-inset ring-neutral-300 dark:ring-neutral-700"
+                  : "hover:bg-neutral-50 dark:hover:bg-neutral-800/50 text-neutral-700 dark:text-neutral-300"
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shrink-0 flex items-center justify-center text-neutral-500 dark:text-neutral-400">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-sm font-medium truncate block">
+                    Save as text note: &ldquo;{input}&rdquo;
+                  </span>
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Bypasses catalog lookup • Saved as personal memo
+                  </span>
+                </div>
+              </div>
+              <div className="shrink-0 flex items-center gap-1.5">
+                <kbd className="px-2 py-0.5 text-[10px] font-mono font-medium rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700 shadow-2xs">
+                  Shift+Enter
+                </kbd>
+              </div>
+            </button>
+          </div>
+
+          {/* Dropdown footer bar */}
+          <div className="px-4 py-2 border-t border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-950/60 flex items-center justify-between text-[11px] font-mono text-neutral-500 dark:text-neutral-400">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">↵</kbd> Add top result</span>
+              <span>•</span>
+              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">⇧↵</kbd> Save as text note</span>
+              <span>•</span>
+              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">↑↓</kbd> Navigate</span>
+              <span>•</span>
+              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">Esc</kbd> Dismiss</span>
+            </div>
           </div>
         </div>
       )}

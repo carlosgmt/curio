@@ -100,4 +100,93 @@ describe("Capture API & Intent Execution (/api/v1/capture)", () => {
       .where(eq(userSaves.userId, user.id));
     expect(userSaveCount.length).toBe(1);
   });
+
+  it("captures structured suggestion with targetCandidate and forcedTypePath cleanly", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `capture-sug-${timestamp}@curio.local`,
+        username: `sug_cap_${timestamp}`,
+        displayName: "Suggestion Capture Tester",
+      })
+      .returning();
+
+    const { token } = await createSession(user.id);
+    const authHeaders = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    const sugPayload = {
+      input: "Omega",
+      forcedTypePath: "/media/music/album",
+      targetCandidate: {
+        title: "Omega",
+        subtitle: "Enrique Morente • 1996",
+        typePath: "/media/music/album",
+        badgeLabel: "ALBUM",
+        heroImageUrl: "https://example.com/omega.jpg",
+        canonicalUrl: "https://open.spotify.com/search/Enrique%20Morente%20Omega",
+      },
+      forceNew: true,
+    };
+
+    const req = new NextRequest("http://localhost:3000/api/v1/capture", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify(sugPayload),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.status).toBe("created");
+    expect(data.entity).toBeDefined();
+    expect(data.entity.title).toBe("Omega");
+    expect(data.entity.title).not.toBe("Spotify – Web Player");
+    expect(data.save.typePath).toBe("/media/music/album");
+    expect(data.save.isPrivateMemo).toBe(false);
+  });
+
+  it("captures text note with isPrivateMemo=true and /memo/personal typePath", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `capture-note-${timestamp}@curio.local`,
+        username: `note_cap_${timestamp}`,
+        displayName: "Note Capture Tester",
+      })
+      .returning();
+
+    const { token } = await createSession(user.id);
+    const authHeaders = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    const notePayload = {
+      input: "Private thought about upcoming architecture review",
+      isPrivateMemo: true,
+      forcedTypePath: "/memo/personal",
+      forceNew: true,
+    };
+
+    const req = new NextRequest("http://localhost:3000/api/v1/capture", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify(notePayload),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.status).toBe("created");
+    expect(data.is_private_memo).toBe(true);
+    expect(data.save.isPrivateMemo).toBe(true);
+    expect(data.save.typePath).toBe("/memo/personal");
+    expect(data.save.personalNotes).toBe("Private thought about upcoming architecture review");
+    expect(data.entity_id).toBeNull();
+  });
 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, userSaves, globalEntities } from "@/db";
-import { eq, and, or, like, desc } from "drizzle-orm";
+import { db, userSaves, globalEntities, curioTypes } from "@/db";
+import { eq, and, or, like, desc, isNull } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/service";
 import { discoverUniversalEntities } from "@/lib/enrichment/universalDiscovery";
 import { fetchItunesMusicMetadata } from "@/lib/enrichment/providers/music";
@@ -14,6 +14,54 @@ export interface OmniboxSuggestion {
   canonicalUrl: string;
   isExistingSave: boolean;
   saveId: string | null;
+  curioTypeId?: string | null;
+}
+
+function findMatchingCurioType(
+  typePath: string,
+  title: string,
+  types: Array<{ id: string; name: string; typePath: string; userId: string | null }>
+) {
+  const normPath = (typePath || "").toLowerCase().trim();
+  const normTitle = (title || "").toLowerCase().trim();
+
+  // Sort candidate types: user-specific first, then deeper type paths
+  const sorted = [...types].sort((a, b) => {
+    if (a.userId && !b.userId) return -1;
+    if (!a.userId && b.userId) return 1;
+    return b.typePath.length - a.typePath.length;
+  });
+
+  // 1. Exact match on typePath
+  const exact = sorted.find((t) => t.typePath.toLowerCase() === normPath);
+  if (exact) return exact;
+
+  // 2. Subpath / parent-child match (e.g. /product/beverage/wine/specialty-coffee vs /product/coffee or /product/watch)
+  const prefixMatch = sorted.find(
+    (t) =>
+      normPath.startsWith(t.typePath.toLowerCase()) ||
+      t.typePath.toLowerCase().startsWith(normPath)
+  );
+  if (prefixMatch) return prefixMatch;
+
+  // 3. Keyword / slug match (e.g. typePath ends with 'watch' or contains 'coffee')
+  const lastSegment = normPath.split("/").pop();
+  if (lastSegment && lastSegment.length > 2) {
+    const slugMatch = sorted.find((t) => {
+      const tLast = t.typePath.toLowerCase().split("/").pop();
+      return tLast === lastSegment || t.name.toLowerCase() === lastSegment;
+    });
+    if (slugMatch) return slugMatch;
+  }
+
+  // 4. Fallback on name match if query or title mentions the custom type name
+  const nameMatch = sorted.find((t) => {
+    const tName = t.name.toLowerCase();
+    return normPath.includes(tName) || (normTitle && normTitle.includes(tName));
+  });
+  if (nameMatch) return nameMatch;
+
+  return null;
 }
 
 export async function GET(req: NextRequest) {
@@ -25,8 +73,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ suggestions: [] });
     }
 
-    // 1. Parallel lookup across existing saves, universal discovery, and iTunes
-    const [existingSavesRes, universalCandidatesRes, itunesRes] = await Promise.allSettled([
+    // 1. Parallel lookup across existing saves, universal discovery, iTunes, and curio_types
+    const [existingSavesRes, universalCandidatesRes, itunesRes, curioTypesRes] = await Promise.allSettled([
       // A. User's existing saves
       (async () => {
         try {
@@ -34,6 +82,7 @@ export async function GET(req: NextRequest) {
             .select({
               saveId: userSaves.id,
               typePath: userSaves.typePath,
+              customTypeId: userSaves.customTypeId,
               title: globalEntities.title,
               creator: globalEntities.brandOrCreator,
               heroImageUrl: globalEntities.heroImageUrl,
@@ -64,7 +113,20 @@ export async function GET(req: NextRequest) {
 
       // C. iTunes search for instant music album / song resolution
       fetchItunesMusicMetadata(query, { timeoutMs: 1500 }).catch(() => null),
+
+      // D. Active curio_types (system & user custom types)
+      db
+        .select({
+          id: curioTypes.id,
+          name: curioTypes.name,
+          typePath: curioTypes.typePath,
+          userId: curioTypes.userId,
+        })
+        .from(curioTypes)
+        .where(or(isNull(curioTypes.userId), eq(curioTypes.userId, user.id))),
     ]);
+
+    const activeCurioTypes = curioTypesRes.status === "fulfilled" ? curioTypesRes.value : [];
 
     const suggestions: OmniboxSuggestion[] = [];
     const seenTitles = new Set<string>();
@@ -95,6 +157,7 @@ export async function GET(req: NextRequest) {
           canonicalUrl: save.canonicalUrl || "",
           isExistingSave: true,
           saveId: save.saveId,
+          curioTypeId: save.customTypeId || null,
         });
       }
     }
@@ -116,6 +179,7 @@ export async function GET(req: NextRequest) {
             canonicalUrl: `https://open.spotify.com/search/${encodeURIComponent(`${it.artist || ""} ${it.title}`.trim())}`,
             isExistingSave: false,
             saveId: null,
+            curioTypeId: null,
           });
         }
       }
@@ -143,9 +207,22 @@ export async function GET(req: NextRequest) {
           canonicalUrl: cand.url,
           isExistingSave: false,
           saveId: null,
+          curioTypeId: null,
         });
 
         if (suggestions.length >= 6) break;
+      }
+    }
+
+    // Match all suggestions against active curio_types (especially user custom types)
+    for (const sug of suggestions) {
+      const matched = findMatchingCurioType(sug.typePath, sug.title, activeCurioTypes);
+      if (matched) {
+        sug.curioTypeId = matched.id;
+        sug.badgeLabel = matched.name.toUpperCase();
+        if (!sug.typePath || sug.typePath === "/product/generic") {
+          sug.typePath = matched.typePath;
+        }
       }
     }
 

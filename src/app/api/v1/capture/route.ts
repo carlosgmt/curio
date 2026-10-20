@@ -10,6 +10,20 @@ const captureSchema = z.object({
   input: z.string().min(1, "Capture input cannot be empty"),
   userId: z.string().uuid().optional(),
   customSchemaId: z.string().optional(),
+  curioTypeId: z.string().optional(),
+  forcedTypePath: z.string().optional(),
+  isPrivateMemo: z.boolean().optional(),
+  targetCandidate: z
+    .object({
+      title: z.string(),
+      subtitle: z.string().optional(),
+      typePath: z.string().optional(),
+      badgeLabel: z.string().optional(),
+      heroImageUrl: z.string().nullable().optional(),
+      canonicalUrl: z.string().optional(),
+      curioTypeId: z.string().nullable().optional(),
+    })
+    .optional(),
   preview: z.boolean().optional(),
   skipLocalLlm: z.boolean().optional(),
   forceNew: z.boolean().optional(),
@@ -48,7 +62,11 @@ export async function POST(req: NextRequest) {
     const result = await executeIngestionCascade({
       input: parsed.data.input,
       userId: user.id,
-      customSchemaId: parsed.data.customSchemaId,
+      customSchemaId: parsed.data.customSchemaId || parsed.data.curioTypeId,
+      curioTypeId: parsed.data.curioTypeId,
+      forcedTypePath: parsed.data.forcedTypePath,
+      targetCandidate: parsed.data.targetCandidate,
+      isPrivateMemo: parsed.data.isPrivateMemo,
       skipLocalLlm: parsed.data.skipLocalLlm ?? true,
       forceNew: parsed.data.forceNew,
     });

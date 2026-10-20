@@ -225,10 +225,24 @@ export async function ingestCapture(input: string, user?: User | { id: string })
   return executeIngestionCascade({ input, userId: user?.id });
 }
 
+export interface CandidateTargetPayload {
+  title: string;
+  subtitle?: string;
+  typePath?: string;
+  badgeLabel?: string;
+  heroImageUrl?: string | null;
+  canonicalUrl?: string;
+  curioTypeId?: string | null;
+}
+
 export async function executeIngestionCascade(params: {
   input: string;
   userId?: string;
   customSchemaId?: string;
+  curioTypeId?: string;
+  forcedTypePath?: string;
+  targetCandidate?: CandidateTargetPayload;
+  isPrivateMemo?: boolean;
   skipLocalLlm?: boolean;
   forceNew?: boolean;
   fetchFn?: typeof fetch;
@@ -242,8 +256,37 @@ export async function executeIngestionCascade(params: {
     throw new Error("Unable to identify or create user profile");
   }
 
+  // Explicit text note capture (Shift+Enter or isPrivateMemo)
+  if (params.isPrivateMemo) {
+    const title = input.length > 60 ? input.slice(0, 57) + "..." : input;
+    const [save] = await db
+      .insert(userSaves)
+      .values({
+        userId: user.id,
+        entityId: null,
+        isPrivateMemo: true,
+        privateTitle: title,
+        personalNotes: input,
+        typePath: "/memo/personal",
+        candidateFallbacks: [],
+        autoTags: ["memo", "personal"],
+        enrichmentStatus: "LOCAL_ONLY",
+        visibility: "PRIVATE",
+      })
+      .returning();
+
+    return {
+      status: "created",
+      is_private_memo: true,
+      entity_id: null,
+      save,
+      entity: null,
+      candidate_fallbacks: [],
+    };
+  }
+
   // STEP -0.5: Omnibox Intent Routing & Active Save Mutator (PRD v3.2 Journey 6)
-  if (!params.forceNew) {
+  if (!params.forceNew && !params.targetCandidate && !params.forcedTypePath) {
     const intentResult = await classifyOmniboxIntent(input, user.id, {
       skipLocalLlm: params.skipLocalLlm,
     });
@@ -332,10 +375,33 @@ export async function executeIngestionCascade(params: {
   }
 }
 
+  const effectiveTitle = params.targetCandidate?.title?.trim() || input.trim();
+  const effectiveForcedType = params.forcedTypePath || params.targetCandidate?.typePath;
+  const effectiveCurioTypeId = params.curioTypeId || params.targetCandidate?.curioTypeId || params.customSchemaId;
+
   // STEP 0: Privacy & Modality Router
-  const privacy = await classifyPrivacyAndModality(input, {
-    skipLocalLlm: params.skipLocalLlm,
-  });
+  let privacy: PrivacyClassificationResult;
+  if (params.targetCandidate || params.forcedTypePath) {
+    privacy = {
+      intent: "PUBLIC_ENTITY",
+      isPrivate: false,
+      reasoning: "Explicit entity candidate capture",
+      suggestedTitle: effectiveTitle,
+      extractedQuery: effectiveTitle,
+      detectedType: effectiveForcedType?.includes("/book")
+        ? "BOOK"
+        : effectiveForcedType?.includes("/film") || effectiveForcedType?.includes("/music")
+        ? "MEDIA"
+        : effectiveForcedType?.includes("/place")
+        ? "PLACE"
+        : "PRODUCT",
+      confidence: 1.0,
+    };
+  } else {
+    privacy = await classifyPrivacyAndModality(input, {
+      skipLocalLlm: params.skipLocalLlm,
+    });
+  }
 
   // PRIVACY GATE: If private memo, bypass external search and global cache completely
   if (privacy.intent === "PRIVATE_MEMO") {
@@ -347,6 +413,7 @@ export async function executeIngestionCascade(params: {
         isPrivateMemo: true,
         privateTitle: privacy.suggestedTitle,
         personalNotes: input,
+        typePath: "/memo/personal",
         candidateFallbacks: [],
         autoTags: ["memo", "private"],
         enrichmentStatus: "LOCAL_ONLY",
@@ -364,24 +431,32 @@ export async function executeIngestionCascade(params: {
     };
   }
 
-  const query = privacy.extractedQuery || input;
+  const query = effectiveTitle;
 
   // Resolve custom schema if provided
   let targetType: typeof curioTypes.$inferSelect | null = null;
-  if (params.customSchemaId) {
+  if (effectiveCurioTypeId) {
     const [customType] = await db
       .select()
       .from(curioTypes)
-      .where(or(eq(curioTypes.id, params.customSchemaId), eq(curioTypes.typePath, params.customSchemaId)))
+      .where(or(eq(curioTypes.id, effectiveCurioTypeId), eq(curioTypes.typePath, effectiveCurioTypeId)))
       .limit(1);
     targetType = customType || null;
+  }
+  if (!targetType && effectiveForcedType) {
+    const [matchedType] = await db
+      .select()
+      .from(curioTypes)
+      .where(eq(curioTypes.typePath, effectiveForcedType))
+      .limit(1);
+    targetType = matchedType || null;
   }
 
   // =========================================================================
   // LAYER 0: Pre-Network Local Global Cache Lookup (<2ms, $0.00, 0 network calls)
   // =========================================================================
   const localCacheHit = await lookupLocalEntityCache(query, {
-    forcedTypePath: targetType?.typePath,
+    forcedTypePath: effectiveForcedType || targetType?.typePath,
     detectedType: privacy.detectedType,
   });
 
@@ -498,8 +573,15 @@ export async function executeIngestionCascade(params: {
       ? enrichment.runnerUpCandidates
       : defaultRunnerUps;
 
-  const finalTitle = enrichment?.title || fallbackPrimary.title;
-  const finalCanonicalUrl = enrichment?.canonicalUrl || fallbackPrimary.url;
+  const finalTitle = params.targetCandidate?.title || enrichment?.title || fallbackPrimary.title;
+  let finalCanonicalUrl = enrichment?.canonicalUrl;
+  if (!finalCanonicalUrl) {
+    if (params.targetCandidate?.canonicalUrl && !params.targetCandidate.canonicalUrl.includes("/search")) {
+      finalCanonicalUrl = params.targetCandidate.canonicalUrl;
+    } else {
+      finalCanonicalUrl = fallbackPrimary.url;
+    }
+  }
   const finalSummary = enrichment?.summary || fallbackPrimary.snippet;
   const finalCoreType =
     enrichment?.coreType ||
@@ -524,7 +606,9 @@ export async function executeIngestionCascade(params: {
       : null;
 
   let finalTypePath: string;
-  if (params.customSchemaId && targetPath) {
+  if (effectiveForcedType) {
+    finalTypePath = effectiveForcedType;
+  } else if (params.customSchemaId && targetPath) {
     finalTypePath = targetPath;
   } else if (enrichPath && targetPath) {
     // If one is a more specific child of the other (e.g. /product/watch vs /product), pick the deeper path
@@ -552,7 +636,7 @@ export async function executeIngestionCascade(params: {
     }
   }
 
-  const finalHeroImage = enrichment?.heroImageUrl || null;
+  const finalHeroImage = params.targetCandidate?.heroImageUrl || enrichment?.heroImageUrl || null;
   const finalPriceCents = enrichment?.priceCents ?? null;
   const finalExternalId = enrichment?.canonicalExternalId || null;
   const finalCreator = enrichment?.brandOrCreator || null;
@@ -646,8 +730,8 @@ export async function executeIngestionCascade(params: {
         .values({
           userId: user.id,
           entityId: cachedEntity.id,
-          customTypeId: targetType?.id || null,
-          typeId: targetType?.id || null,
+          customTypeId: targetType?.id || effectiveCurioTypeId || null,
+          typeId: targetType?.id || effectiveCurioTypeId || null,
           typePath: cachedEntity.typePath,
           isPrivateMemo: false,
           candidateFallbacks: runnerUps,
@@ -759,8 +843,8 @@ export async function executeIngestionCascade(params: {
       .values({
         userId: user.id,
         entityId: insertedEntity.id,
-        customTypeId: targetType?.id || null,
-        typeId: targetType?.id || null,
+        customTypeId: targetType?.id || effectiveCurioTypeId || null,
+        typeId: targetType?.id || effectiveCurioTypeId || null,
         typePath: finalTypePath,
         preferredSourceId,
         isPrivateMemo: false,

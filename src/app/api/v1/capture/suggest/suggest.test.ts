@@ -78,4 +78,66 @@ describe("Live Omnibox Typeahead / Autocomplete API (/api/v1/capture/suggest)", 
     expect(first.title).toBe("Omega Morente Vault Item");
     expect(first.badgeLabel).toBe("ALBUM");
   });
+
+  it("matches suggestion typePath against custom curio_types and populates curioTypeId and custom badgeLabel", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `custom-type-${timestamp}@curio.local`,
+        username: `cust_${timestamp}`,
+        displayName: "Custom Type Tester",
+      })
+      .returning();
+
+    const { curioTypes } = await import("@/db");
+    const [customType] = await db
+      .insert(curioTypes)
+      .values({
+        userId: user.id,
+        name: "Specialty Coffee",
+        typePath: `/product/beverage/coffee-${timestamp}`,
+        rootArchetype: "PRODUCT",
+        defaultSilhouette: "tall_portrait",
+        jsonSchema: {},
+        createdAt: new Date().toISOString(),
+      })
+      .returning();
+
+    const [entity] = await db
+      .insert(globalEntities)
+      .values({
+        title: `Geisha Filter Roast ${timestamp}`,
+        canonicalUrl: `https://roasters.local/coffee-${timestamp}`,
+        urlHash: `hash-${timestamp}`,
+        entityKey: `key-${timestamp}`,
+        coreType: "PRODUCT",
+        typePath: `/product/beverage/coffee-${timestamp}`,
+        brandOrCreator: "Sey Coffee",
+        coreStructuredData: {},
+      })
+      .returning();
+
+    await db.insert(userSaves).values({
+      userId: user.id,
+      entityId: entity.id,
+      typePath: `/product/beverage/coffee-${timestamp}`,
+      customTypeId: customType.id,
+      isPrivateMemo: false,
+    });
+
+    const { token } = await createSession(user.id);
+    const req = new NextRequest(`http://localhost:3000/api/v1/capture/suggest?q=Geisha`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.suggestions.length).toBeGreaterThan(0);
+
+    const match = data.suggestions.find((s: any) => s.title.includes("Geisha"));
+    expect(match).toBeDefined();
+    expect(match.curioTypeId).toBe(customType.id);
+    expect(match.badgeLabel).toBe("SPECIALTY COFFEE");
+  });
 });

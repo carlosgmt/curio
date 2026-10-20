@@ -3,7 +3,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PlaceMapPreview } from "./PlaceMapPreview";
 import { PlaceSpotCard } from "./PlaceSpotCard";
-import type { GlobalEntity, UserSave } from "@/lib/types";
+import type { SilhouetteCardProps } from "./VinylDiscCard";
 
 describe("PlaceMapPreview Component", () => {
   it("renders Slippy Map tile grid and glowing Curio pin centered on Tate Modern", () => {
@@ -42,22 +42,20 @@ describe("PlaceMapPreview Component", () => {
 });
 
 describe("PlaceSpotCard with Photo/Map Switcher", () => {
-  const baseSave: UserSave = {
+  const baseSave: SilhouetteCardProps["save"] = {
     id: "save-123",
-    userId: "user-1",
-    entityId: "entity-123",
     typePath: "/place",
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   };
 
-  const baseEntity: GlobalEntity = {
+  const baseEntity: SilhouetteCardProps["entity"] = {
     id: "entity-123",
     title: "Café de Flore",
     typePath: "/place",
     coreType: "PLACE",
     summary: "Historic Parisian café on Boulevard Saint-Germain",
     brandOrCreator: "Paris, France",
+    canonicalUrl: "https://cafedeflore.fr",
     heroImageUrl: "https://images.unsplash.com/cafe-de-flore.jpg",
     coreStructuredData: {
       latitude: 48.8541,
@@ -65,9 +63,6 @@ describe("PlaceSpotCard with Photo/Map Switcher", () => {
       city: "Paris",
       country: "France",
     },
-    provenanceSources: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   };
 
   it("renders Photo view with switcher pills when both photo and coordinates exist", () => {
@@ -86,7 +81,7 @@ describe("PlaceSpotCard with Photo/Map Switcher", () => {
   });
 
   it("renders Map preview by default when photo is missing but coordinates exist", () => {
-    const noPhotoEntity: GlobalEntity = {
+    const noPhotoEntity: SilhouetteCardProps["entity"] = {
       ...baseEntity,
       heroImageUrl: undefined,
     };

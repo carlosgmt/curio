@@ -302,14 +302,14 @@ async function main() {
   if (!existingUser) {
     console.log(`[User] Creating target user ${TARGET_USER_ID}...`);
     curioDb.prepare(`
-      INSERT INTO users (id, username, email, display_name, is_pro, created_at, updated_at)
-      VALUES (?, 'carlosgmt', 'carlos@curio.local', 'Carlos', 1, ?, ?)
-    `).run(TARGET_USER_ID, now, now);
+      INSERT INTO users (id, username, email, display_name, is_pro, created_at)
+      VALUES (?, 'carlosgmt', 'carlos@curio.local', 'Carlos', 1, ?)
+    `).run(TARGET_USER_ID, now);
   } else {
     curioDb.prepare(`
-      UPDATE users SET username = 'carlosgmt', email = 'carlos@curio.local', display_name = 'Carlos', updated_at = ?
+      UPDATE users SET username = 'carlosgmt', email = 'carlos@curio.local', display_name = 'Carlos'
       WHERE id = ?
-    `).run(now, TARGET_USER_ID);
+    `).run(TARGET_USER_ID);
     console.log(`[User] Verified target user ${TARGET_USER_ID} (carlosgmt)`);
   }
 

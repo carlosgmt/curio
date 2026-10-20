@@ -85,6 +85,7 @@ export function ProductCard({
             <img
               src={entity.heroImageUrl}
               alt={entity.title}
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
             />
           ) : (

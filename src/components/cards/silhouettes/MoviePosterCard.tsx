@@ -14,11 +14,13 @@ export function MoviePosterCard({
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
-  const director = data.director || "A Film Directed by Visionary";
-  const releaseYear = data.releaseYear || data.year || "2024";
-  const runtime = data.runtimeMinutes ? `${data.runtimeMinutes} MIN` : "118 MIN";
-  const cinematographer = data.cinematographer || "35MM COLOR";
-  const distributor = data.distributor || "CURIO CINEMATHEQUE";
+  const director = data.director;
+  const releaseYear = data.releaseYear || data.year;
+  const runtime = data.runtimeMinutes ? `${data.runtimeMinutes} MIN` : null;
+  const cinematographer = data.cinematographer;
+  const distributor = data.distributor;
+
+  const hasBillingBlock = Boolean(director || runtime || cinematographer || distributor);
 
   return (
     <div className="group relative rounded-2xl bg-neutral-950 text-white shadow-lg hover:shadow-2xl transition-all duration-300 border border-neutral-800/80 flex flex-col justify-between overflow-hidden">
@@ -28,6 +30,7 @@ export function MoviePosterCard({
           <img
             src={entity.heroImageUrl}
             alt={entity.title}
+            referrerPolicy="no-referrer"
             className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
           />
         ) : (
@@ -40,9 +43,11 @@ export function MoviePosterCard({
         )}
 
         {/* Criterion Collection inspired corner glyph */}
-        <div className="absolute top-3 left-3 bg-neutral-950/80 backdrop-blur-md text-white text-[10px] font-mono uppercase px-2 py-0.5 rounded border border-white/20 tracking-wider">
-          № {releaseYear}
-        </div>
+        {releaseYear ? (
+          <div className="absolute top-3 left-3 bg-neutral-950/80 backdrop-blur-md text-white text-[10px] font-mono uppercase px-2 py-0.5 rounded border border-white/20 tracking-wider">
+            № {releaseYear}
+          </div>
+        ) : null}
 
         {/* Bottom vignette gradient for billing block readability */}
         <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-neutral-950 via-neutral-950/80 to-transparent flex flex-col justify-end p-4">
@@ -50,21 +55,29 @@ export function MoviePosterCard({
             {entity.title}
           </h3>
 
-          <p className="text-xs text-neutral-300 font-sans tracking-wide mb-3 line-clamp-2 drop-shadow-sm">
-            {entity.summary}
-          </p>
+          {entity.summary ? (
+            <p className="text-xs text-neutral-300 font-sans tracking-wide mb-3 line-clamp-2 drop-shadow-sm">
+              {entity.summary}
+            </p>
+          ) : null}
 
-          {/* Authentic Criterion-Style Billing Block */}
-          <div className="border-t border-white/20 pt-2 text-[8px] font-mono uppercase tracking-widest text-neutral-400 space-y-0.5">
-            <div className="flex justify-between items-center text-white/90 font-medium">
-              <span>DIR. {director}</span>
-              <span>{runtime}</span>
+          {/* Authentic Criterion-Style Billing Block (rendered only if metadata exists) */}
+          {hasBillingBlock && (
+            <div className="border-t border-white/20 pt-2 text-[8px] font-mono uppercase tracking-widest text-neutral-400 space-y-0.5">
+              {(director || runtime) && (
+                <div className="flex justify-between items-center text-white/90 font-medium">
+                  <span>{director ? `DIR. ${director}` : ""}</span>
+                  <span>{runtime || ""}</span>
+                </div>
+              )}
+              {(cinematographer || distributor) && (
+                <div className="flex justify-between items-center text-neutral-400 text-[7.5px]">
+                  <span>{cinematographer ? `PHOTO: ${cinematographer}` : ""}</span>
+                  <span>{distributor || ""}</span>
+                </div>
+              )}
             </div>
-            <div className="flex justify-between items-center text-neutral-400 text-[7.5px]">
-              <span>PHOTO: {cinematographer}</span>
-              <span>{distributor}</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -88,7 +101,7 @@ export function MoviePosterCard({
           }}
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
-          customUtilityLabel="Watch on MUBI"
+          customUtilityLabel="Watch Film"
         />
       </div>
     </div>

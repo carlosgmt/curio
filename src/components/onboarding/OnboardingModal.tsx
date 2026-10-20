@@ -106,7 +106,7 @@ const ARCHETYPES: ArchetypeOption[] = [
     category: "Inner Vault",
     icon: Lock,
     description: "Encrypted thoughts, sketches & local field notes",
-    boardTitle: "Private Vault & Field Notes",
+    boardTitle: "Text notes",
   },
 ];
 

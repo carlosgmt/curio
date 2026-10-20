@@ -48,6 +48,7 @@ export function CosmeticsCard({
             <img
               src={entity.heroImageUrl}
               alt={productName}
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
             />
           </div>

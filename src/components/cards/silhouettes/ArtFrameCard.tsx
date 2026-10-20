@@ -31,6 +31,7 @@ export function ArtFrameCard({
             <img
               src={entity.heroImageUrl}
               alt={entity.title}
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-103"
             />
           ) : (
@@ -102,6 +103,7 @@ export function ArtFrameCard({
           <img
             src={entity.heroImageUrl}
             alt={entity.title}
+            referrerPolicy="no-referrer"
             className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-neutral-800"
           />
           <div className="mt-4 text-center max-w-lg">

@@ -314,97 +314,6 @@ export function Omnibox({
       return;
     }
 
-    // If regular capture, use progressive 3-stage SSE streaming for instant optimistic UI
-    if (!forceNew && intentPreview?.intent !== "EDIT_SAVE") {
-      setIsSubmitting(true);
-      try {
-        const streamRes = await fetch("/api/v1/capture/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: trimmed }),
-        });
-
-        if (streamRes.ok && streamRes.body) {
-          const reader = streamRes.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          setInput("");
-          setIntentPreview(null);
-          setShowDisambiguation(false);
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const events = buffer.split("\n\n");
-            buffer = events.pop() || "";
-
-            for (const evt of events) {
-              const lines = evt.split("\n");
-              const eventLine = lines.find((l) => l.startsWith("event: "));
-              const dataLine = lines.find((l) => l.startsWith("data: "));
-              if (eventLine && dataLine) {
-                const eventName = eventLine.slice(7).trim();
-                try {
-                  const eventData = JSON.parse(dataLine.slice(6));
-                  if (eventName === "stage1_optimistic") {
-                    onCaptured?.({
-                      status: "created",
-                      isOptimistic: true,
-                      save: {
-                        id: eventData.saveId,
-                        privateTitle: eventData.title,
-                        isPrivateMemo: eventData.isPrivateMemo,
-                        enrichmentStatus: "OPTIMISTIC",
-                      },
-                    });
-                  } else if (eventName === "stage2_head_parsed") {
-                    onCaptured?.({
-                      status: "created",
-                      isOptimistic: true,
-                      save: {
-                        id: eventData.saveId,
-                        privateTitle: eventData.title,
-                        enrichmentStatus: "HEAD_PARSED",
-                      },
-                      entity: {
-                        title: eventData.title,
-                        heroImageUrl: eventData.heroImageUrl,
-                        priceCents: eventData.priceCents,
-                      },
-                    });
-                  } else if (eventName === "stage3_enriched") {
-                    onCaptured?.({
-                      status: "created",
-                      isOptimistic: false,
-                      save: {
-                        id: eventData.saveId,
-                        typePath: eventData.typePath,
-                        candidateFallbacks: eventData.candidateFallbacks,
-                        autoTags: eventData.autoTags,
-                        enrichmentStatus: "ENRICHED",
-                      },
-                      entity: {
-                        id: eventData.entityId,
-                        typePath: eventData.typePath,
-                        extendedAttributes: eventData.extendedAttributes,
-                      },
-                    });
-                  }
-                } catch {}
-              }
-            }
-          }
-          setIsSubmitting(false);
-          return;
-        }
-      } catch (err) {
-        console.warn("SSE stream capture fallback to sync:", err);
-      }
-    }
-
     setIsSubmitting(true);
     try {
       const res = await apiFetch("/api/v1/capture", {
@@ -554,7 +463,7 @@ export function Omnibox({
       return (
         <span className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2.5 py-0.5 rounded-full border border-neutral-200/60 dark:border-neutral-700/50">
           <Lock className="w-3.5 h-3.5" />
-          🔒 Vault: Private Memo
+          🔒 Text Note
         </span>
       );
     }

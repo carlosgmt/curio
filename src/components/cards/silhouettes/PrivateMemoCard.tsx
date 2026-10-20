@@ -38,7 +38,7 @@ export function PrivateMemoCard({ save }: PrivateMemoCardProps) {
         <div className="flex items-center justify-between mb-3">
           <span className="inline-flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/60 px-2.5 py-1 rounded-full border border-amber-300/60 dark:border-amber-800/60">
             <Lock className="w-3.5 h-3.5" />
-            Private Vault Memo
+            Text note
           </span>
           <span className="text-[11px] font-mono text-amber-800/60 dark:text-amber-400/60">
             {formattedDate}

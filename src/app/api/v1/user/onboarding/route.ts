@@ -71,14 +71,14 @@ const ARCHETYPE_MAP: Record<string, ArchetypeTemplate> = {
     tagsInclude: ["place", "travel"],
   },
   memos: {
-    title: "Private Vault & Field Notes",
-    description: "Personal sketches, field notes & private memos",
+    title: "Text notes",
+    description: "Personal sketches, field notes & text memos",
     coreType: "PRIVATE_MEMO",
     tagsInclude: ["memo", "notes"],
   },
   private_memo: {
-    title: "Private Vault & Field Notes",
-    description: "Personal sketches, field notes & private memos",
+    title: "Text notes",
+    description: "Personal sketches, field notes & text memos",
     coreType: "PRIVATE_MEMO",
     tagsInclude: ["memo", "notes"],
   },

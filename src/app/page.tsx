@@ -25,37 +25,13 @@ import {
   Sparkles,
   Layers,
   Upload,
-  Disc3,
-  Film,
-  BookOpen,
-  Wine,
-  Frame,
-  UtensilsCrossed,
-  MapPin,
-  Lock,
-  Gamepad2,
-  ShoppingBag,
   X,
 } from "lucide-react";
-
-type FilterTab =
-  | "all"
-  | "cinema"
-  | "games"
-  | "vinyl"
-  | "books"
-  | "products"
-  | "places"
-  | "wine"
-  | "art"
-  | "recipes"
-  | "memos";
 
 export default function Home() {
   const [items, setItems] = useState<CardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [isImporterOpen, setIsImporterOpen] = useState(false);
   const [pairingCard, setPairingCard] = useState<CardData | null>(null);
   const [isPairingOpen, setIsPairingOpen] = useState(false);
@@ -227,7 +203,15 @@ export default function Home() {
         entity: result.entity,
         primarySource: result.primary_source,
       };
-      setItems((prev) => [newCard, ...prev]);
+      setItems((prev) => {
+        const existingIdx = prev.findIndex((it) => it.save.id === newCard.save.id);
+        if (existingIdx >= 0) {
+          const next = [...prev];
+          next[existingIdx] = newCard;
+          return next;
+        }
+        return [newCard, ...prev];
+      });
 
       // Check if this is the first time adding on this type
       const typeInfo = extractTypeInfo(newCard);
@@ -258,234 +242,7 @@ export default function Home() {
     }
   };
 
-  // Filter items dynamically based on selected tab
-  const filteredItems = useMemo(() => {
-    if (activeTab === "all") return items;
 
-    return items.filter((item) => {
-      const isMemo = item.save.isPrivateMemo || !item.entity;
-      if (activeTab === "memos") return isMemo;
-      if (isMemo) return false;
-
-      const typePath = (item.entity?.typePath || item.save.typePath || "").toLowerCase();
-      const coreType = (item.entity?.coreType || "").toUpperCase();
-      const title = (item.entity?.title || "").toLowerCase();
-      const tags = (item.save.autoTags || []).map((t) => t.toLowerCase());
-
-      switch (activeTab) {
-        case "cinema":
-          return (
-            typePath.includes("film") ||
-            typePath.includes("movie") ||
-            coreType === "MEDIA" ||
-            tags.includes("film") ||
-            tags.includes("movie")
-          );
-        case "games":
-          return (
-            typePath.includes("videogame") ||
-            typePath.includes("game") ||
-            coreType === "VIDEOGAME" ||
-            tags.includes("game") ||
-            tags.includes("gaming") ||
-            tags.includes("steam")
-          );
-        case "vinyl":
-          return (
-            typePath.includes("vinyl") ||
-            tags.includes("vinyl") ||
-            tags.includes("album") ||
-            title.includes("vinyl") ||
-            title.includes("lp")
-          );
-        case "books":
-          return typePath.includes("book") || coreType === "BOOK" || tags.includes("book");
-        case "products":
-          return (
-            typePath === "/product" ||
-            typePath.startsWith("/product/garment") ||
-            typePath.startsWith("/product/cosmetic") ||
-            typePath.startsWith("/product/electronic") ||
-            coreType === "PRODUCT" ||
-            tags.includes("product") ||
-            tags.includes("garment") ||
-            tags.includes("clothing") ||
-            tags.includes("electronics") ||
-            tags.includes("cosmetics") ||
-            tags.includes("gadget")
-          );
-        case "places":
-          return (
-            typePath.includes("place") ||
-            typePath.includes("trail") ||
-            typePath.includes("restaurant") ||
-            typePath.includes("cafe") ||
-            typePath.includes("hotel") ||
-            typePath.includes("shop") ||
-            typePath.includes("bar") ||
-            coreType === "PLACE" ||
-            tags.includes("place") ||
-            tags.includes("restaurant") ||
-            tags.includes("cafe") ||
-            tags.includes("hotel") ||
-            tags.includes("trail")
-          );
-        case "wine":
-          return (
-            typePath.includes("wine") ||
-            tags.includes("wine") ||
-            title.includes("wine") ||
-            title.includes("domaine") ||
-            title.includes("château")
-          );
-        case "art":
-          return typePath.includes("art") || tags.includes("art") || tags.includes("painting");
-        case "recipes":
-          return (
-            typePath.includes("recipe") ||
-            typePath.includes("culinary") ||
-            coreType === "CULINARY" ||
-            tags.includes("recipe")
-          );
-        default:
-          return true;
-      }
-    });
-  }, [items, activeTab]);
-
-  const tabs: Array<{ id: FilterTab; label: string; icon: React.ReactNode }> = [
-    { id: "all", label: "All my stuff", icon: <Layers className="w-3.5 h-3.5" /> },
-    { id: "cinema", label: "Cinema", icon: <Film className="w-3.5 h-3.5" /> },
-    { id: "games", label: "Video Games", icon: <Gamepad2 className="w-3.5 h-3.5" /> },
-    { id: "vinyl", label: "Vinyl LPs", icon: <Disc3 className="w-3.5 h-3.5" /> },
-    { id: "books", label: "Books", icon: <BookOpen className="w-3.5 h-3.5" /> },
-    { id: "products", label: "Products & Gear", icon: <ShoppingBag className="w-3.5 h-3.5" /> },
-    { id: "places", label: "Places & Venues", icon: <MapPin className="w-3.5 h-3.5" /> },
-    { id: "wine", label: "Estate Wine", icon: <Wine className="w-3.5 h-3.5" /> },
-    { id: "art", label: "Fine Art", icon: <Frame className="w-3.5 h-3.5" /> },
-    { id: "recipes", label: "Recipes", icon: <UtensilsCrossed className="w-3.5 h-3.5" /> },
-    { id: "memos", label: "Private Vault", icon: <Lock className="w-3.5 h-3.5" /> },
-  ];
-
-  // Count items per category to only offer existing ones
-  const tabCounts = useMemo(() => {
-    const counts: Record<FilterTab, number> = {
-      all: items.length,
-      cinema: 0,
-      games: 0,
-      vinyl: 0,
-      books: 0,
-      products: 0,
-      places: 0,
-      wine: 0,
-      art: 0,
-      recipes: 0,
-      memos: 0,
-    };
-
-    items.forEach((item) => {
-      const isMemo = item.save.isPrivateMemo || !item.entity;
-      if (isMemo) {
-        counts.memos++;
-        return;
-      }
-
-      const typePath = (item.entity?.typePath || item.save.typePath || "").toLowerCase();
-      const coreType = (item.entity?.coreType || "").toUpperCase();
-      const title = (item.entity?.title || "").toLowerCase();
-      const tags = (item.save.autoTags || []).map((t) => t.toLowerCase());
-
-      if (
-        typePath.includes("film") ||
-        typePath.includes("movie") ||
-        coreType === "MEDIA" ||
-        tags.includes("film") ||
-        tags.includes("movie")
-      ) {
-        counts.cinema++;
-      } else if (
-        typePath.includes("videogame") ||
-        typePath.includes("game") ||
-        coreType === "VIDEOGAME" ||
-        tags.includes("game") ||
-        tags.includes("gaming") ||
-        tags.includes("steam")
-      ) {
-        counts.games++;
-      } else if (
-        typePath.includes("vinyl") ||
-        tags.includes("vinyl") ||
-        tags.includes("album") ||
-        title.includes("vinyl") ||
-        title.includes("lp")
-      ) {
-        counts.vinyl++;
-      } else if (typePath.includes("book") || coreType === "BOOK" || tags.includes("book")) {
-        counts.books++;
-      } else if (
-        typePath === "/product" ||
-        typePath.startsWith("/product/garment") ||
-        typePath.startsWith("/product/cosmetic") ||
-        typePath.startsWith("/product/electronic") ||
-        coreType === "PRODUCT" ||
-        tags.includes("product") ||
-        tags.includes("garment") ||
-        tags.includes("clothing") ||
-        tags.includes("electronics") ||
-        tags.includes("cosmetics") ||
-        tags.includes("gadget")
-      ) {
-        counts.products++;
-      } else if (
-        typePath.includes("place") ||
-        typePath.includes("trail") ||
-        typePath.includes("restaurant") ||
-        typePath.includes("cafe") ||
-        typePath.includes("hotel") ||
-        typePath.includes("shop") ||
-        typePath.includes("bar") ||
-        coreType === "PLACE" ||
-        tags.includes("place") ||
-        tags.includes("restaurant") ||
-        tags.includes("cafe") ||
-        tags.includes("hotel") ||
-        tags.includes("trail")
-      ) {
-        counts.places++;
-      } else if (
-        typePath.includes("wine") ||
-        tags.includes("wine") ||
-        title.includes("wine") ||
-        title.includes("domaine") ||
-        title.includes("château")
-      ) {
-        counts.wine++;
-      } else if (typePath.includes("art") || tags.includes("art") || tags.includes("painting")) {
-        counts.art++;
-      } else if (
-        typePath.includes("recipe") ||
-        typePath.includes("culinary") ||
-        coreType === "CULINARY" ||
-        tags.includes("recipe")
-      ) {
-        counts.recipes++;
-      }
-    });
-
-    return counts;
-  }, [items]);
-
-  // Only offer categories that actually exist
-  const availableTabs = useMemo(() => {
-    return tabs.filter((tab) => tab.id === "all" || tabCounts[tab.id] > 0);
-  }, [tabs, tabCounts]);
-
-  // Auto-reset tab if category has 0 items
-  useEffect(() => {
-    if (activeTab !== "all" && tabCounts[activeTab] === 0) {
-      setActiveTab("all");
-    }
-  }, [activeTab, tabCounts]);
 
   if (authLoading) {
     return (
@@ -618,15 +375,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* Memory & Taste Stream Feed */}
+      {/* My collections */}
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-3 border-b border-neutral-200/60 dark:border-neutral-800">
           <div>
             <h2 className="text-xl font-bold font-serif text-neutral-900 dark:text-neutral-100">
-              Taste Stream
+              My collections
             </h2>
             <p className="text-xs text-neutral-500">
-              Showing {filteredItems.length} of {items.length} total saves
+              Showing {items.length} total saves
             </p>
           </div>
         </div>
@@ -695,51 +452,26 @@ export default function Home() {
           </div>
         ) : (
           <div>
-            {/* Archetype Filter Tabs & View Mode Switcher */}
-            <div className={`flex flex-col sm:flex-row sm:items-center ${availableTabs.length > 1 ? "justify-between" : "justify-end"} gap-4 mb-8`}>
-              {availableTabs.length > 1 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                  {availableTabs.map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer ${
-                        activeTab === tab.id
-                          ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
-                          : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
-                      }`}
-                    >
-                      {tab.icon}
-                      <span>{tab.label}</span>
-                      {tab.id !== "all" && tabCounts[tab.id] > 0 && (
-                        <span className="text-[10px] opacity-70 font-mono">
-                          {tabCounts[tab.id]}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-
+            {/* View Mode Switcher */}
+            <div className="flex items-center justify-end mb-6">
               <ViewModeSwitcher
                 layout={layoutEngine}
                 density={cardDensity}
                 onLayoutChange={setLayoutEngine}
                 onDensityChange={setCardDensity}
-                className="shrink-0 self-end sm:self-auto"
+                className="shrink-0"
               />
             </div>
 
             {/* Feed Layout Engines */}
             {loading ? (
               <div className="text-center py-20 text-neutral-400 text-sm">
-                Loading your taste graph...
+                Loading your collections...
               </div>
-            ) : filteredItems.length === 0 ? (
+            ) : items.length === 0 ? (
               <div className="text-center py-20 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl p-8">
                 <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
-                  No items in this category yet.
+                  No items in your collections yet.
                 </p>
                 <p className="text-neutral-400 text-xs max-w-sm mx-auto">
                   Capture a new thought above or import a CSV export from Letterboxd or Goodreads to seed your library.
@@ -749,7 +481,7 @@ export default function Home() {
               <div>
                 {layoutEngine === "masonry" && (
                   <MasonryLayout
-                    items={filteredItems}
+                    items={items}
                     renderItem={(item) => (
                       <PolymorphicCard
                         key={item.save.id}
@@ -783,7 +515,7 @@ export default function Home() {
 
                 {layoutEngine === "grid" && (
                   <GridLayout
-                    items={filteredItems}
+                    items={items}
                     renderItem={(item) => (
                       <PolymorphicCard
                         key={item.save.id}
@@ -817,7 +549,7 @@ export default function Home() {
 
                 {layoutEngine === "timeline" && (
                   <TimelineLayout
-                    items={filteredItems}
+                    items={items}
                     renderItem={(item) => (
                       <PolymorphicCard
                         key={item.save.id}

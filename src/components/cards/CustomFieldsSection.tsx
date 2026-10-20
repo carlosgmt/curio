@@ -178,23 +178,23 @@ export function CustomFieldsSection({
     return (
       <span
         key={`${isGlobal ? "global" : "user"}-${attrKey}`}
-        className={`group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono ${
+        className={`group/tag inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono ${
           isGlobal
-            ? "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
-            : "bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-300"
+            ? "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+            : "bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
         }`}
       >
-        {isGlobal ? <Globe className="w-2.5 h-2.5 text-indigo-500" /> : <Tag className="w-2.5 h-2.5 text-neutral-400" />}
+        {isGlobal ? <Globe className="w-3.5 h-3.5 text-indigo-500" /> : <Tag className="w-3.5 h-3.5 text-neutral-400" />}
         <strong className="font-semibold capitalize">{attrKey.replace(/_/g, " ")}:</strong>{" "}
         <span>{strVal}</span>
         {onRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="opacity-0 group-hover/tag:opacity-100 text-neutral-400 hover:text-rose-500 transition cursor-pointer ml-0.5"
+            className="opacity-0 group-hover/tag:opacity-100 text-neutral-400 hover:text-rose-500 transition cursor-pointer ml-1"
             title={`Remove ${attrKey}`}
           >
-            <X className="w-2.5 h-2.5" />
+            <X className="w-3 h-3" />
           </button>
         )}
       </span>
@@ -222,10 +222,10 @@ export function CustomFieldsSection({
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 transition cursor-pointer"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-mono text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 transition cursor-pointer"
             title="Add custom attribute (e.g., roast, vintage, elevation)"
           >
-            <Plus className="w-2.5 h-2.5" />
+            <Plus className="w-3 h-3" />
             <span>Field</span>
           </button>
         )}
@@ -242,7 +242,7 @@ export function CustomFieldsSection({
             placeholder="Field (e.g. vintage)"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            className="flex-1 min-w-[80px] text-[11px] font-mono px-2 py-1 rounded-md bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 focus:outline-none"
+            className="flex-1 min-w-[80px] text-xs font-mono px-2.5 py-1.5 rounded-md bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 focus:outline-none"
             autoFocus
           />
           <input
@@ -250,7 +250,7 @@ export function CustomFieldsSection({
             placeholder="Value (e.g. 2018)"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            className="flex-1 min-w-[90px] text-[11px] font-mono px-2 py-1 rounded-md bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 focus:outline-none"
+            className="flex-1 min-w-[90px] text-xs font-mono px-2.5 py-1.5 rounded-md bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 focus:outline-none"
           />
           <div className="flex items-center gap-1 shrink-0">
             <button

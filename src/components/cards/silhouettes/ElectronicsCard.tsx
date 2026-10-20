@@ -45,6 +45,7 @@ export function ElectronicsCard({
             <img
               src={entity.heroImageUrl}
               alt={deviceName}
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
             />
           </div>

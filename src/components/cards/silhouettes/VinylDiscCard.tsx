@@ -86,6 +86,7 @@ export function VinylDiscCard({
               <img
                 src={entity.heroImageUrl}
                 alt={entity.title}
+                referrerPolicy="no-referrer"
                 className="absolute inset-0 w-full h-full object-cover opacity-85"
               />
             ) : null}

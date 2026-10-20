@@ -19,9 +19,9 @@ describe("Utility Deep-Link Engine", () => {
       expect(resolveCinemaLink(entity)).toBe("https://mubi.com/films/in-the-mood-for-love");
     });
 
-    it("generates targeted MUBI search query when canonicalUrl is Wikipedia or missing", () => {
+    it("generates targeted JustWatch search query when canonicalUrl is Wikipedia or missing", () => {
       const entity = { canonicalUrl: "https://en.wikipedia.org/wiki/Yi_Yi", title: "Yi Yi" };
-      expect(resolveCinemaLink(entity)).toBe("https://mubi.com/search?query=Yi%20Yi");
+      expect(resolveCinemaLink(entity)).toBe("https://www.justwatch.com/us/search?q=Yi%20Yi");
     });
 
     it("generates full suite of streaming provider links", () => {

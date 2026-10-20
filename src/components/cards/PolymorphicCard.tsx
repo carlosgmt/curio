@@ -342,7 +342,7 @@ export function PolymorphicCard({
       id={`save-${save.id}`}
       className="group/curio-card relative flex flex-col h-full transition-all duration-200"
     >
-      {/* Quick Action Toolbar (Board + Pair) */}
+      {/* Quick Action Toolbar (Board) */}
       {!save.isPrivateMemo && (
         <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90 transition">
           <button
@@ -361,21 +361,6 @@ export function PolymorphicCard({
             <FolderPlus className="w-3 h-3 text-neutral-300 dark:text-neutral-700" />
             <span>Board</span>
           </button>
-
-          {onConnect && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onConnect(item);
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-900/80 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-md border border-white/20 dark:border-neutral-800 transition cursor-pointer"
-              title="Establish Synaptic Pair"
-            >
-              <Link2 className="w-3 h-3 text-neutral-300 dark:text-neutral-700" />
-              <span>Pair</span>
-            </button>
-          )}
         </div>
       )}
 

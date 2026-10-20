@@ -35,15 +35,20 @@ export interface ResolveCardUtilityParams {
 }
 
 /**
- * 1. Cinema / Film: MUBI, JustWatch, TMDB
+ * 1. Cinema / Film: JustWatch, MUBI, TMDB
  */
 export function resolveCinemaLink(entity: DeepLinkEntity, fallbackTitle = "Cinema"): string {
   const canonical = entity.canonicalUrl;
-  if (canonical && (canonical.includes("mubi.com") || canonical.includes("letterboxd.com"))) {
+  if (
+    canonical &&
+    (canonical.includes("justwatch.com") ||
+      canonical.includes("mubi.com") ||
+      canonical.includes("letterboxd.com"))
+  ) {
     return canonical;
   }
   const title = entity.title || fallbackTitle;
-  return `https://mubi.com/search?query=${encodeURIComponent(title)}`;
+  return `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`;
 }
 
 export function getCinemaSearchLinks(title: string) {
@@ -236,7 +241,7 @@ export function resolveCardUtility({
   // 2. Film / Cinema
   if (typePath.startsWith("/media/film") || coreType === "MEDIA") {
     return {
-      label: customUtilityLabel || "Watch on MUBI",
+      label: customUtilityLabel || "Watch Film",
       href: resolveCinemaLink(entity),
       iconName: "play",
       isInteractive: Boolean(onUtilityClick),

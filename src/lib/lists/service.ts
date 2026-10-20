@@ -122,9 +122,20 @@ export async function getUserLists(userId: string): Promise<Array<SmartList & { 
       .from(listItems)
       .where(eq(listItems.listId, list.id));
 
+    let count = Number(manualCount?.count || 0);
+
+    if (list.autoRules || list.slug === "films") {
+      try {
+        const details = await getListBySlugWithItems(list.slug, userId);
+        if (details) {
+          count = details.itemCount;
+        }
+      } catch {}
+    }
+
     result.push({
       ...list,
-      itemCount: Number(manualCount?.count || 0),
+      itemCount: count,
     });
   }
 
@@ -384,9 +395,9 @@ export async function getListBySlugWithItems(
     });
   }
 
-  // 2. Dynamic Auto-Rules Population (if rules defined)
-  if (list.autoRules) {
-    const rules = list.autoRules;
+  // 2. Dynamic Auto-Rules Population (if rules defined or slug === "films")
+  if (list.autoRules || list.slug === "films") {
+    const rules = list.autoRules || { coreType: "MEDIA" };
 
     const allUserSaves = await db
       .select({
@@ -403,8 +414,24 @@ export async function getListBySlugWithItems(
       let match = true;
 
       // Filter: coreType
-      if (rules.coreType && record.entity?.coreType?.toUpperCase() !== rules.coreType.toUpperCase()) {
-        match = false;
+      if (rules.coreType || list.slug === "films") {
+        const targetCoreType = (rules.coreType || "MEDIA").toUpperCase();
+        const entityCoreType = record.entity?.coreType?.toUpperCase();
+        const typePath = (record.save.typePath || record.entity?.typePath || "").toLowerCase();
+
+        if (targetCoreType === "MEDIA" || list.slug === "films") {
+          const isMedia =
+            entityCoreType === "MEDIA" ||
+            typePath.startsWith("/media/film") ||
+            typePath.startsWith("/media") ||
+            typePath.includes("film") ||
+            typePath.includes("cinema");
+          if (!isMedia) match = false;
+        } else {
+          if (entityCoreType !== targetCoreType) {
+            match = false;
+          }
+        }
       }
 
       // Filter: tagsInclude

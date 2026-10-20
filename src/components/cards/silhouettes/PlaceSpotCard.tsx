@@ -47,6 +47,7 @@ export function PlaceSpotCard({
             <img
               src={entity.heroImageUrl}
               alt={spotName}
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
             />
           </div>

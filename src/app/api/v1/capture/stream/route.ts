@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       try {
         // STAGE 1: OPTIMISTIC (<10ms SLA)
         const privacy = classifyWithHeuristics(input);
-        const isPrivateMemo = privacy.isPrivate || privacy.intent === "PRIVATE_MEMO";
+        const isPrivateMemo = privacy.intent === "PRIVATE_MEMO";
 
         // Resolve valid fallback type ID or null
         const [fallbackType] = await db

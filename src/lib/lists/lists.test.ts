@@ -347,4 +347,49 @@ describe("Smart Lists, Curated Boards & Editorial Sections Engine", () => {
     expect((unauthItem?.save.userCustomValues as any)?.secretMerchantContact).toBeUndefined();
     expect((unauthItem?.save.userCustomValues as any)?.producer).toBe("Overnoy");
   });
+
+  it("auto-populates films list with /media/film saves correctly", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `films-${timestamp}@curio.local`,
+        username: `films_${timestamp}`,
+      })
+      .returning();
+
+    // Create a list with slug "films"
+    const list = await createList(user.id, {
+      title: "Films",
+      slug: "films",
+      autoRules: {
+        coreType: "MEDIA",
+      },
+    });
+
+    // Save with typePath /media/film and coreType "PRODUCT" or "MEDIA"
+    const [ent] = await db
+      .insert(globalEntities)
+      .values({
+        canonicalUrl: `https://example.com/film-${timestamp}`,
+        urlHash: `hash-film-${timestamp}`,
+        entityKey: `key-film-${timestamp}`,
+        coreType: "MEDIA",
+        typePath: "/media/film",
+        title: "Past Lives",
+        coreStructuredData: {},
+      })
+      .returning();
+
+    await db.insert(userSaves).values({
+      userId: user.id,
+      entityId: ent.id,
+      typePath: "/media/film",
+      isPrivateMemo: false,
+    });
+
+    const result = await getListBySlugWithItems("films", user.id);
+    expect(result?.itemCount).toBe(1);
+    expect(result?.sections[0].items[0].entity?.title).toBe("Past Lives");
+  });
 });

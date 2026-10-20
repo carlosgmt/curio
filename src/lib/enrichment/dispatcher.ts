@@ -3,6 +3,11 @@ import { resolveBook, type ResolvedBook } from "./providers/books";
 import { resolveFilm, type ResolvedFilm } from "./providers/cinema";
 import { resolveMusicBrainz, resolveSpotifyUrl, type ResolvedMusic } from "./providers/music";
 import { resolveBarcode, resolveWineQuery, type ResolvedProduct } from "./providers/products";
+import {
+  discoverUniversalEntities,
+  type DiscoveredCandidate,
+  type CandidateFallback,
+} from "./universalDiscovery";
 
 export interface EnrichmentPayload {
   title: string;
@@ -22,6 +27,333 @@ export interface EnrichmentPayload {
     priceCents?: number | null;
     currency?: string | null;
   };
+  runnerUpCandidates?: CandidateFallback[];
+}
+
+export interface EnrichCaptureOptions {
+  detectedType?: string;
+  forcedTypePath?: string;
+  universalCandidates?: DiscoveredCandidate[];
+  fetchFn?: typeof fetch;
+}
+
+/**
+ * Hydrates full specialist metadata for the winning ontology typePath
+ */
+async function hydrateSpecialist(
+  targetTitle: string,
+  typePath: string,
+  winningCandidate: DiscoveredCandidate | null,
+  fetchFn: typeof fetch,
+  runnerUpCandidates: CandidateFallback[]
+): Promise<EnrichmentPayload> {
+  // Cinema & Film
+  if (typePath === "/media/film") {
+    const filmRes = await resolveFilm(targetTitle, { fetchFn });
+    if (filmRes) {
+      return {
+        title: filmRes.title,
+        summary: filmRes.summary,
+        heroImageUrl: filmRes.posterUrl,
+        coreType: "MEDIA",
+        typePath: "/media/film",
+        canonicalExternalId: filmRes.canonicalExternalId || winningCandidate?.conceptUri,
+        canonicalUrl:
+          filmRes.canonicalUrl ||
+          winningCandidate?.url ||
+          `https://en.wikipedia.org/wiki/${encodeURIComponent(filmRes.title)}`,
+        brandOrCreator: filmRes.director || winningCandidate?.creator,
+        priceCents: filmRes.priceCents,
+        coreStructuredData: {
+          ...filmRes.coreStructuredData,
+          wikidataUri: winningCandidate?.conceptUri,
+        },
+        primarySource: {
+          sellerName: "MUBI",
+          sourceUrl: `https://mubi.com/search?query=${encodeURIComponent(filmRes.title)}`,
+          priceCents: filmRes.priceCents,
+        },
+        runnerUpCandidates,
+      };
+    }
+
+    return {
+      title: winningCandidate?.title || targetTitle,
+      summary: winningCandidate?.snippet || `Film: ${targetTitle}`,
+      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      coreType: "MEDIA",
+      typePath: "/media/film",
+      canonicalExternalId: winningCandidate?.conceptUri,
+      canonicalUrl: winningCandidate?.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(targetTitle)}`,
+      brandOrCreator: winningCandidate?.creator,
+      priceCents: 1499,
+      currency: "USD",
+      coreStructuredData: {
+        wikidataUri: winningCandidate?.conceptUri,
+        releaseYear: winningCandidate?.year,
+        director: winningCandidate?.creator,
+      },
+      primarySource: {
+        sellerName: "MUBI",
+        sourceUrl: `https://mubi.com/search?query=${encodeURIComponent(targetTitle)}`,
+        priceCents: 1499,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Books
+  if (typePath === "/product/book") {
+    const bookRes = await resolveBook(targetTitle, { fetchFn });
+    if (bookRes) {
+      return {
+        title: bookRes.title,
+        summary: bookRes.summary,
+        heroImageUrl: bookRes.coverUrl,
+        coreType: "BOOK",
+        typePath: "/product/book",
+        canonicalExternalId: bookRes.canonicalExternalId || winningCandidate?.conceptUri,
+        canonicalUrl:
+          bookRes.canonicalUrl ||
+          winningCandidate?.url ||
+          `https://openlibrary.org/search?q=${encodeURIComponent(bookRes.title)}`,
+        brandOrCreator: bookRes.author || winningCandidate?.creator,
+        priceCents: bookRes.priceCents,
+        coreStructuredData: {
+          ...bookRes.coreStructuredData,
+          wikidataUri: winningCandidate?.conceptUri,
+        },
+        primarySource: {
+          sellerName: "Bookshop.org",
+          sourceUrl: `https://bookshop.org/search?keywords=${encodeURIComponent(bookRes.title)}`,
+          priceCents: bookRes.priceCents,
+        },
+        runnerUpCandidates,
+      };
+    }
+
+    return {
+      title: winningCandidate?.title || targetTitle,
+      summary: winningCandidate?.snippet || `Book: ${targetTitle}`,
+      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      coreType: "BOOK",
+      typePath: "/product/book",
+      canonicalExternalId: winningCandidate?.conceptUri,
+      canonicalUrl: winningCandidate?.url || `https://openlibrary.org/search?q=${encodeURIComponent(targetTitle)}`,
+      brandOrCreator: winningCandidate?.creator,
+      priceCents: 2200,
+      currency: "USD",
+      coreStructuredData: {
+        wikidataUri: winningCandidate?.conceptUri,
+        publicationYear: winningCandidate?.year,
+        author: winningCandidate?.creator,
+      },
+      primarySource: {
+        sellerName: "Bookshop.org",
+        sourceUrl: `https://bookshop.org/search?keywords=${encodeURIComponent(targetTitle)}`,
+        priceCents: 2200,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Music & Vinyl
+  if (typePath === "/media/music/vinyl" || typePath.startsWith("/media/music")) {
+    const musicRes = await resolveMusicBrainz(targetTitle, { fetchFn });
+    if (musicRes) {
+      return {
+        title: musicRes.title,
+        summary: musicRes.summary,
+        heroImageUrl: musicRes.coverUrl,
+        coreType: "MEDIA",
+        typePath: "/media/music/vinyl",
+        canonicalExternalId: musicRes.canonicalExternalId || winningCandidate?.conceptUri,
+        canonicalUrl:
+          musicRes.canonicalUrl ||
+          winningCandidate?.url ||
+          `https://www.discogs.com/search/?q=${encodeURIComponent(musicRes.title)}`,
+        brandOrCreator: musicRes.artist || winningCandidate?.creator,
+        priceCents: musicRes.priceCents,
+        coreStructuredData: {
+          ...musicRes.coreStructuredData,
+          wikidataUri: winningCandidate?.conceptUri,
+        },
+        primarySource: {
+          sellerName: "Discogs",
+          sourceUrl: `https://www.discogs.com/search/?q=${encodeURIComponent(musicRes.title)}&type=release`,
+          priceCents: musicRes.priceCents,
+        },
+        runnerUpCandidates,
+      };
+    }
+
+    return {
+      title: winningCandidate?.title || targetTitle,
+      summary: winningCandidate?.snippet || `Music track: ${targetTitle}`,
+      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      coreType: "MEDIA",
+      typePath: "/media/music/vinyl",
+      canonicalExternalId: winningCandidate?.conceptUri,
+      canonicalUrl: winningCandidate?.url || `https://www.discogs.com/search/?q=${encodeURIComponent(targetTitle)}`,
+      brandOrCreator: winningCandidate?.creator,
+      priceCents: 2999,
+      currency: "USD",
+      coreStructuredData: {
+        wikidataUri: winningCandidate?.conceptUri,
+        artist: winningCandidate?.creator,
+        year: winningCandidate?.year,
+      },
+      primarySource: {
+        sellerName: "Discogs",
+        sourceUrl: `https://www.discogs.com/search/?q=${encodeURIComponent(targetTitle)}&type=release`,
+        priceCents: 2999,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Wine & Beverages
+  if (typePath === "/product/beverage/wine" || typePath.includes("wine")) {
+    const wineRes = resolveWineQuery(targetTitle);
+    return {
+      title: wineRes.title,
+      summary: wineRes.summary,
+      heroImageUrl:
+        winningCandidate?.thumbnailUrl ||
+        "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=600&q=80",
+      coreType: "PRODUCT",
+      typePath: "/product/beverage/wine",
+      canonicalExternalId: wineRes.canonicalExternalId || winningCandidate?.conceptUri,
+      canonicalUrl: winningCandidate?.url || wineRes.canonicalUrl,
+      brandOrCreator: wineRes.brandOrProducer,
+      priceCents: wineRes.priceCents,
+      coreStructuredData: {
+        ...wineRes.coreStructuredData,
+        wikidataUri: winningCandidate?.conceptUri,
+      },
+      primarySource: {
+        sellerName: "Wine.com",
+        sourceUrl: `https://www.wine.com/search/${encodeURIComponent(wineRes.title)}`,
+        priceCents: wineRes.priceCents,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Places & Venues
+  if (typePath === "/place") {
+    return {
+      title: winningCandidate?.title || targetTitle,
+      summary: winningCandidate?.snippet || `Verified location for ${targetTitle}`,
+      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      coreType: "PLACE",
+      typePath: "/place",
+      canonicalExternalId: winningCandidate?.conceptUri,
+      canonicalUrl: winningCandidate?.url || `https://maps.google.com/?q=${encodeURIComponent(targetTitle)}`,
+      brandOrCreator: null,
+      priceCents: null,
+      coreStructuredData: {
+        wikidataUri: winningCandidate?.conceptUri,
+        locationName: targetTitle,
+      },
+      primarySource: {
+        sellerName: "Google Maps",
+        sourceUrl: `https://maps.google.com/?q=${encodeURIComponent(targetTitle)}`,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Video Games
+  if (typePath === "/media/videogame") {
+    return {
+      title: winningCandidate?.title || targetTitle,
+      summary: winningCandidate?.snippet || `Video game: ${targetTitle}`,
+      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      coreType: "VIDEOGAME",
+      typePath: "/media/videogame",
+      canonicalExternalId: winningCandidate?.conceptUri,
+      canonicalUrl:
+        winningCandidate?.url ||
+        `https://store.steampowered.com/search/?term=${encodeURIComponent(targetTitle)}`,
+      brandOrCreator: winningCandidate?.creator,
+      priceCents: 5999,
+      coreStructuredData: {
+        wikidataUri: winningCandidate?.conceptUri,
+        developer: winningCandidate?.creator,
+        releaseYear: winningCandidate?.year,
+      },
+      primarySource: {
+        sellerName: "Steam",
+        sourceUrl: `https://store.steampowered.com/search/?term=${encodeURIComponent(targetTitle)}`,
+        priceCents: 5999,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Art & Paintings
+  if (typePath === "/product/art") {
+    return {
+      title: winningCandidate?.title || targetTitle,
+      summary: winningCandidate?.snippet || `Artwork: ${targetTitle}`,
+      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      coreType: "PRODUCT",
+      typePath: "/product/art",
+      canonicalExternalId: winningCandidate?.conceptUri,
+      canonicalUrl: winningCandidate?.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(targetTitle)}`,
+      brandOrCreator: winningCandidate?.creator,
+      priceCents: null,
+      coreStructuredData: {
+        wikidataUri: winningCandidate?.conceptUri,
+        artist: winningCandidate?.creator,
+        year: winningCandidate?.year,
+      },
+      primarySource: {
+        sellerName: "WikiArt",
+        sourceUrl: `https://www.wikiart.org/en/Search/${encodeURIComponent(targetTitle)}`,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Culinary & Recipes
+  if (typePath === "/article/recipe") {
+    return {
+      title: winningCandidate?.title || targetTitle,
+      summary: winningCandidate?.snippet || `Recipe: ${targetTitle}`,
+      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      coreType: "CULINARY",
+      typePath: "/article/recipe",
+      canonicalExternalId: winningCandidate?.conceptUri,
+      canonicalUrl:
+        winningCandidate?.url || `https://duckduckgo.com/?q=${encodeURIComponent(targetTitle + " recipe")}`,
+      brandOrCreator: winningCandidate?.creator,
+      priceCents: null,
+      coreStructuredData: {
+        wikidataUri: winningCandidate?.conceptUri,
+        recipeName: targetTitle,
+      },
+      primarySource: {
+        sellerName: "Recipe Index",
+        sourceUrl: `https://duckduckgo.com/?q=${encodeURIComponent(targetTitle + " recipe")}`,
+      },
+      runnerUpCandidates,
+    };
+  }
+
+  // Fallback Product / Generic
+  return {
+    title: winningCandidate?.title || targetTitle.charAt(0).toUpperCase() + targetTitle.slice(1),
+    summary: winningCandidate?.snippet || `Curated item: ${targetTitle}`,
+    heroImageUrl: winningCandidate?.thumbnailUrl || null,
+    coreType: winningCandidate?.coreType || "PRODUCT",
+    typePath: winningCandidate?.typePath || "/product/generic",
+    canonicalUrl: winningCandidate?.url || `https://duckduckgo.com/?q=${encodeURIComponent(targetTitle)}`,
+    coreStructuredData: { query: targetTitle, wikidataUri: winningCandidate?.conceptUri },
+    priceCents: 2900,
+    runnerUpCandidates,
+  };
 }
 
 /**
@@ -30,10 +362,7 @@ export interface EnrichmentPayload {
  */
 export async function enrichCaptureInput(
   input: string,
-  options?: {
-    detectedType?: string;
-    fetchFn?: typeof fetch;
-  }
+  options?: EnrichCaptureOptions
 ): Promise<EnrichmentPayload> {
   const trimmed = input.trim();
   const isUrl = /^https?:\/\//i.test(trimmed);
@@ -61,6 +390,7 @@ export async function enrichCaptureInput(
             sourceUrl: trimmed,
             priceCents: 0,
           },
+          runnerUpCandidates: [],
         };
       }
     }
@@ -94,6 +424,7 @@ export async function enrichCaptureInput(
         priceCents: og.price,
         currency: og.currency,
       },
+      runnerUpCandidates: [],
     };
   }
 
@@ -112,12 +443,39 @@ export async function enrichCaptureInput(
         brandOrCreator: barcodeRes.brandOrProducer,
         priceCents: barcodeRes.priceCents,
         coreStructuredData: barcodeRes.coreStructuredData,
+        runnerUpCandidates: [],
       };
     }
   }
 
-  // 3. Books
+  // 3. Forced typePath (e.g. from Disambiguation Swap)
+  if (options?.forcedTypePath) {
+    return hydrateSpecialist(trimmed, options.forcedTypePath, null, fetchFn, []);
+  }
+
+  // 4. Universal Knowledge Graph Discovery (Single-call Wikidata + Wikipedia)
+  const candidates =
+    options?.universalCandidates ??
+    (await discoverUniversalEntities(trimmed, { fetchFn }).catch(() => []));
+
+  if (candidates.length > 0) {
+    const winning = candidates[0];
+    const runnerUpCandidates: CandidateFallback[] = candidates.slice(1).map((c) => ({
+      title: c.year ? `${c.title} (${c.year})` : c.title,
+      url: c.url,
+      snippet: c.snippet,
+      coreType: c.coreType,
+      typePath: c.typePath,
+      badgeLabel: c.badgeLabel,
+    }));
+
+    return hydrateSpecialist(winning.title, winning.typePath, winning, fetchFn, runnerUpCandidates);
+  }
+
+  // 5. Secondary Keyword Heuristics (when universal discovery returned 0 candidates)
   const lower = trimmed.toLowerCase();
+
+  // Books
   if (options?.detectedType === "BOOK" || /\b(?:book|novel|memoir|author)\b/i.test(lower)) {
     const bookRes = await resolveBook(trimmed, { fetchFn });
     if (bookRes) {
@@ -137,11 +495,12 @@ export async function enrichCaptureInput(
           sourceUrl: `https://bookshop.org/search?keywords=${encodeURIComponent(bookRes.title)}`,
           priceCents: bookRes.priceCents,
         },
+        runnerUpCandidates: [],
       };
     }
   }
 
-  // 4. Music & Vinyl
+  // Music & Vinyl
   if (/\b(?:vinyl|album|record|lp|song|artist)\b/i.test(lower)) {
     const musicRes = await resolveMusicBrainz(trimmed, { fetchFn });
     if (musicRes) {
@@ -161,11 +520,12 @@ export async function enrichCaptureInput(
           sourceUrl: `https://www.discogs.com/search/?q=${encodeURIComponent(musicRes.title)}&type=release`,
           priceCents: musicRes.priceCents,
         },
+        runnerUpCandidates: [],
       };
     }
   }
 
-  // 5. Cinema & Film
+  // Cinema & Film
   if (options?.detectedType === "MEDIA" || /\b(?:movie|film|cinema|criterion|director)\b/i.test(lower)) {
     const filmRes = await resolveFilm(trimmed, { fetchFn });
     if (filmRes) {
@@ -185,17 +545,19 @@ export async function enrichCaptureInput(
           sourceUrl: `https://mubi.com/search?query=${encodeURIComponent(filmRes.title)}`,
           priceCents: filmRes.priceCents,
         },
+        runnerUpCandidates: [],
       };
     }
   }
 
-  // 6. Wine & Beverages
+  // Wine & Beverages
   if (/\b(?:wine|cuvée|domaine|chateau|château|pinot|cabernet|syrah|chardonnay)\b/i.test(lower)) {
     const wineRes = resolveWineQuery(trimmed);
     return {
       title: wineRes.title,
       summary: wineRes.summary,
-      heroImageUrl: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=600&q=80",
+      heroImageUrl:
+        "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=600&q=80",
       coreType: "PRODUCT",
       typePath: "/product/beverage/wine",
       canonicalExternalId: wineRes.canonicalExternalId,
@@ -208,10 +570,11 @@ export async function enrichCaptureInput(
         sourceUrl: `https://www.wine.com/search/${encodeURIComponent(wineRes.title)}`,
         priceCents: wineRes.priceCents,
       },
+      runnerUpCandidates: [],
     };
   }
 
-  // 7. General Fallback
+  // 6. General Fallback
   return {
     title: trimmed.charAt(0).toUpperCase() + trimmed.slice(1),
     summary: `Curated item: ${trimmed}`,
@@ -220,5 +583,6 @@ export async function enrichCaptureInput(
     canonicalUrl: `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`,
     coreStructuredData: { query: trimmed },
     priceCents: 2900,
+    runnerUpCandidates: [],
   };
 }

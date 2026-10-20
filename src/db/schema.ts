@@ -202,6 +202,8 @@ export const userSaves = sqliteTable(
           url: string;
           snippet: string;
           coreType: string;
+          typePath?: string;
+          badgeLabel?: string;
         }>
       >()
       .default([]),

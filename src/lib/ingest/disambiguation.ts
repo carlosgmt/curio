@@ -1,18 +1,23 @@
 import { db, userSaves, globalEntities } from "@/db";
 import { eq } from "drizzle-orm";
 import { resolveOrCreateCanonicalEntity } from "./resolution";
+import { enrichCaptureInput } from "../enrichment/dispatcher";
+import { mapDescriptionToOntology } from "../enrichment/universalDiscovery";
 
 export interface CandidateFallback {
   title: string;
   url: string;
   snippet: string;
   coreType: string;
+  typePath?: string;
+  badgeLabel?: string;
 }
 
 /**
  * FR-2.3: 1-Tap Candidate Disambiguation Swapper
  * When the user selects a runner-up candidate from candidate_fallbacks,
- * this function updates the user_save record with the new entity or fallback details.
+ * this function hydrates specialist metadata for the newly selected candidate's typePath
+ * and atomically updates the user_save and global_entities records.
  */
 export async function swapCandidateFallback(
   saveId: string,
@@ -32,11 +37,10 @@ export async function swapCandidateFallback(
   }
 
   const selectedCandidate = selectedIndex !== -1 ? fallbacks[selectedIndex] : undefined;
-  const remainingFallbacks = selectedIndex !== -1
-    ? fallbacks.filter((_, idx) => idx !== selectedIndex)
-    : fallbacks;
+  const remainingFallbacks =
+    selectedIndex !== -1 ? fallbacks.filter((_, idx) => idx !== selectedIndex) : fallbacks;
 
-  // If there was an existing entity, we can push it into fallbacks
+  // Push existing entity into fallbacks if available
   let updatedFallbacks = remainingFallbacks;
   if (save.entityId) {
     const [existingEntity] = await db
@@ -46,6 +50,7 @@ export async function swapCandidateFallback(
       .limit(1);
 
     if (existingEntity) {
+      const ontology = mapDescriptionToOntology(existingEntity.summary || "", existingEntity.title);
       updatedFallbacks = [
         ...remainingFallbacks,
         {
@@ -53,6 +58,8 @@ export async function swapCandidateFallback(
           url: existingEntity.canonicalUrl,
           snippet: existingEntity.summary || "",
           coreType: existingEntity.coreType,
+          typePath: existingEntity.typePath || ontology.typePath,
+          badgeLabel: ontology.badgeLabel,
         },
       ];
     }
@@ -62,31 +69,72 @@ export async function swapCandidateFallback(
   let targetTypePath = save.typePath;
 
   if (!targetEntityId && selectedCandidate) {
-    // Check if an entity with this canonicalUrl already exists
+    const rawTypePath =
+      selectedCandidate.typePath ||
+      (selectedCandidate.coreType.startsWith("/")
+        ? selectedCandidate.coreType
+        : `/${selectedCandidate.coreType.toLowerCase()}`);
+
+    // Clean title (e.g. remove trailing year like "Norwegian Wood (1965)")
+    const cleanTitle = selectedCandidate.title
+      .replace(/\s*\((?:19\d\d|20\d\d)\)$/, "")
+      .trim();
+
+    // Trigger full specialist hydration for the target typePath
+    const specialistEnrichment = await enrichCaptureInput(cleanTitle, {
+      forcedTypePath: rawTypePath,
+    }).catch(() => null);
+
+    const canonicalUrl = selectedCandidate.url.includes("wikidata.org")
+      ? specialistEnrichment?.canonicalUrl || selectedCandidate.url
+      : selectedCandidate.url;
+    const finalTitle = selectedCandidate.title;
+    targetTypePath = specialistEnrichment?.typePath || rawTypePath;
+
+    // Check if an entity with this canonicalUrl or title+typePath already exists
     const [existing] = await db
       .select()
       .from(globalEntities)
-      .where(eq(globalEntities.canonicalUrl, selectedCandidate.url))
+      .where(eq(globalEntities.canonicalUrl, canonicalUrl))
       .limit(1);
 
     if (existing) {
       targetEntityId = existing.id;
-      if (existing.typePath) {
-        targetTypePath = existing.typePath;
+      targetTypePath = existing.typePath || targetTypePath;
+
+      // Augment existing entity if it was a stub
+      if (
+        (!existing.heroImageUrl && specialistEnrichment?.heroImageUrl) ||
+        (!existing.brandOrCreator && specialistEnrichment?.brandOrCreator)
+      ) {
+        await db
+          .update(globalEntities)
+          .set({
+            heroImageUrl: existing.heroImageUrl || specialistEnrichment?.heroImageUrl,
+            brandOrCreator: existing.brandOrCreator || specialistEnrichment?.brandOrCreator,
+            coreStructuredData: {
+              ...(existing.coreStructuredData as Record<string, unknown>),
+              ...(specialistEnrichment?.coreStructuredData || {}),
+            },
+          })
+          .where(eq(globalEntities.id, existing.id));
       }
     } else {
-      const typePath = selectedCandidate.coreType.startsWith("/")
-        ? selectedCandidate.coreType
-        : `/${selectedCandidate.coreType.toLowerCase()}`;
-
       const res = await resolveOrCreateCanonicalEntity({
-        url: selectedCandidate.url,
-        title: selectedCandidate.title,
-        typePath,
-        structuredAttributes: { summary: selectedCandidate.snippet },
+        url: canonicalUrl,
+        title: finalTitle,
+        typePath: targetTypePath,
+        structuredAttributes: {
+          summary: specialistEnrichment?.summary || selectedCandidate.snippet,
+          heroImageUrl: specialistEnrichment?.heroImageUrl || null,
+          brandOrCreator: specialistEnrichment?.brandOrCreator || null,
+          priceCents: specialistEnrichment?.priceCents ?? null,
+          currency: specialistEnrichment?.currency || "USD",
+          ...(specialistEnrichment?.coreStructuredData || {}),
+        },
       });
       targetEntityId = res.entity.id;
-      targetTypePath = res.entity.typePath || typePath;
+      targetTypePath = res.entity.typePath || targetTypePath;
     }
   }
 

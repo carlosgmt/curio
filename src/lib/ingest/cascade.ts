@@ -392,7 +392,11 @@ export async function executeIngestionCascade(params: {
   }
 
   // Discover candidate fallbacks for disambiguation bar (FR-2.3)
-  const { primary: fallbackPrimary, runnerUps } = await discoverCandidates(query, privacy.detectedType);
+  const { primary: fallbackPrimary, runnerUps: defaultRunnerUps } = await discoverCandidates(query, privacy.detectedType);
+  const runnerUps: CandidateFallback[] =
+    enrichment?.runnerUpCandidates && enrichment.runnerUpCandidates.length > 0
+      ? enrichment.runnerUpCandidates
+      : defaultRunnerUps;
 
   const finalTitle = enrichment?.title || fallbackPrimary.title;
   const finalCanonicalUrl = enrichment?.canonicalUrl || fallbackPrimary.url;

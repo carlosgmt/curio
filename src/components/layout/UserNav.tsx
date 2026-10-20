@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers } from "lucide-react";
+import { User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers, Upload } from "lucide-react";
 import { AffiliateSettingsModal } from "@/components/commerce/AffiliateSettingsModal";
 import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
 
@@ -18,6 +18,7 @@ export interface UserNavProps {
   } | null;
   onOpenAuth: (tab?: "login" | "register") => void;
   onOpenOnboarding: () => void;
+  onOpenImporter?: () => void;
   onOpenAffiliateSettings?: () => void;
   onOpenTypesSettings?: () => void;
   onLogout: () => void;
@@ -27,6 +28,7 @@ export function UserNav({
   user,
   onOpenAuth,
   onOpenOnboarding,
+  onOpenImporter,
   onOpenAffiliateSettings,
   onOpenTypesSettings,
   onLogout,
@@ -74,18 +76,6 @@ export function UserNav({
   return (
     <div className="relative inline-block text-left">
       <div className="flex items-center gap-2">
-        {/* Incomplete Onboarding Indicator */}
-        {!user.onboardingCompleted && (
-          <button
-            type="button"
-            onClick={onOpenOnboarding}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-semibold hover:bg-amber-500/20 transition active:scale-95 cursor-pointer"
-          >
-            <Sparkles className="w-3 h-3" />
-            <span>Complete Setup</span>
-          </button>
-        )}
-
         {/* User Pill Trigger */}
         <button
           type="button"
@@ -145,17 +135,29 @@ export function UserNav({
               </div>
             </div>
 
-            {!user.onboardingCompleted && (
+            <button
+              type="button"
+              onClick={() => {
+                setDropdownOpen(false);
+                onOpenOnboarding();
+              }}
+              className="w-full flex items-center gap-2 p-2 rounded-xl text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition text-left cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>Bring in Collections & Starters</span>
+            </button>
+
+            {onOpenImporter && (
               <button
                 type="button"
                 onClick={() => {
                   setDropdownOpen(false);
-                  onOpenOnboarding();
+                  onOpenImporter();
                 }}
                 className="w-full flex items-center gap-2 p-2 rounded-xl text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition text-left cursor-pointer"
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Onboarding Wizard</span>
+                <Upload className="w-3.5 h-3.5 text-blue-500" />
+                <span>Import CSV & Data</span>
               </button>
             )}
 

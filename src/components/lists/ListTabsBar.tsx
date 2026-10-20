@@ -21,7 +21,7 @@ export function ListTabsBar({
 }: ListTabsBarProps) {
   return (
     <div className="flex items-center gap-1.5 overflow-x-auto pb-3 mb-6 scrollbar-none">
-      {/* "All Curations" Tab */}
+      {/* "All my stuff" Tab */}
       <button
         type="button"
         onClick={() => onSelectList(null)}
@@ -32,7 +32,7 @@ export function ListTabsBar({
         }`}
       >
         <Layers className="w-3.5 h-3.5" />
-        <span>All Saves</span>
+        <span>All my stuff</span>
         {totalAllSavesCount !== undefined && (
           <span
             className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${

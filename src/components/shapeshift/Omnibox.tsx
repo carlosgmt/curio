@@ -622,10 +622,10 @@ export function Omnibox({
           }}
           placeholder={
             inSearch
-              ? "Type to search your saves with local vector semantics..."
+              ? "Search by meaning, title, or tags... (Esc to exit)"
               : intentPreview?.intent === "EDIT_SAVE"
               ? "Press Enter to update card, Shift+Enter to create new card"
-              : "Capture anything, update cards ('rate Past Lives 5★'), or type / to search..."
+              : "Type / to search (e.g. /coffee), or enter anything to save..."
           }
           disabled={isBusy}
           className="flex-1 bg-transparent px-3 py-2 text-base text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none min-w-0"
@@ -668,9 +668,12 @@ export function Omnibox({
                 inputRef.current?.focus();
               }}
               className="p-2 rounded-2xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition text-xs flex items-center gap-1 cursor-pointer"
-              title="Switch to semantic search (/)"
+              title="Search saves (/)"
             >
               <Search className="w-4 h-4" />
+              <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-400 border border-neutral-200 dark:border-neutral-700 hidden sm:inline">
+                /
+              </span>
             </button>
             <button
               type="submit"
@@ -833,8 +836,41 @@ export function Omnibox({
         </div>
       )}
 
+      {/* Omnibox Search & Save Usage Explanation */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 mt-2.5 px-2 text-xs text-neutral-500">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1 font-semibold text-neutral-700 dark:text-neutral-300">
+            <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-neutral-200/80 dark:bg-neutral-800 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-2xs">
+              /
+            </kbd>
+            <span>Search:</span>
+          </span>
+          <span className="text-neutral-600 dark:text-neutral-400">
+            Type <code className="text-purple-600 dark:text-purple-400 font-mono font-semibold">/</code> followed by any word or concept (e.g.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setInput("/coffee");
+                setIsSearchMode(true);
+                inputRef.current?.focus();
+              }}
+              className="text-purple-600 dark:text-purple-400 font-mono underline hover:text-purple-700 cursor-pointer"
+            >
+              /coffee
+            </button>
+            ) or click <Search className="w-3 h-3 inline text-purple-500 mx-0.5" /> to search saves semantically.
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 text-[11px] text-neutral-400 shrink-0">
+          <span><kbd className="px-1 font-mono bg-neutral-100 dark:bg-neutral-800 rounded border border-neutral-200 dark:border-neutral-700">Enter</kbd> to save</span>
+          <span>•</span>
+          <span><kbd className="px-1 font-mono bg-neutral-100 dark:bg-neutral-800 rounded border border-neutral-200 dark:border-neutral-700">Esc</kbd> to exit search</span>
+        </div>
+      </div>
+
       {/* Quick suggestions pills */}
-      <div className="flex items-center justify-center gap-2 mt-3 text-xs text-neutral-500 flex-wrap">
+      <div className="flex items-center justify-center gap-2 mt-2 text-xs text-neutral-500 flex-wrap">
         <span className="text-neutral-400">Try:</span>
         <button
           type="button"

@@ -22,7 +22,7 @@ const GARMENT_PHOTOS_SRC = process.env.GARMENT_PHOTOS_SRC || path.join(HOME, "do
 const GARMENT_PHOTOS_DST = process.env.GARMENT_PHOTOS_DST || path.join(HOME, "dockermounts/curio/media/garments");
 const RECIPES_DIR = process.env.RECIPES_DIR || path.join(HOME, "dockermounts/recipes");
 const CURIO_DB_PATH = process.env.DATABASE_PATH || path.join(HOME, "dockermounts/curio/curio.db");
-const TARGET_USER_ID = process.env.TARGET_USER_ID || "7d355b07-351e-4efd-8d76-9b52a4739137";
+let targetUserId = process.env.TARGET_USER_ID || "";
 
 interface RawGarment {
   id: number;
@@ -144,8 +144,7 @@ async function main() {
   console.log(`Mode: \x1b[1m${isDryRun ? "DRY-RUN (No changes will be written)" : "EXECUTE (Applying changes)"}\x1b[0m`);
   console.log(`Wardrobe DB:   ${WARDROBE_DB_PATH}`);
   console.log(`Recipes Dir:   ${RECIPES_DIR}`);
-  console.log(`Curio DB:      ${CURIO_DB_PATH}`);
-  console.log(`Target User:   ${TARGET_USER_ID}\n`);
+  console.log(`Curio DB:      ${CURIO_DB_PATH}\n`);
 
   // Verify paths exist
   if (!fs.existsSync(WARDROBE_DB_PATH)) {
@@ -297,21 +296,20 @@ async function main() {
 
   const now = new Date().toISOString();
 
-  // Ensure target user exists
-  const existingUser = curioDb.prepare("SELECT id FROM users WHERE id = ?").get(TARGET_USER_ID) as { id: string } | undefined;
+  // Resolve target user
+  const existingUser = (
+    targetUserId
+      ? curioDb.prepare("SELECT id, username FROM users WHERE id = ?").get(targetUserId)
+      : curioDb.prepare("SELECT id, username FROM users WHERE lower(username) = 'carlosgmt' OR lower(email) = 'carlos@curio.local'").get()
+  ) as { id: string; username: string } | undefined;
+
   if (!existingUser) {
-    console.log(`[User] Creating target user ${TARGET_USER_ID}...`);
-    curioDb.prepare(`
-      INSERT INTO users (id, username, email, display_name, is_pro, created_at)
-      VALUES (?, 'carlosgmt', 'carlos@curio.local', 'Carlos', 1, ?)
-    `).run(TARGET_USER_ID, now);
-  } else {
-    curioDb.prepare(`
-      UPDATE users SET username = 'carlosgmt', email = 'carlos@curio.local', display_name = 'Carlos'
-      WHERE id = ?
-    `).run(TARGET_USER_ID);
-    console.log(`[User] Verified target user ${TARGET_USER_ID} (carlosgmt)`);
+    throw new Error(
+      "Target user carlosgmt not found in Curio database. Please register the user account first."
+    );
   }
+  targetUserId = existingUser.id;
+  console.log(`[User] Verified target user @${existingUser.username} (${targetUserId})`);
 
   // Ensure Type: /style/outfit exists
   let outfitType = curioDb.prepare("SELECT id FROM curio_types WHERE type_path = ?").get("/style/outfit") as { id: string } | undefined;
@@ -322,10 +320,9 @@ async function main() {
       INSERT INTO curio_types (
         id, user_id, name, type_path, root_archetype, default_silhouette,
         identity_rules, json_schema, public_field_keys, extraction_prompt, localized_aliases, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       outfitTypeId,
-      TARGET_USER_ID,
       "Outfit / Ensemble",
       "/style/outfit",
       "PRODUCT",
@@ -480,7 +477,7 @@ async function main() {
         [g.type, g.subtype, g.season, g.brand].filter(Boolean).map((t) => t!.toLowerCase().trim())
       );
       let saveId: string;
-      const existingSave = findSaveStmt.get(TARGET_USER_ID, entityId) as { id: string } | undefined;
+      const existingSave = findSaveStmt.get(targetUserId, entityId) as { id: string } | undefined;
       if (existingSave) {
         saveId = existingSave.id;
         updateSaveStmt.run(garmentTypeId, "/product/garment", g.notes || null, autoTags, saveId);
@@ -488,7 +485,7 @@ async function main() {
         saveId = crypto.randomUUID();
         insertSaveStmt.run(
           saveId,
-          TARGET_USER_ID,
+          targetUserId,
           entityId,
           garmentTypeId,
           "/product/garment",
@@ -589,7 +586,7 @@ async function main() {
         ["outfit", "style", o.weather_condition].filter(Boolean).map((t) => t!.toLowerCase().trim())
       );
       let saveId: string;
-      const existingSave = findSaveStmt.get(TARGET_USER_ID, entityId) as { id: string } | undefined;
+      const existingSave = findSaveStmt.get(targetUserId, entityId) as { id: string } | undefined;
       if (existingSave) {
         saveId = existingSave.id;
         updateSaveStmt.run(outfitTypeId, "/style/outfit", o.notes || null, autoTags, saveId);
@@ -597,7 +594,7 @@ async function main() {
         saveId = crypto.randomUUID();
         insertSaveStmt.run(
           saveId,
-          TARGET_USER_ID,
+          targetUserId,
           entityId,
           outfitTypeId,
           "/style/outfit",
@@ -688,7 +685,7 @@ async function main() {
         ["recipe", "culinary", ...(r.meta.tags || []), ...(r.meta.meal_type || [])].map((t) => t.toLowerCase().trim())
       );
       let saveId: string;
-      const existingSave = findSaveStmt.get(TARGET_USER_ID, entityId) as { id: string } | undefined;
+      const existingSave = findSaveStmt.get(targetUserId, entityId) as { id: string } | undefined;
       if (existingSave) {
         saveId = existingSave.id;
         updateSaveStmt.run(recipeTypeId, "/culinary/recipe", null, autoTags, saveId);
@@ -696,7 +693,7 @@ async function main() {
         saveId = crypto.randomUUID();
         insertSaveStmt.run(
           saveId,
-          TARGET_USER_ID,
+          targetUserId,
           entityId,
           recipeTypeId,
           "/culinary/recipe",
@@ -732,11 +729,11 @@ async function main() {
         const garmentSaveId = garmentSaveMap.get(gid);
         if (!garmentSaveId) continue;
 
-        const existing = findConnStmt.get(TARGET_USER_ID, outfitSaveId, garmentSaveId, "WORN_ON");
+        const existing = findConnStmt.get(targetUserId, outfitSaveId, garmentSaveId, "WORN_ON");
         if (!existing) {
           insertConnStmt.run(
             crypto.randomUUID(),
-            TARGET_USER_ID,
+            targetUserId,
             outfitSaveId,
             garmentSaveId,
             "WORN_ON",
@@ -757,11 +754,11 @@ async function main() {
           const g2 = garmentSaveMap.get(Math.max(garmentIds[i], garmentIds[j]));
           if (!g1 || !g2) continue;
 
-          const existing = findConnStmt.get(TARGET_USER_ID, g1, g2, "PAIRED_WITH");
+          const existing = findConnStmt.get(targetUserId, g1, g2, "PAIRED_WITH");
           if (!existing) {
             insertConnStmt.run(
               crypto.randomUUID(),
-              TARGET_USER_ID,
+              targetUserId,
               g1,
               g2,
               "PAIRED_WITH",

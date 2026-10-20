@@ -5,6 +5,7 @@
  */
 
 import { generateJsonCompletion } from "@/lib/llm/client";
+import { discoverUniversalEntities } from "@/lib/enrichment/universalDiscovery";
 
 export type ModalityIntent = "PRIVATE_MEMO" | "PUBLIC_ENTITY" | "MULTI_ITEM_SOURCE";
 
@@ -40,6 +41,43 @@ const URL_PATTERN = /^https?:\/\/[^\s]+$/i;
  */
 export function classifyWithHeuristics(input: string): PrivacyClassificationResult {
   const trimmed = input.trim();
+
+  // 0. Explicit deterministic prefix override
+  const prefixMatch = trimmed.match(
+    /^(film|movie|cinema|book|novel|song|album|music|vinyl|wine|place|game|videogame|memo|note|todo|private):\s*(.+)$/i
+  );
+  if (prefixMatch) {
+    const rawPrefix = prefixMatch[1].toLowerCase();
+    const cleanQuery = prefixMatch[2].trim();
+    if (["memo", "note", "todo", "private"].includes(rawPrefix)) {
+      return {
+        intent: "PRIVATE_MEMO",
+        confidence: 1.0,
+        reasoning: `Deterministic prefix '${rawPrefix}:' forced private memo`,
+        isPrivate: true,
+        suggestedTitle: cleanQuery.length > 60 ? cleanQuery.substring(0, 57) + "..." : cleanQuery,
+        detectedType: "NOTE",
+      };
+    }
+
+    let detectedType: PrivacyClassificationResult["detectedType"] = "UNKNOWN";
+    if (["film", "movie", "cinema"].includes(rawPrefix)) detectedType = "MEDIA";
+    else if (["book", "novel"].includes(rawPrefix)) detectedType = "BOOK";
+    else if (["song", "album", "music", "vinyl"].includes(rawPrefix)) detectedType = "MEDIA";
+    else if (rawPrefix === "wine") detectedType = "PRODUCT";
+    else if (rawPrefix === "place") detectedType = "PLACE";
+    else if (["game", "videogame"].includes(rawPrefix)) detectedType = "PRODUCT";
+
+    return {
+      intent: "PUBLIC_ENTITY",
+      confidence: 1.0,
+      reasoning: `Deterministic prefix '${rawPrefix}:' forced entity route`,
+      isPrivate: false,
+      suggestedTitle: cleanQuery,
+      extractedQuery: cleanQuery,
+      detectedType,
+    };
+  }
 
   // 1. URL check
   if (URL_PATTERN.test(trimmed)) {
@@ -238,15 +276,38 @@ Respond ONLY with valid JSON matching this schema:
         localResult?.intent === "PUBLIC_ENTITY" ||
         localResult?.intent === "MULTI_ITEM_SOURCE"
       ) {
-        const intent = localResult.intent as ModalityIntent;
+        let intent = localResult.intent as ModalityIntent;
+        let detectedType =
+          (localResult.detectedType as any) || (intent === "PRIVATE_MEMO" ? "NOTE" : "UNKNOWN");
+        let extractedQuery =
+          intent === "PRIVATE_MEMO" ? undefined : (localResult.extractedQuery || trimmed);
+
+        // Guard against local LLM literal bias / cutoff (e.g. classifying Spanish film "Mi vida sin mi" as personal diary)
+        if (intent === "PRIVATE_MEMO") {
+          const hasPrivateKeyword = PRIVATE_PATTERNS.some((p) => p.test(trimmed));
+          if (!hasPrivateKeyword && trimmed.split(/\s+/).length <= 6) {
+            try {
+              const universalHits = await discoverUniversalEntities(trimmed, { timeoutMs: 1500 });
+              if (universalHits.length > 0 && universalHits[0].typePath !== "/product/generic") {
+                const top = universalHits[0];
+                intent = "PUBLIC_ENTITY";
+                detectedType = (top.coreType as any) || "MEDIA";
+                extractedQuery = top.title || trimmed;
+              }
+            } catch {
+              // Ignore discovery timeout/errors and preserve private classification
+            }
+          }
+        }
+
         return {
           intent,
           confidence: typeof localResult.confidence === "number" ? localResult.confidence : 0.95,
           reasoning: localResult.reasoning || "Local LLM (gemma4) classification",
           isPrivate: intent === "PRIVATE_MEMO",
           suggestedTitle: localResult.suggestedTitle || trimmed,
-          extractedQuery: intent === "PRIVATE_MEMO" ? undefined : (localResult.extractedQuery || trimmed),
-          detectedType: (localResult.detectedType as any) || (intent === "PRIVATE_MEMO" ? "NOTE" : "UNKNOWN"),
+          extractedQuery,
+          detectedType,
         };
       }
     } catch (err) {

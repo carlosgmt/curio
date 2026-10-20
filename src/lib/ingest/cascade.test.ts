@@ -34,7 +34,7 @@ describe("Deterministic Ingestion Cascade E2E", () => {
     const firstFallback = result.candidate_fallbacks![0];
     expect(firstFallback.url).toBeDefined();
     expect(firstFallback.title).toBeDefined();
-  });
+  }, 15000);
 
   it("handles 1-tap candidate disambiguation swap (FR-2.3)", async () => {
     const input = "Dune 1965 book";
@@ -45,7 +45,7 @@ describe("Deterministic Ingestion Cascade E2E", () => {
     const swapResult = await swapCandidateFallback(saveId, fallbackTarget);
     expect(swapResult.success).toBe(true);
     expect(swapResult.selectedCandidate?.url).toBe(fallbackTarget);
-  });
+  }, 15000);
 
   it("resolves real book query dynamically without hardcoded Dune mock", async () => {
     const input = "Norwegian Wood by Haruki Murakami book";
@@ -58,7 +58,7 @@ describe("Deterministic Ingestion Cascade E2E", () => {
     const author = result.entity?.brandOrCreator || "";
     expect(author.toLowerCase().includes("murakami") || author.includes("村上")).toBe(true);
     expect(result.entity?.typePath).toBe("/product/book");
-  });
+  }, 15000);
 
   it("resolves film query dynamically via live cinema resolver", async () => {
     const input = "Blade Runner movie";
@@ -70,5 +70,5 @@ describe("Deterministic Ingestion Cascade E2E", () => {
     expect(result.entity?.title.toLowerCase()).toContain("blade runner");
     expect(result.entity?.brandOrCreator?.toLowerCase()).toContain("ridley scott");
     expect(result.entity?.typePath).toBe("/media/film");
-  });
+  }, 15000);
 });

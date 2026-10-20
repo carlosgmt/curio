@@ -5,7 +5,6 @@ import { Omnibox } from "@/components/shapeshift/Omnibox";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import { ImporterModal } from "@/components/importers/ImporterModal";
 import { PairingModal } from "@/components/connections/PairingModal";
-import { QuotaIndicator } from "@/components/shapeshift/QuotaIndicator";
 import { ListTabsBar } from "@/components/lists/ListTabsBar";
 import { CreateListModal } from "@/components/lists/CreateListModal";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
@@ -25,8 +24,6 @@ import type { SilhouetteDensity } from "@/components/cards/registry";
 import {
   Sparkles,
   Layers,
-  ShieldCheck,
-  Zap,
   Upload,
   Disc3,
   Film,
@@ -72,10 +69,87 @@ export default function Home() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "register">("login");
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
-  const [dismissedOnboarding, setDismissedOnboarding] = useState(false);
+  const [dismissedOnboarding, setDismissedOnboarding] = useState(true);
   const [isTypesModalOpen, setIsTypesModalOpen] = useState(false);
   const [layoutEngine, setLayoutEngine] = useState<LayoutEngineType>("masonry");
   const [cardDensity, setCardDensity] = useState<SilhouetteDensity>("standard");
+  const [newTypePrompt, setNewTypePrompt] = useState<{ key: string; name: string; coreType?: string } | null>(null);
+
+  // Sync dismissal of "Bring in your collections" banner
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isDismissed = localStorage.getItem("curio_dismissed_bring_collections") === "true";
+      setDismissedOnboarding(isDismissed);
+    }
+  }, []);
+
+  const handleDismissBringCollections = () => {
+    setDismissedOnboarding(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("curio_dismissed_bring_collections", "true");
+    }
+  };
+
+  const extractTypeInfo = (card: CardData): { key: string; name: string; coreType?: string } | null => {
+    if (card.save.isPrivateMemo) return null;
+    if (card.entity?.typePath && card.entity.typePath !== "/") {
+      const segments = card.entity.typePath.split("/").filter(Boolean);
+      const lastSeg = segments[segments.length - 1];
+      const name = lastSeg.charAt(0).toUpperCase() + lastSeg.slice(1);
+      return {
+        key: card.entity.typePath.toLowerCase(),
+        name,
+        coreType: card.entity.coreType,
+      };
+    }
+    if (card.entity?.coreType) {
+      const raw = card.entity.coreType.toLowerCase();
+      const name = raw === "media" ? "Cinema" : raw.charAt(0).toUpperCase() + raw.slice(1);
+      return {
+        key: card.entity.coreType.toLowerCase(),
+        name,
+        coreType: card.entity.coreType,
+      };
+    }
+    if (card.save.typePath) {
+      const segments = card.save.typePath.split("/").filter(Boolean);
+      const lastSeg = segments[segments.length - 1] || "Custom";
+      const name = lastSeg.charAt(0).toUpperCase() + lastSeg.slice(1);
+      return {
+        key: card.save.typePath.toLowerCase(),
+        name,
+      };
+    }
+    return null;
+  };
+
+  const handleCreateListForPrompt = async (typeInfo: { key: string; name: string; coreType?: string }) => {
+    try {
+      const listTitle = `${typeInfo.name}s`;
+      const autoRules = typeInfo.coreType ? { coreType: typeInfo.coreType } : undefined;
+      const res = await apiFetch("/api/v1/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: listTitle,
+          description: `Curated collection for ${typeInfo.name}`,
+          visibility: "PUBLIC",
+          autoRules,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await fetchLists();
+        if (data.list?.slug) {
+          setActiveListSlug(data.list.slug);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create list for type:", err);
+    } finally {
+      setNewTypePrompt(null);
+    }
+  };
 
   const fetchCurrentUser = async () => {
     try {
@@ -148,14 +222,39 @@ export default function Home() {
 
   const handleCaptured = (result: any) => {
     if (result.save) {
-      setItems((prev) => [
-        {
-          save: result.save,
-          entity: result.entity,
-          primarySource: result.primary_source,
-        },
-        ...prev,
-      ]);
+      const newCard: CardData = {
+        save: result.save,
+        entity: result.entity,
+        primarySource: result.primary_source,
+      };
+      setItems((prev) => [newCard, ...prev]);
+
+      // Check if this is the first time adding on this type
+      const typeInfo = extractTypeInfo(newCard);
+      if (typeInfo && typeof window !== "undefined") {
+        try {
+          const promptedRaw = localStorage.getItem("curio_prompted_type_lists");
+          const prompted: string[] = promptedRaw ? JSON.parse(promptedRaw) : [];
+          if (!prompted.includes(typeInfo.key)) {
+            const alreadyHadType = items.some((it) => {
+              const t = extractTypeInfo(it);
+              return t && t.key === typeInfo.key;
+            });
+            const listExists = lists.some(
+              (l) =>
+                l.title.toLowerCase() === `${typeInfo.name}s`.toLowerCase() ||
+                l.title.toLowerCase() === typeInfo.name.toLowerCase()
+            );
+
+            if (!alreadyHadType && !listExists) {
+              localStorage.setItem("curio_prompted_type_lists", JSON.stringify([...prompted, typeInfo.key]));
+              setNewTypePrompt(typeInfo);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to check type prompt state:", e);
+        }
+      }
     }
   };
 
@@ -255,7 +354,7 @@ export default function Home() {
   }, [items, activeTab]);
 
   const tabs: Array<{ id: FilterTab; label: string; icon: React.ReactNode }> = [
-    { id: "all", label: "All Curations", icon: <Layers className="w-3.5 h-3.5" /> },
+    { id: "all", label: "All my stuff", icon: <Layers className="w-3.5 h-3.5" /> },
     { id: "cinema", label: "Cinema", icon: <Film className="w-3.5 h-3.5" /> },
     { id: "games", label: "Video Games", icon: <Gamepad2 className="w-3.5 h-3.5" /> },
     { id: "vinyl", label: "Vinyl LPs", icon: <Disc3 className="w-3.5 h-3.5" /> },
@@ -267,6 +366,126 @@ export default function Home() {
     { id: "recipes", label: "Recipes", icon: <UtensilsCrossed className="w-3.5 h-3.5" /> },
     { id: "memos", label: "Private Vault", icon: <Lock className="w-3.5 h-3.5" /> },
   ];
+
+  // Count items per category to only offer existing ones
+  const tabCounts = useMemo(() => {
+    const counts: Record<FilterTab, number> = {
+      all: items.length,
+      cinema: 0,
+      games: 0,
+      vinyl: 0,
+      books: 0,
+      products: 0,
+      places: 0,
+      wine: 0,
+      art: 0,
+      recipes: 0,
+      memos: 0,
+    };
+
+    items.forEach((item) => {
+      const isMemo = item.save.isPrivateMemo || !item.entity;
+      if (isMemo) {
+        counts.memos++;
+        return;
+      }
+
+      const typePath = (item.entity?.typePath || item.save.typePath || "").toLowerCase();
+      const coreType = (item.entity?.coreType || "").toUpperCase();
+      const title = (item.entity?.title || "").toLowerCase();
+      const tags = (item.save.autoTags || []).map((t) => t.toLowerCase());
+
+      if (
+        typePath.includes("film") ||
+        typePath.includes("movie") ||
+        coreType === "MEDIA" ||
+        tags.includes("film") ||
+        tags.includes("movie")
+      ) {
+        counts.cinema++;
+      } else if (
+        typePath.includes("videogame") ||
+        typePath.includes("game") ||
+        coreType === "VIDEOGAME" ||
+        tags.includes("game") ||
+        tags.includes("gaming") ||
+        tags.includes("steam")
+      ) {
+        counts.games++;
+      } else if (
+        typePath.includes("vinyl") ||
+        tags.includes("vinyl") ||
+        tags.includes("album") ||
+        title.includes("vinyl") ||
+        title.includes("lp")
+      ) {
+        counts.vinyl++;
+      } else if (typePath.includes("book") || coreType === "BOOK" || tags.includes("book")) {
+        counts.books++;
+      } else if (
+        typePath === "/product" ||
+        typePath.startsWith("/product/garment") ||
+        typePath.startsWith("/product/cosmetic") ||
+        typePath.startsWith("/product/electronic") ||
+        coreType === "PRODUCT" ||
+        tags.includes("product") ||
+        tags.includes("garment") ||
+        tags.includes("clothing") ||
+        tags.includes("electronics") ||
+        tags.includes("cosmetics") ||
+        tags.includes("gadget")
+      ) {
+        counts.products++;
+      } else if (
+        typePath.includes("place") ||
+        typePath.includes("trail") ||
+        typePath.includes("restaurant") ||
+        typePath.includes("cafe") ||
+        typePath.includes("hotel") ||
+        typePath.includes("shop") ||
+        typePath.includes("bar") ||
+        coreType === "PLACE" ||
+        tags.includes("place") ||
+        tags.includes("restaurant") ||
+        tags.includes("cafe") ||
+        tags.includes("hotel") ||
+        tags.includes("trail")
+      ) {
+        counts.places++;
+      } else if (
+        typePath.includes("wine") ||
+        tags.includes("wine") ||
+        title.includes("wine") ||
+        title.includes("domaine") ||
+        title.includes("château")
+      ) {
+        counts.wine++;
+      } else if (typePath.includes("art") || tags.includes("art") || tags.includes("painting")) {
+        counts.art++;
+      } else if (
+        typePath.includes("recipe") ||
+        typePath.includes("culinary") ||
+        coreType === "CULINARY" ||
+        tags.includes("recipe")
+      ) {
+        counts.recipes++;
+      }
+    });
+
+    return counts;
+  }, [items]);
+
+  // Only offer categories that actually exist
+  const availableTabs = useMemo(() => {
+    return tabs.filter((tab) => tab.id === "all" || tabCounts[tab.id] > 0);
+  }, [tabs, tabCounts]);
+
+  // Auto-reset tab if category has 0 items
+  useEffect(() => {
+    if (activeTab !== "all" && tabCounts[activeTab] === 0) {
+      setActiveTab("all");
+    }
+  }, [activeTab, tabCounts]);
 
   if (authLoading) {
     return (
@@ -325,52 +544,33 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-12 px-4 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="max-w-4xl mx-auto mb-10">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-200/60 dark:bg-neutral-800/60 text-neutral-700 dark:text-neutral-300 text-xs font-semibold tracking-wide uppercase">
-              <Sparkles className="w-3.5 h-3.5 text-neutral-900 dark:text-neutral-100" />
-              Autonomous Memory & Taste Graph • PRD v3.2
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsTypesModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold hover:bg-amber-500/20 transition cursor-pointer"
-            >
-              <Layers className="w-3 h-3" />
-              <span>Types & Schemas</span>
-            </button>
-          </div>
-          <div className="flex items-center gap-3">
-            <QuotaIndicator />
-            <UserNav
-              user={user}
-              onOpenAuth={(tab = "login") => {
-                setAuthTab(tab);
-                setIsAuthOpen(true);
-              }}
-              onOpenOnboarding={() => setIsOnboardingOpen(true)}
-              onOpenTypesSettings={() => setIsTypesModalOpen(true)}
-              onLogout={async () => {
-                await apiFetch("/api/v1/auth/logout", { method: "POST" });
-                if (typeof window !== "undefined") {
-                  localStorage.removeItem("curio_token");
-                }
-                setUser(null);
-                fetchItems();
-                fetchLists();
-              }}
-            />
-          </div>
+      <div className="max-w-4xl mx-auto mb-8">
+        <div className="flex items-center justify-end mb-4">
+          <UserNav
+            user={user}
+            onOpenAuth={(tab = "login") => {
+              setAuthTab(tab);
+              setIsAuthOpen(true);
+            }}
+            onOpenOnboarding={() => setIsOnboardingOpen(true)}
+            onOpenImporter={() => setIsImporterOpen(true)}
+            onOpenTypesSettings={() => setIsTypesModalOpen(true)}
+            onLogout={async () => {
+              await apiFetch("/api/v1/auth/logout", { method: "POST" });
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("curio_token");
+              }
+              setUser(null);
+              fetchItems();
+              fetchLists();
+            }}
+          />
         </div>
 
         <div className="text-center">
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-50 mb-3 font-serif">
+          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-50 font-serif">
             Curio
           </h1>
-          <p className="text-base sm:text-lg text-neutral-600 dark:text-neutral-400 max-w-xl mx-auto">
-            Capture at Keep speed. Curate with Pinterest elegance. Engineered for Agents.
-          </p>
         </div>
       </div>
 
@@ -408,7 +608,7 @@ export default function Home() {
             </button>
             <button
               type="button"
-              onClick={() => setDismissedOnboarding(true)}
+              onClick={handleDismissBringCollections}
               className="p-1.5 rounded-xl text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition cursor-pointer"
               title="Dismiss"
             >
@@ -417,22 +617,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      {/* System Highlights */}
-      <div className="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12 text-xs text-neutral-500 dark:text-neutral-400">
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-white/60 dark:bg-neutral-900/40 border border-neutral-200/60 dark:border-neutral-800">
-          <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-          <span>Step 0 Privacy Gate isolates confidential memos</span>
-        </div>
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-white/60 dark:bg-neutral-900/40 border border-neutral-200/60 dark:border-neutral-800">
-          <Zap className="w-4 h-4 text-amber-500 shrink-0" />
-          <span>7 Polymorphic Physical "Artifact-as-Card" Silhouettes</span>
-        </div>
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-white/60 dark:bg-neutral-900/40 border border-neutral-200/60 dark:border-neutral-800">
-          <Layers className="w-4 h-4 text-blue-500 shrink-0" />
-          <span>Multi-Merchant waterfall routing & affiliate links</span>
-        </div>
-      </div>
 
       {/* Memory & Taste Stream Feed */}
       <div className="max-w-6xl mx-auto">
@@ -444,27 +628,6 @@ export default function Home() {
             <p className="text-xs text-neutral-500">
               Showing {filteredItems.length} of {items.length} total saves
             </p>
-          </div>
-
-          {/* Action Buttons: Teach Type & Day-0 Importer */}
-          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-            <button
-              type="button"
-              onClick={() => setIsTypeBuilderOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200 hover:border-neutral-400 dark:hover:border-neutral-600 shadow-2xs transition active:scale-95 cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>+ Teach Type</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsImporterOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:bg-neutral-800 dark:hover:bg-neutral-200 shadow-sm transition active:scale-95 cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Import CSV</span>
-            </button>
           </div>
         </div>
 
@@ -533,24 +696,31 @@ export default function Home() {
         ) : (
           <div>
             {/* Archetype Filter Tabs & View Mode Switcher */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer ${
-                      activeTab === tab.id
-                        ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
-                        : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
-                    }`}
-                  >
-                    {tab.icon}
-                    <span>{tab.label}</span>
-                  </button>
-                ))}
-              </div>
+            <div className={`flex flex-col sm:flex-row sm:items-center ${availableTabs.length > 1 ? "justify-between" : "justify-end"} gap-4 mb-8`}>
+              {availableTabs.length > 1 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  {availableTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer ${
+                        activeTab === tab.id
+                          ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                          : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+                      }`}
+                    >
+                      {tab.icon}
+                      <span>{tab.label}</span>
+                      {tab.id !== "all" && tabCounts[tab.id] > 0 && (
+                        <span className="text-[10px] opacity-70 font-mono">
+                          {tabCounts[tab.id]}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <ViewModeSwitcher
                 layout={layoutEngine}
@@ -793,6 +963,51 @@ export default function Home() {
           setIsTypeBuilderOpen(true);
         }}
       />
+
+      {/* Floating Dismissable Prompt: Create List for New Type */}
+      {newTypePrompt && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm p-4 rounded-3xl bg-white dark:bg-neutral-900 border border-amber-300/80 dark:border-amber-800/80 shadow-2xl animate-in slide-in-from-bottom-5 duration-300 backdrop-blur-md">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                  New type added: {newTypePrompt.name}
+                </h4>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  Would you like to create a dedicated list for your {newTypePrompt.name} saves?
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNewTypePrompt(null)}
+              className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 p-1 cursor-pointer transition"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setNewTypePrompt(null)}
+              className="px-2.5 py-1 text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer transition"
+            >
+              Not now
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCreateListForPrompt(newTypePrompt)}
+              className="px-3 py-1.5 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-xs font-semibold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition active:scale-95 cursor-pointer shadow-xs"
+            >
+              Create &ldquo;{newTypePrompt.name}s&rdquo; List
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

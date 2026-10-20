@@ -1,9 +1,11 @@
 "use client";
 
-import React from "react";
-import { MapPin, Navigation, ExternalLink, Compass, Sparkles } from "lucide-react";
+import React, { useState } from "react";
+import { MapPin, Navigation, ExternalLink, Compass, Sparkles, Camera, Map } from "lucide-react";
 import { CardFooterWaterfall } from "../CardFooterWaterfall";
 import { DisambiguationBar } from "../DisambiguationBar";
+import { PlaceMapPreview } from "./PlaceMapPreview";
+import { parseCoordinates } from "@/lib/geo/slippyMap";
 import type { SilhouetteCardProps } from "./VinylDiscCard";
 
 export function PlaceSpotCard({
@@ -20,11 +22,26 @@ export function PlaceSpotCard({
   const locationLabel = city ? (country ? `${city}, ${country}` : city) : entity?.brandOrCreator || "Verified Location";
   const category = data.category || data.spotCategory || "Place & Cultural Venue";
   const address = data.address;
-  const latitude = data.latitude;
-  const longitude = data.longitude;
+
+  // Resolve coordinates from direct properties or structured string/object
+  const parsedCoords = parseCoordinates(
+    typeof data.latitude === "number" && typeof data.longitude === "number"
+      ? { latitude: data.latitude, longitude: data.longitude }
+      : data.coordinates
+  );
+  const latitude = parsedCoords?.latitude ?? (typeof data.latitude === "number" ? data.latitude : undefined);
+  const longitude = parsedCoords?.longitude ?? (typeof data.longitude === "number" ? data.longitude : undefined);
+  const hasCoordinates = typeof latitude === "number" && typeof longitude === "number";
+  const hasPhoto = Boolean(entity?.heroImageUrl);
+
+  // Switcher state: default to photo if available, fallback to map if photo missing
+  const [viewMode, setViewMode] = useState<"photo" | "map">(
+    hasPhoto ? "photo" : "map"
+  );
+
   const coordsFormatted =
-    typeof latitude === "number" && typeof longitude === "number"
-      ? `${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`
+    hasCoordinates
+      ? `${latitude!.toFixed(4)}°, ${longitude!.toFixed(4)}°`
       : null;
 
   const mapsUrl = data.googleMapsUrl || entity?.canonicalUrl || `https://maps.google.com/?q=${encodeURIComponent(spotName)}`;
@@ -48,17 +65,74 @@ export function PlaceSpotCard({
           </span>
         </div>
 
-        {/* Hero Photo if available */}
-        {entity?.heroImageUrl ? (
-          <div className="relative aspect-16/10 w-full rounded-xl overflow-hidden bg-stone-200 dark:bg-stone-800 mb-3">
-            <img
-              src={entity.heroImageUrl}
-              alt={spotName}
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
-            />
+        {/* Hero Visual: Editorial Photo OR Interactive Map Preview */}
+        {(hasPhoto || hasCoordinates) && (
+          <div className="relative aspect-16/10 w-full rounded-xl overflow-hidden bg-stone-200 dark:bg-stone-800 mb-3 group/hero">
+            {viewMode === "photo" && entity?.heroImageUrl ? (
+              <img
+                src={entity.heroImageUrl}
+                alt={spotName}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
+              />
+            ) : hasCoordinates ? (
+              <PlaceMapPreview
+                latitude={latitude!}
+                longitude={longitude!}
+                spotName={spotName}
+                address={address}
+                mapsUrl={mapsUrl}
+                aspectRatio="h-full w-full"
+                className="border-0 shadow-none"
+              />
+            ) : null}
+
+            {/* Photo / Map Switcher Pills (Top-Right Badge) */}
+            {hasPhoto && hasCoordinates && (
+              <div
+                data-testid="place-view-switcher"
+                className="absolute top-2.5 right-2.5 z-30 flex items-center bg-black/65 dark:bg-black/80 backdrop-blur-md p-0.5 rounded-lg border border-white/20 text-[10px] font-mono shadow-md"
+              >
+                <button
+                  type="button"
+                  data-testid="switcher-photo-btn"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setViewMode("photo");
+                  }}
+                  aria-label="Show photo"
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                    viewMode === "photo"
+                      ? "bg-white text-stone-900 font-semibold shadow-xs"
+                      : "text-stone-300 hover:text-white"
+                  }`}
+                >
+                  <Camera className="w-3 h-3" />
+                  <span>Photo</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="switcher-map-btn"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setViewMode("map");
+                  }}
+                  aria-label="Show map"
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                    viewMode === "map"
+                      ? "bg-amber-500 text-stone-950 font-semibold shadow-xs"
+                      : "text-stone-300 hover:text-white"
+                  }`}
+                >
+                  <Map className="w-3 h-3" />
+                  <span>Map</span>
+                </button>
+              </div>
+            )}
           </div>
-        ) : null}
+        )}
 
         {/* Spot Name */}
         <h3 className="font-serif text-xl font-bold text-stone-900 dark:text-stone-50 mb-1 leading-tight">

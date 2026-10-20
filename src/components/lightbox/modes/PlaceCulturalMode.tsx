@@ -1,21 +1,40 @@
 "use client";
 
-import React from "react";
-import { MapPin, Navigation, Compass, ExternalLink, Clock, Building } from "lucide-react";
+import React, { useState } from "react";
+import { MapPin, Navigation, Compass, ExternalLink, Clock, Building, Camera, Map } from "lucide-react";
+import { PlaceMapPreview } from "../../cards/silhouettes/PlaceMapPreview";
+import { parseCoordinates } from "@/lib/geo/slippyMap";
 import type { CulturalModeProps } from "./CinemaCulturalMode";
 
 export function PlaceCulturalMode({ save, entity, primarySource }: CulturalModeProps) {
   const data = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
 
-  const coordinates = data.coordinates || "35.6712° N · 139.6891° E";
+  const rawCoordinates = data.coordinates || "35.6712° N · 139.6891° E";
   const address = data.address || entity?.summary || "1-1-1 Shibuya, Tokyo, Japan";
   const neighborhood = data.neighborhood || "Shibuya / Yoyogi-Koen";
   const hours = data.hours || "08:00 – 23:00 Daily";
   const category = data.category || "Specialty Cafe & Roastery";
 
+  const parsedCoords =
+    parseCoordinates(
+      typeof data.latitude === "number" && typeof data.longitude === "number"
+        ? { latitude: data.latitude, longitude: data.longitude }
+        : rawCoordinates
+    ) || { latitude: 35.6712, longitude: 139.6891 };
+
+  const latitude = parsedCoords.latitude;
+  const longitude = parsedCoords.longitude;
+  const hasPhoto = Boolean(entity?.heroImageUrl);
+
+  const [viewMode, setViewMode] = useState<"photo" | "map">(
+    hasPhoto ? "photo" : "map"
+  );
+
   const searchQuery = encodeURIComponent(`${entity?.title || ""} ${address}`);
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${searchQuery}`;
   const appleMapsUrl = `https://maps.apple.com/?q=${searchQuery}`;
+
+  const coordinatesDisplay = `${latitude.toFixed(4)}° · ${longitude.toFixed(4)}°`;
 
   return (
     <div className="flex flex-col h-full bg-[#f6f5f0] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 rounded-3xl overflow-hidden border border-neutral-200 dark:border-neutral-800 shadow-xl">
@@ -24,7 +43,7 @@ export function PlaceCulturalMode({ save, entity, primarySource }: CulturalModeP
         <div className="flex items-center gap-2">
           <Compass className="w-4 h-4 text-neutral-600 dark:text-neutral-400" />
           <span className="font-mono text-xs font-bold tracking-wider text-neutral-700 dark:text-neutral-300">
-            {coordinates}
+            {coordinatesDisplay}
           </span>
         </div>
 
@@ -33,47 +52,72 @@ export function PlaceCulturalMode({ save, entity, primarySource }: CulturalModeP
         </span>
       </div>
 
-      {/* Stylized Cartographic Pass / Hero Image */}
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-neutral-200 dark:bg-neutral-800">
-        {entity?.heroImageUrl ? (
+      {/* Stylized Cartographic Pass / Hero Image / Map Preview */}
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-neutral-200 dark:bg-neutral-800 group/hero">
+        {viewMode === "photo" && entity?.heroImageUrl ? (
           <img
             src={entity.heroImageUrl}
             alt={entity.title}
             className="w-full h-full object-cover"
           />
         ) : (
-          /* Vector Cartographic Grid Simulation */
-          <div className="w-full h-full flex flex-col items-center justify-center relative p-8 bg-[#ece8dc] dark:bg-neutral-950">
-            <svg
-              className="absolute inset-0 w-full h-full opacity-20 pointer-events-none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
-                  <path d="M 30 0 L 0 0 0 30" fill="none" stroke="currentColor" strokeWidth="0.8" />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#grid)" />
-            </svg>
-            <div className="relative z-10 flex flex-col items-center text-center">
-              <div className="w-12 h-12 rounded-full bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 flex items-center justify-center shadow-lg animate-pulse mb-3">
-                <MapPin className="w-6 h-6" />
-              </div>
-              <h3 className="font-serif text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
-                {entity?.title}
-              </h3>
-              <p className="font-mono text-xs text-neutral-500 mt-1">{neighborhood}</p>
-            </div>
+          <PlaceMapPreview
+            latitude={latitude}
+            longitude={longitude}
+            spotName={entity?.title}
+            address={address}
+            mapsUrl={googleMapsUrl}
+            aspectRatio="h-full w-full"
+            className="border-0 shadow-none rounded-none"
+          />
+        )}
+
+        {/* Pulsing Pin Indicator on Photo */}
+        {viewMode === "photo" && (
+          <div className="absolute top-4 left-4 z-10">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-medium bg-black/75 backdrop-blur-md text-white border border-white/10 shadow-lg">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>Curated Location</span>
+            </span>
           </div>
         )}
 
-        {/* Pulsing Pin Indicator */}
-        <div className="absolute top-4 left-4 z-10">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-medium bg-black/75 backdrop-blur-md text-white border border-white/10 shadow-lg">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>Curated Location</span>
-          </span>
-        </div>
+        {/* Photo / Map Switcher Pills */}
+        {hasPhoto && (
+          <div
+            data-testid="lightbox-place-view-switcher"
+            className="absolute top-4 right-4 z-30 flex items-center bg-black/75 backdrop-blur-md p-0.5 rounded-lg border border-white/20 text-xs font-mono shadow-lg"
+          >
+            <button
+              type="button"
+              data-testid="lightbox-switcher-photo-btn"
+              onClick={() => setViewMode("photo")}
+              aria-label="Show photo"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                viewMode === "photo"
+                  ? "bg-white text-stone-900 font-semibold shadow-xs"
+                  : "text-stone-300 hover:text-white"
+              }`}
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Photo</span>
+            </button>
+            <button
+              type="button"
+              data-testid="lightbox-switcher-map-btn"
+              onClick={() => setViewMode("map")}
+              aria-label="Show map"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                viewMode === "map"
+                  ? "bg-amber-500 text-stone-950 font-semibold shadow-xs"
+                  : "text-stone-300 hover:text-white"
+              }`}
+            >
+              <Map className="w-3.5 h-3.5" />
+              <span>Map</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Transit Pass Details & Navigation Launchers */}

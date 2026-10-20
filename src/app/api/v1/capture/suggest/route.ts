@@ -187,30 +187,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Add iTunes metadata if it's high confidence and not in saves
-    if (itunesRes.status === "fulfilled" && itunesRes.value) {
-      const it = itunesRes.value;
-      if (it.title) {
-        const norm = it.title.toLowerCase().trim();
-        if (!seenTitles.has(norm)) {
-          seenTitles.add(norm);
-          const isAlbum = Boolean(it.album && it.album === it.title);
-          suggestions.push({
-            title: it.title,
-            subtitle: [it.artist, it.releaseYear].filter(Boolean).join(" • "),
-            typePath: isAlbum ? "/media/music/album" : "/media/music/song",
-            badgeLabel: isAlbum ? "ALBUM" : "SONG",
-            heroImageUrl: it.coverUrl || null,
-            canonicalUrl: `https://open.spotify.com/search/${encodeURIComponent(`${it.artist || ""} ${it.title}`.trim())}`,
-            isExistingSave: false,
-            saveId: null,
-            curioTypeId: null,
-          });
-        }
-      }
-    }
-
-    // Add universal discovery candidates
+    // 2. Add universal discovery candidates (Wikidata + Wikipedia)
     if (universalCandidatesRes.status === "fulfilled" && universalCandidatesRes.value) {
       for (const cand of universalCandidatesRes.value) {
         const norm = cand.title.toLowerCase().trim();
@@ -236,6 +213,29 @@ export async function GET(req: NextRequest) {
         });
 
         if (suggestions.length >= 6) break;
+      }
+    }
+
+    // 3. Add iTunes metadata if it's music and not already covered by universal discovery
+    if (suggestions.length < 6 && itunesRes.status === "fulfilled" && itunesRes.value) {
+      const it = itunesRes.value;
+      if (it.title) {
+        const norm = it.title.toLowerCase().trim();
+        if (!seenTitles.has(norm)) {
+          seenTitles.add(norm);
+          const isAlbum = Boolean(it.album && it.album === it.title);
+          suggestions.push({
+            title: it.title,
+            subtitle: [it.artist, it.releaseYear].filter(Boolean).join(" • "),
+            typePath: isAlbum ? "/media/music/album" : "/media/music/song",
+            badgeLabel: isAlbum ? "ALBUM" : "SONG",
+            heroImageUrl: it.coverUrl || null,
+            canonicalUrl: `https://open.spotify.com/search/${encodeURIComponent(`${it.artist || ""} ${it.title}`.trim())}`,
+            isExistingSave: false,
+            saveId: null,
+            curioTypeId: null,
+          });
+        }
       }
     }
 

@@ -13,5 +13,16 @@ export function getApiUrl(path: string): string {
 }
 
 export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  return fetch(getApiUrl(input), init);
+  const headers = new Headers(init?.headers);
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("curio_token");
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
+  return fetch(getApiUrl(input), {
+    ...init,
+    headers,
+    credentials: "include",
+  });
 }

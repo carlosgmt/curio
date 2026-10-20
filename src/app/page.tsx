@@ -38,6 +38,7 @@ import {
   Lock,
   Gamepad2,
   ShoppingBag,
+  X,
 } from "lucide-react";
 
 type FilterTab =
@@ -71,6 +72,7 @@ export default function Home() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "register">("login");
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [dismissedOnboarding, setDismissedOnboarding] = useState(false);
   const [isTypesModalOpen, setIsTypesModalOpen] = useState(false);
   const [layoutEngine, setLayoutEngine] = useState<LayoutEngineType>("masonry");
   const [cardDensity, setCardDensity] = useState<SilhouetteDensity>("standard");
@@ -81,9 +83,6 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
-        if (data.user && !data.user.onboardingCompleted) {
-          setIsOnboardingOpen(true);
-        }
       } else {
         setUser(null);
       }
@@ -125,14 +124,6 @@ export default function Home() {
     fetchCurrentUser();
     fetchItems();
     fetchLists();
-
-    // Check for ?onboarding=true redirection from registration
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("onboarding") === "true") {
-        setIsOnboardingOpen(true);
-      }
-    }
   }, []);
 
   useEffect(() => {
@@ -305,13 +296,14 @@ export default function Home() {
           isOpen={isAuthOpen}
           defaultTab={authTab}
           onClose={() => setIsAuthOpen(false)}
-          onSuccess={(authenticatedUser, _token, isRegister) => {
+          onSuccess={(authenticatedUser, token) => {
+            if (typeof window !== "undefined" && token) {
+              localStorage.setItem("curio_token", token);
+            }
             setUser(authenticatedUser);
+            setIsAuthOpen(false);
             fetchItems();
             fetchLists();
-            if (isRegister || !authenticatedUser.onboardingCompleted) {
-              setIsOnboardingOpen(true);
-            }
           }}
         />
 
@@ -361,6 +353,9 @@ export default function Home() {
               onOpenTypesSettings={() => setIsTypesModalOpen(true)}
               onLogout={async () => {
                 await apiFetch("/api/v1/auth/logout", { method: "POST" });
+                if (typeof window !== "undefined") {
+                  localStorage.removeItem("curio_token");
+                }
                 setUser(null);
                 fetchItems();
                 fetchLists();
@@ -380,12 +375,48 @@ export default function Home() {
       </div>
 
       {/* Omnibox Universal Capture */}
-      <div className="mb-12">
+      <div className="mb-8">
         <Omnibox
           onCaptured={handleCaptured}
           onOpenTypeBuilder={() => setIsTypeBuilderOpen(true)}
         />
       </div>
+
+      {/* Optional Onboarding / Bring in your collections Banner */}
+      {user && !user.onboardingCompleted && !dismissedOnboarding && (
+        <div className="max-w-4xl mx-auto mb-10 p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/80 dark:border-amber-800/60 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                Bring in your collections
+              </h3>
+              <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+                Seed your taste graph with starter boards or import from Letterboxd, Goodreads, and bookmarks.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsOnboardingOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-xs font-bold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition cursor-pointer shadow-xs"
+            >
+              Get Started →
+            </button>
+            <button
+              type="button"
+              onClick={() => setDismissedOnboarding(true)}
+              className="p-1.5 rounded-xl text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition cursor-pointer"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* System Highlights */}
       <div className="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12 text-xs text-neutral-500 dark:text-neutral-400">
@@ -730,13 +761,14 @@ export default function Home() {
         isOpen={isAuthOpen}
         defaultTab={authTab}
         onClose={() => setIsAuthOpen(false)}
-        onSuccess={(authenticatedUser, _token, isRegister) => {
+        onSuccess={(authenticatedUser, token) => {
+          if (typeof window !== "undefined" && token) {
+            localStorage.setItem("curio_token", token);
+          }
           setUser(authenticatedUser);
+          setIsAuthOpen(false);
           fetchItems();
           fetchLists();
-          if (isRegister || !authenticatedUser.onboardingCompleted) {
-            setIsOnboardingOpen(true);
-          }
         }}
       />
 

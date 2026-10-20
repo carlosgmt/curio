@@ -43,7 +43,10 @@ export function AuthModal({
             initialMode={defaultTab}
             isModal={true}
             onClose={onClose}
-            onSuccess={onSuccess}
+            onSuccess={(user, token, isRegister) => {
+              onSuccess(user, token, isRegister);
+              onClose();
+            }}
           />
         </Suspense>
       </div>

@@ -88,11 +88,15 @@ export function AuthForm({
         throw new Error(data.error || "Login failed");
       }
 
+      if (typeof window !== "undefined" && data.token) {
+        localStorage.setItem("curio_token", data.token);
+      }
+
       if (onSuccess) {
         onSuccess(data.user, data.token, false);
       } else {
-        router.push(targetReturnUrl);
-        router.refresh();
+        const dest = targetReturnUrl === "/" ? "/curio" : targetReturnUrl;
+        window.location.href = dest;
       }
     } catch (err: any) {
       setError(err.message || "Failed to log in");
@@ -123,12 +127,15 @@ export function AuthForm({
         throw new Error(data.error || "Registration failed");
       }
 
+      if (typeof window !== "undefined" && data.token) {
+        localStorage.setItem("curio_token", data.token);
+      }
+
       if (onSuccess) {
         onSuccess(data.user, data.token, true);
       } else {
-        const destination = targetReturnUrl === "/" ? "/?onboarding=true" : targetReturnUrl;
-        router.push(destination);
-        router.refresh();
+        const dest = targetReturnUrl === "/" ? "/curio" : targetReturnUrl;
+        window.location.href = dest;
       }
     } catch (err: any) {
       setError(err.message || "Failed to create account");
@@ -232,7 +239,7 @@ export function AuthForm({
               className="w-full mt-2 py-3 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-xs font-bold hover:bg-neutral-800 dark:hover:bg-neutral-200 disabled:opacity-50 active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>Sign In to Curio</span>
+              <span>{loading ? "Signing in..." : "Sign In to Curio"}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 
@@ -354,7 +361,7 @@ export function AuthForm({
               className="w-full mt-3 py-3 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-xs font-bold hover:bg-neutral-800 dark:hover:bg-neutral-200 disabled:opacity-50 active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>Claim Sovereign Handle</span>
+              <span>{loading ? "Creating account..." : "Claim Sovereign Handle"}</span>
               <Sparkles className="w-4 h-4 text-amber-500" />
             </button>
 

@@ -21,8 +21,8 @@ export function createSessionCookie(
   token: string,
   maxAgeSeconds: number = SESSION_DURATION_SECONDS
 ): string {
-  const isProd = process.env.NODE_ENV === "production";
-  const secureFlag = isProd ? "; Secure" : "";
+  const isSecure = process.env.COOKIE_SECURE === "true";
+  const secureFlag = isSecure ? "; Secure" : "";
   return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secureFlag}`;
 }
 
@@ -30,8 +30,8 @@ export function createSessionCookie(
  * Serializes an expired cookie to clear the session on the client.
  */
 export function clearSessionCookie(): string {
-  const isProd = process.env.NODE_ENV === "production";
-  const secureFlag = isProd ? "; Secure" : "";
+  const isSecure = process.env.COOKIE_SECURE === "true";
+  const secureFlag = isSecure ? "; Secure" : "";
   return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secureFlag}`;
 }
 

@@ -4,7 +4,17 @@ import { mkdirSync } from "fs";
 import { dirname } from "path";
 import * as schema from "./schema";
 
-const DB_PATH = process.env.DATABASE_PATH ?? "./data/curio.db";
+function getDatabasePath(): string {
+  if (process.env.DATABASE_PATH) {
+    return process.env.DATABASE_PATH;
+  }
+  if (process.env.NODE_ENV === "test" || process.env.BUN_ENV === "test") {
+    return "./data/curio-test.db";
+  }
+  return "./data/curio.db";
+}
+
+const DB_PATH = getDatabasePath();
 
 try {
   mkdirSync(dirname(DB_PATH), { recursive: true });

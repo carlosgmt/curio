@@ -24,7 +24,7 @@ export function PlaceMapPreview({
   address,
   mapsUrl,
   className = "",
-  aspectRatio = "aspect-16/10",
+  aspectRatio = "aspect-[16/10] min-h-[220px]",
   interactive = true,
 }: PlaceMapPreviewProps) {
   const targetMapsUrl = useMemo(() => {
@@ -59,6 +59,7 @@ export function PlaceMapPreview({
               alt=""
               loading="lazy"
               decoding="async"
+              referrerPolicy="no-referrer"
               className="absolute pointer-events-none block dark:hidden transition-opacity duration-300"
               style={{
                 width: 256,
@@ -68,7 +69,10 @@ export function PlaceMapPreview({
               }}
               onError={(e) => {
                 // OpenStreetMap fallback
-                (e.currentTarget as HTMLImageElement).src = tile.osmUrl;
+                const target = e.currentTarget as HTMLImageElement;
+                if (target.src !== tile.osmUrl) {
+                  target.src = tile.osmUrl;
+                }
               }}
             />
             {/* Dark Mode: CartoDB Dark Matter */}
@@ -77,6 +81,7 @@ export function PlaceMapPreview({
               alt=""
               loading="lazy"
               decoding="async"
+              referrerPolicy="no-referrer"
               className="absolute pointer-events-none hidden dark:block transition-opacity duration-300"
               style={{
                 width: 256,
@@ -86,7 +91,10 @@ export function PlaceMapPreview({
               }}
               onError={(e) => {
                 // OpenStreetMap fallback
-                (e.currentTarget as HTMLImageElement).src = tile.osmUrl;
+                const target = e.currentTarget as HTMLImageElement;
+                if (target.src !== tile.osmUrl) {
+                  target.src = tile.osmUrl;
+                }
               }}
             />
           </React.Fragment>

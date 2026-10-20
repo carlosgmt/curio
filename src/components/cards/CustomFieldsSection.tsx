@@ -117,6 +117,20 @@ export function CustomFieldsSection({
     if (!strVal || strVal === "[object Object]") return null;
 
     const k = attrKey.toLowerCase();
+    // Filter out raw URLs or keys ending in _url, url, uri or starting with http
+    if (
+      k.endsWith("_url") ||
+      k.endsWith("url") ||
+      k.endsWith("uri") ||
+      k.startsWith("http") ||
+      k.includes("wikidata") ||
+      k === "provenance" ||
+      strVal.startsWith("http://") ||
+      strVal.startsWith("https://")
+    ) {
+      return null;
+    }
+
     const numVal = Number(attrVal);
 
     if (

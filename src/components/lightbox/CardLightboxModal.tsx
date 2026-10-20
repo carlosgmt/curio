@@ -65,6 +65,7 @@ export interface CardLightboxModalProps {
   creatorAffiliateTags?: UserAffiliateTags | null;
   onCardUpdated?: (updatedSave: any) => void;
   onCardDeleted?: (saveId: string) => void;
+  onListUpdated?: () => void;
 }
 
 type ArchetypeOption = {
@@ -170,6 +171,7 @@ export function CardLightboxModal({
   creatorAffiliateTags,
   onCardUpdated,
   onCardDeleted,
+  onListUpdated,
 }: CardLightboxModalProps) {
   const [title, setTitle] = useState("");
   const [personalNotes, setPersonalNotes] = useState("");
@@ -742,7 +744,10 @@ export function CardLightboxModal({
           saveId={card.save.id}
           isOpen={isAddToListOpen}
           onClose={() => setIsAddToListOpen(false)}
-          onListUpdated={() => loadBoardMemberships(card)}
+          onListUpdated={() => {
+            loadBoardMemberships(card);
+            onListUpdated?.();
+          }}
         />
       </div>
     </div>

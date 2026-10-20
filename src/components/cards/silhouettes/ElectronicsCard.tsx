@@ -41,7 +41,7 @@ export function ElectronicsCard({
 
         {/* Hero Device Media */}
         {entity.heroImageUrl ? (
-          <div className="relative aspect-16/10 w-full rounded-xl overflow-hidden bg-neutral-900 mb-3 border border-neutral-800/80">
+          <div className="relative aspect-[16/10] w-full rounded-xl overflow-hidden bg-neutral-900 mb-3 border border-neutral-800/80">
             <img
               src={entity.heroImageUrl}
               alt={deviceName}

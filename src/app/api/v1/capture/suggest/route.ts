@@ -4,6 +4,7 @@ import { eq, and, or, like, desc, isNull } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/service";
 import { discoverUniversalEntities } from "@/lib/enrichment/universalDiscovery";
 import { fetchItunesMusicMetadata } from "@/lib/enrichment/providers/music";
+import { searchNominatimPlaces } from "@/lib/enrichment/providers/places";
 import { parseQuoteInput } from "@/lib/types/catalog";
 
 export interface OmniboxSuggestion {
@@ -74,8 +75,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ suggestions: [] });
     }
 
-    // 1. Parallel lookup across existing saves, universal discovery, iTunes, and curio_types
-    const [existingSavesRes, universalCandidatesRes, itunesRes, curioTypesRes] = await Promise.allSettled([
+    // 1. Parallel lookup across existing saves, universal discovery, OpenStreetMap Nominatim, iTunes, and curio_types
+    const [existingSavesRes, universalCandidatesRes, nominatimRes, itunesRes, curioTypesRes] = await Promise.allSettled([
       // A. User's existing saves
       (async () => {
         try {
@@ -112,10 +113,13 @@ export async function GET(req: NextRequest) {
       // B. Universal discovery (Wikidata + EN/ES Wikipedia)
       discoverUniversalEntities(query, { limit: 5, timeoutMs: 2000 }).catch(() => []),
 
-      // C. iTunes search for instant music album / song resolution
+      // C. OpenStreetMap Nominatim for local venues, cafes, restaurants, bars, museums
+      searchNominatimPlaces(query, { limit: 3, timeoutMs: 1800 }).catch(() => []),
+
+      // D. iTunes search for instant music album / song resolution
       fetchItunesMusicMetadata(query, { timeoutMs: 1500 }).catch(() => null),
 
-      // D. Active curio_types (system & user custom types)
+      // E. Active curio_types (system & user custom types)
       db
         .select({
           id: curioTypes.id,
@@ -187,33 +191,82 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2. Add universal discovery candidates (Wikidata + Wikipedia)
-    if (universalCandidatesRes.status === "fulfilled" && universalCandidatesRes.value) {
-      for (const cand of universalCandidatesRes.value) {
-        const norm = cand.title.toLowerCase().trim();
-        if (seenTitles.has(norm)) continue;
-        seenTitles.add(norm);
+    // Helper to add Nominatim place suggestions
+    const addNominatimSuggestions = () => {
+      if (nominatimRes.status === "fulfilled" && nominatimRes.value) {
+        for (const place of nominatimRes.value) {
+          const norm = place.title.toLowerCase().trim();
+          if (seenTitles.has(norm)) continue;
+          seenTitles.add(norm);
 
-        const subtitleParts = [
-          cand.creator,
-          cand.year ? String(cand.year) : null,
-          !cand.creator && !cand.year ? cand.snippet : null,
-        ].filter(Boolean);
+          const locationStr = place.city
+            ? place.country
+              ? `${place.city}, ${place.country}`
+              : place.city
+            : place.country || "";
 
-        suggestions.push({
-          title: cand.title,
-          subtitle: subtitleParts.join(" • ") || cand.snippet,
-          typePath: cand.typePath,
-          badgeLabel: cand.badgeLabel,
-          heroImageUrl: cand.thumbnailUrl || null,
-          canonicalUrl: cand.url,
-          isExistingSave: false,
-          saveId: null,
-          curioTypeId: null,
-        });
+          const subtitleParts = [
+            place.category,
+            locationStr,
+          ].filter(Boolean);
 
-        if (suggestions.length >= 6) break;
+          suggestions.push({
+            title: place.title,
+            subtitle: subtitleParts.join(" • ") || "Place & Venue",
+            typePath: "/place",
+            badgeLabel: "PLACE",
+            heroImageUrl: null,
+            canonicalUrl: place.mapsUrl,
+            isExistingSave: false,
+            saveId: null,
+            curioTypeId: null,
+          });
+
+          if (suggestions.length >= 6) break;
+        }
       }
+    };
+
+    // Helper to add Universal Discovery candidates
+    const addUniversalSuggestions = () => {
+      if (universalCandidatesRes.status === "fulfilled" && universalCandidatesRes.value) {
+        for (const cand of universalCandidatesRes.value) {
+          const norm = cand.title.toLowerCase().trim();
+          if (seenTitles.has(norm)) continue;
+          seenTitles.add(norm);
+
+          const subtitleParts = [
+            cand.creator,
+            cand.year ? String(cand.year) : null,
+            !cand.creator && !cand.year ? cand.snippet : null,
+          ].filter(Boolean);
+
+          suggestions.push({
+            title: cand.title,
+            subtitle: subtitleParts.join(" • ") || cand.snippet,
+            typePath: cand.typePath,
+            badgeLabel: cand.badgeLabel,
+            heroImageUrl: cand.thumbnailUrl || null,
+            canonicalUrl: cand.url,
+            isExistingSave: false,
+            saveId: null,
+            curioTypeId: null,
+          });
+
+          if (suggestions.length >= 6) break;
+        }
+      }
+    };
+
+    // If query contains venue keywords, prioritize Nominatim place search
+    const isPlaceQuery = /\b(?:cafe|cafeteria|bar|restaurant|restaurante|pub|bistro|bakery|pasteleria|hotel|hostel|museum|museo|gallery|galeria|piazza|plaza|street|carrer|calle|avenida|brutal|federal|dishoom)\b/i.test(query);
+
+    if (isPlaceQuery) {
+      addNominatimSuggestions();
+      addUniversalSuggestions();
+    } else {
+      addUniversalSuggestions();
+      addNominatimSuggestions();
     }
 
     // 3. Add iTunes metadata if it's music and not already covered by universal discovery

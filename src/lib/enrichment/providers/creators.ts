@@ -88,7 +88,7 @@ export async function resolveCreator(
   const name = wikiData?.title ? wikiData.title.replace(/\s*\([^)]+\)$/, "").trim() : trimmed;
   const description = wikiData?.description || "";
   const extract = wikiData?.extract || "";
-  const portraitUrl = wikiData?.thumbnail?.source || wikiData?.originalimage?.source || null;
+  const portraitUrl = wikiData?.originalimage?.source || wikiData?.thumbnail?.source || null;
 
   // Determine role & typePath
   const fullText = `${description} ${extract}`.toLowerCase();

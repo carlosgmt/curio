@@ -20,7 +20,6 @@ import { CreatorProfileCard } from "./silhouettes/CreatorProfileCard";
 import { PhotoCard } from "./silhouettes/PhotoCard";
 import { WebLinkCard } from "./silhouettes/WebLinkCard";
 import { SynapsePill } from "../connections/SynapsePill";
-import { CustomFieldsSection } from "./CustomFieldsSection";
 import { AddToListPopover } from "../lists/AddToListPopover";
 import type { CandidateFallback } from "./DisambiguationBar";
 import type { ConnectedItem } from "@/lib/connections/service";
@@ -507,20 +506,6 @@ export function PolymorphicCard({
         {renderSilhouette()}
       </div>
 
-      {/* Curio Learns: Custom Attributes & Consensus Badges */}
-      {!save.isPrivateMemo && (
-        <div className="px-1 mt-1.5">
-          <CustomFieldsSection
-            saveId={save.id}
-            userCustomValues={save.userCustomValues}
-            extendedAttributes={entity?.extendedAttributes}
-            onUpdated={(updatedValues) => {
-              onCustomFieldsUpdated?.(save.id, updatedValues);
-            }}
-          />
-        </div>
-      )}
-
       {/* Synaptic Memory Edge Connections */}
       {displayedConnections.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5 items-center px-1">
@@ -560,6 +545,7 @@ export function PolymorphicCard({
         saveId={save.id}
         isOpen={isAddToListOpen}
         onClose={() => setIsAddToListOpen(false)}
+        onListUpdated={() => onAddToList?.(save.id)}
       />
     </div>
   );

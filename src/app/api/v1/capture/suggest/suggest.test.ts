@@ -168,4 +168,33 @@ describe("Live Omnibox Typeahead / Autocomplete API (/api/v1/capture/suggest)", 
     expect(quoteSug.title).toContain("We suffer more often");
     expect(quoteSug.subtitle).toContain("Seneca");
   });
+
+  it("suggests local venues via OpenStreetMap Nominatim with venue category and location", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `venue-sug-${timestamp}@curio.local`,
+        username: `venue_${timestamp}`,
+        displayName: "Venue Explorer",
+      })
+      .returning();
+
+    const { token } = await createSession(user.id);
+    const req = new NextRequest(
+      `http://localhost:3000/api/v1/capture/suggest?q=${encodeURIComponent("Federal Cafe")}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.suggestions.length).toBeGreaterThan(0);
+
+    const placeSug = data.suggestions.find((s: any) => s.typePath === "/place" && s.title.includes("Federal"));
+    expect(placeSug).toBeDefined();
+    expect(placeSug.typePath).toBe("/place");
+    expect(placeSug.badgeLabel).toContain("PLACE");
+    expect(placeSug.canonicalUrl).toContain("google.com/maps");
+    expect(placeSug.title).toContain("Federal");
+  });
 });

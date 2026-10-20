@@ -60,7 +60,7 @@ export async function resolveFilm(
         const data = await res.json();
         if (data.type === "standard" && data.title) {
           const displayTitle = data.title.replace(/\s*\([^)]*film[^)]*\)/i, "").trim();
-          const posterUrl = data.thumbnail?.source || data.originalimage?.source;
+          const posterUrl = data.originalimage?.source || data.thumbnail?.source;
           const summary = data.extract || "";
 
           // Extract year from description or extract

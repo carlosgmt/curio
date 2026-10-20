@@ -278,7 +278,6 @@ async function hydrateSpecialist(
         priceCents: null,
         coreStructuredData: {
           ...placeRes.coreStructuredData,
-          wikidataUri: winningCandidate?.conceptUri,
         },
         primarySource: {
           sellerName: "Google Maps",
@@ -456,8 +455,8 @@ async function hydrateSpecialist(
       });
       if (sumRes.ok) {
         const sumData = await sumRes.json();
-        if (sumData?.thumbnail?.source) {
-          heroImageUrl = sumData.thumbnail.source;
+        if (sumData?.originalimage?.source || sumData?.thumbnail?.source) {
+          heroImageUrl = sumData.originalimage?.source || sumData.thumbnail?.source;
         }
         if (sumData?.extract) {
           summary = sumData.extract;

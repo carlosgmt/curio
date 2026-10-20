@@ -29,7 +29,7 @@ export interface ResolvedPlace {
     country?: string;
     latitude?: number;
     longitude?: number;
-    googleMapsUrl: string;
+    googleMapsUrl?: string;
     wikidataUri?: string;
   };
 }
@@ -90,7 +90,7 @@ export async function resolvePlace(
   // Parse details from Wikipedia summary
   let title = wikiData?.title ? wikiData.title.replace(/\s*\([^)]+\)$/, "").trim() : trimmed;
   let summary = wikiData?.extract || `Verified location for ${title}`;
-  let heroImageUrl = wikiData?.thumbnail?.source || wikiData?.originalimage?.source || null;
+  let heroImageUrl = wikiData?.originalimage?.source || wikiData?.thumbnail?.source || null;
   let category = wikiData?.description || "Cultural Venue & Landmark";
 
   let coordinates: { latitude: number; longitude: number } | undefined = undefined;
@@ -141,10 +141,18 @@ export async function resolvePlace(
             longitude: parseFloat(first.lon),
           };
           address = first.display_name;
+          if (first.name && !wikiData) {
+            title = first.name;
+          }
           if (first.address) {
             city = city || first.address.city || first.address.town || first.address.village;
             country = country || first.address.country;
             category = category || first.type || first.class;
+          }
+          if (!wikiData) {
+            const cleanType = first.type || first.class || "venue";
+            category = cleanType.charAt(0).toUpperCase() + cleanType.slice(1);
+            summary = `${category} located at ${first.display_name}`;
           }
         }
       }
@@ -159,7 +167,7 @@ export async function resolvePlace(
     : `https://maps.google.com/?q=${encodeURIComponent(title + (city ? ` ${city}` : ""))}`;
 
   const canonicalUrl = wikiData?.content_urls?.desktop?.page || googleMapsUrl;
-  const canonicalExternalId = wikiData?.wikibase_item || `place:${canonicalPageTitle}`;
+  const canonicalExternalId = wikiData?.wikibase_item || (coordinates ? `osm:${trimmed.toLowerCase().replace(/\s+/g, "-")}` : `place:${canonicalPageTitle}`);
 
   return {
     title,
@@ -183,8 +191,74 @@ export async function resolvePlace(
       country,
       latitude: coordinates?.latitude,
       longitude: coordinates?.longitude,
-      googleMapsUrl,
-      wikidataUri: wikiData?.wikibase_item ? `https://www.wikidata.org/wiki/${wikiData.wikibase_item}` : undefined,
     },
   };
+}
+
+export interface NominatimPlaceSuggestion {
+  title: string;
+  category: string;
+  venueType: string;
+  address: string;
+  city?: string;
+  country?: string;
+  latitude: number;
+  longitude: number;
+  mapsUrl: string;
+}
+
+export async function searchNominatimPlaces(
+  query: string,
+  options?: { limit?: number; timeoutMs?: number; fetchFn?: typeof fetch }
+): Promise<NominatimPlaceSuggestion[]> {
+  const fetchFn = options?.fetchFn ?? fetch;
+  const timeoutMs = options?.timeoutMs ?? 1800;
+  const limit = options?.limit ?? 3;
+  const trimmed = query.trim();
+  if (!trimmed || trimmed.length < 2) return [];
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+      trimmed
+    )}&format=json&limit=${limit}&addressdetails=1`;
+
+    const res = await fetchFn(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Curio/3.2 (https://github.com/curio-app; nominatim-search)",
+        Accept: "application/json",
+      },
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+
+    return data
+      .filter((item: any) => Boolean(item.lat && item.lon))
+      .map((item: any) => {
+        const title = item.name || item.display_name.split(",")[0].trim();
+        const city = item.address?.city || item.address?.town || item.address?.village || item.address?.suburb;
+        const country = item.address?.country;
+        const venueType = item.type || item.class || "place";
+        const lat = parseFloat(item.lat);
+        const lon = parseFloat(item.lon);
+        return {
+          title,
+          category: venueType.charAt(0).toUpperCase() + venueType.slice(1),
+          venueType,
+          address: item.display_name,
+          city,
+          country,
+          latitude: lat,
+          longitude: lon,
+          mapsUrl: `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`,
+        };
+      });
+  } catch {
+    return [];
+  }
 }

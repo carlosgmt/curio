@@ -67,7 +67,7 @@ export function PlaceSpotCard({
 
         {/* Hero Visual: Editorial Photo OR Interactive Map Preview */}
         {(hasPhoto || hasCoordinates) && (
-          <div className="relative aspect-16/10 w-full rounded-xl overflow-hidden bg-stone-200 dark:bg-stone-800 mb-3 group/hero">
+          <div className="relative aspect-[16/10] min-h-[220px] w-full rounded-xl overflow-hidden bg-stone-200 dark:bg-stone-800 mb-3 group/hero">
             {viewMode === "photo" && entity?.heroImageUrl ? (
               <img
                 src={entity.heroImageUrl}

@@ -213,6 +213,9 @@ export default function Home() {
         return [newCard, ...prev];
       });
 
+      // Update board size counters in real time
+      fetchLists();
+
       // Check if this is the first time adding on this type
       const typeInfo = extractTypeInfo(newCard);
       if (typeInfo && typeof window !== "undefined") {
@@ -442,6 +445,7 @@ export default function Home() {
                   fetchItems();
                   fetchLists();
                 }}
+                onAddToList={() => fetchLists()}
                 onCardClick={(card) => setSelectedCard(card)}
               />
             ) : (
@@ -493,6 +497,7 @@ export default function Home() {
                         }}
                         onSwapped={() => fetchItems()}
                         onUnlink={() => fetchItems()}
+                        onAddToList={() => fetchLists()}
                         onCustomFieldsUpdated={(saveId, updatedValues) => {
                           setItems((prev) =>
                             prev.map((it) =>
@@ -527,6 +532,7 @@ export default function Home() {
                         }}
                         onSwapped={() => fetchItems()}
                         onUnlink={() => fetchItems()}
+                        onAddToList={() => fetchLists()}
                         onCustomFieldsUpdated={(saveId, updatedValues) => {
                           setItems((prev) =>
                             prev.map((it) =>
@@ -561,6 +567,7 @@ export default function Home() {
                         }}
                         onSwapped={() => fetchItems()}
                         onUnlink={() => fetchItems()}
+                        onAddToList={() => fetchLists()}
                         onCustomFieldsUpdated={(saveId, updatedValues) => {
                           setItems((prev) =>
                             prev.map((it) =>
@@ -656,6 +663,7 @@ export default function Home() {
           fetchItems();
           if (activeListSlug) fetchLists();
         }}
+        onListUpdated={() => fetchLists()}
       />
 
       {/* Authentication Modal */}

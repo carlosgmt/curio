@@ -61,6 +61,28 @@ export function isDisambiguation(title?: string, description?: string): boolean 
 }
 
 /**
+ * Upgrade low-res Wikimedia thumbnail URLs (e.g. 60px thumbnail from REST search)
+ * to full-resolution or crisp retina image URLs.
+ */
+export function upgradeWikipediaThumbnail(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const fullUrl = url.startsWith("//") ? `https:${url}` : url;
+
+  // Wikimedia thumbnail pattern:
+  // (thumb|upload).wikimedia.org/wikipedia/{lang}/thumb/{a}/{ab}/{filename}/{size}px-{filename}
+  const match = fullUrl.match(
+    /^(https?:\/\/(?:thumb|upload)\.wikimedia\.org\/wikipedia\/[^/]+)\/thumb\/([0-9a-fA-F]\/[0-9a-fA-F]{2}\/[^/]+)\/\d+px-[^/?]+(?:\?[^#]*)?$/
+  );
+  if (match) {
+    const baseDomain = match[1].replace(/thumb\.wikimedia\.org/, "upload.wikimedia.org");
+    const filePath = match[2];
+    return `${baseDomain}/${filePath}`;
+  }
+
+  return fullUrl;
+}
+
+/**
  * Maps semantic descriptions (from Wikidata/Wikipedia) to Curio's internal ontology
  */
 export function mapDescriptionToOntology(description: string, title?: string): {
@@ -242,7 +264,7 @@ export async function discoverUniversalEntities(
 
   const fetchFn = options?.fetchFn ?? fetch;
   const limit = options?.limit ?? 6;
-  const timeoutMs = options?.timeoutMs ?? 2500;
+  const timeoutMs = options?.timeoutMs ?? 4000;
 
   const normalizedQuery = normalizeEntityString(trimmed);
 
@@ -368,14 +390,13 @@ export async function discoverUniversalEntities(
           score += 15;
         }
 
-        // Creator boost (+80 for person candidate, +50 extra if query has creator terms)
+        // Creator boost (+80 if query has creator terms, +15 base)
         const hasCreatorQueryTerm = /\b(?:author|writer|director|filmmaker|musician|singer|composer|artist|painter|sculptor|poet|autor|escritor|cineasta|director|musico|cantante|compositor|pintor|artista)\b/i.test(queryLower);
 
-        if (ontology.typePath.startsWith("/person")) {
+        if (hasCreatorQueryTerm && ontology.typePath.startsWith("/person")) {
           score += 80;
-          if (hasCreatorQueryTerm) {
-            score += 50;
-          }
+        } else if (ontology.typePath.startsWith("/person")) {
+          score += 15;
         }
 
         // Check match info & aliases for cross-language matching (e.g. Spanish "Mi vida sin mí" matching Q83630)
@@ -489,25 +510,25 @@ export async function discoverUniversalEntities(
           score += 15;
         }
 
-        // Creator boost (+80 for person candidate, +50 extra if query has creator terms)
+        // Creator boost (+80 if query has creator terms, +15 base)
         const hasCreatorQueryTerm = /\b(?:author|writer|director|filmmaker|musician|singer|composer|artist|painter|sculptor|poet|autor|escritor|cineasta|director|musico|cantante|compositor|pintor|artista)\b/i.test(queryLower);
 
-        if (ontology.typePath.startsWith("/person")) {
+        if (hasCreatorQueryTerm && ontology.typePath.startsWith("/person")) {
           score += 80;
-          if (hasCreatorQueryTerm) {
-            score += 50;
-          }
+        } else if (ontology.typePath.startsWith("/person")) {
+          score += 15;
         }
 
         if (ontology.typePath !== "/product/generic") {
           score += 20;
         }
 
-        const thumbUrl = page.thumbnail?.url
+        const rawThumbUrl = page.thumbnail?.url
           ? page.thumbnail.url.startsWith("//")
             ? `https:${page.thumbnail.url}`
             : page.thumbnail.url
           : null;
+        const thumbUrl = upgradeWikipediaThumbnail(rawThumbUrl);
 
         const wikiDomain = isSpanish ? "es.wikipedia.org" : "en.wikipedia.org";
         const wikiUrl = `https://${wikiDomain}/wiki/${encodeURIComponent(page.key || page.title.replace(/\s+/g, "_"))}`;

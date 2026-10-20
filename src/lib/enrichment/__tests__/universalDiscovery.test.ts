@@ -4,6 +4,7 @@ import {
   mapDescriptionToOntology,
   extractYearAndCreator,
   normalizeEntityString,
+  upgradeWikipediaThumbnail,
 } from "../universalDiscovery";
 
 describe("Universal Entity Discovery & Ontology Mapper", () => {
@@ -236,6 +237,16 @@ describe("Universal Entity Discovery & Ontology Mapper", () => {
     const { year, creator } = extractYearAndCreator("álbum de 1996 de Enrique Morente y Lagartija Nick");
     expect(year).toBe(1996);
     expect(creator).toBe("Enrique Morente y Lagartija Nick");
+  });
+
+  it("upgrades low-res 60px Wikimedia thumbnail URLs to crisp full-resolution retina images", () => {
+    const lowRes = "//thumb.wikimedia.org/wikipedia/commons/thumb/0/00/Tate_Modern_-_Bankside_Power_Station.jpg/60px-Tate_Modern_-_Bankside_Power_Station.jpg?utm_source=en.wikipedia.org&utm_campaign=rest&utm_content=thumbnail";
+    const highRes = upgradeWikipediaThumbnail(lowRes);
+    expect(highRes).toBe("https://upload.wikimedia.org/wikipedia/commons/0/00/Tate_Modern_-_Bankside_Power_Station.jpg");
+
+    // Preserves non-wikimedia URLs untouched
+    expect(upgradeWikipediaThumbnail("https://images.unsplash.com/photo-test.jpg")).toBe("https://images.unsplash.com/photo-test.jpg");
+    expect(upgradeWikipediaThumbnail(null)).toBeNull();
   });
 });
 

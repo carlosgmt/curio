@@ -239,6 +239,30 @@ describe("4-Layer Cache-First Funnel & Commercial SKU Resolution", () => {
     expect(structured.referenceCode).toBe("226570");
   });
 
+  it("Commercial Watch SKU Precision: rejects generic brand queries ('Omega Morente', 'Cartier') unless model/ref/keyword present", () => {
+    // Cultural/musical query containing Omega must NOT be parsed as a watch
+    expect(detectAndParseCommercialSku("Omega Morente")).toBeNull();
+    expect(detectAndParseCommercialSku("Morente omega")).toBeNull();
+    expect(detectAndParseCommercialSku("Omega")).toBeNull();
+    expect(detectAndParseCommercialSku("Cartier")).toBeNull();
+
+    // Recognized models and explicit references DO parse as watches
+    const speedmaster = detectAndParseCommercialSku("Omega Speedmaster");
+    expect(speedmaster).not.toBeNull();
+    expect(speedmaster?.brand).toBe("Omega");
+    expect(speedmaster?.model).toBe("Speedmaster Professional");
+    expect(speedmaster?.typePath).toBe("/product/watch");
+
+    const santos = detectAndParseCommercialSku("Cartier Santos");
+    expect(santos).not.toBeNull();
+    expect(santos?.brand).toBe("Cartier");
+    expect(santos?.model).toBe("Santos de Cartier");
+
+    const omegaRef = detectAndParseCommercialSku("Omega 310.30.42.50.01.002");
+    expect(omegaRef).not.toBeNull();
+    expect(omegaRef?.brand).toBe("Omega");
+  });
+
   it("Distinguisher Guard: 'Rolex Explorer 2 16570' does NOT collide with cached 'Rolex Explorer 2 226570'", async () => {
     const mockFetch: any = async () =>
       new Response(JSON.stringify({ pages: [] }), {

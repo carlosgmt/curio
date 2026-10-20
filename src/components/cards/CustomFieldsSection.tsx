@@ -109,8 +109,14 @@ export function CustomFieldsSection({
     isGlobal: boolean,
     onRemove?: () => void
   ) => {
+    // Sanitize: only render scalar string, number, or boolean values.
+    // Never render objects, arrays, or [object Object]
+    if (attrVal === null || attrVal === undefined) return null;
+    if (typeof attrVal === "object") return null;
+    const strVal = String(attrVal).trim();
+    if (!strVal || strVal === "[object Object]") return null;
+
     const k = attrKey.toLowerCase();
-    const strVal = String(attrVal);
     const numVal = Number(attrVal);
 
     if (

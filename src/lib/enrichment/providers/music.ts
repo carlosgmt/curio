@@ -1,3 +1,10 @@
+export interface MusicTrack {
+  number?: string | number;
+  title: string;
+  duration?: string;
+  previewUrl?: string;
+}
+
 export interface ResolvedMusic {
   title: string;
   artist: string;
@@ -17,11 +24,14 @@ export interface ResolvedMusic {
     rpm?: string;
     recordLabel?: string;
     format?: "album" | "song" | "vinyl";
+    tracklist?: MusicTrack[];
+    trackCount?: number;
   };
 }
 
 /**
- * Fetches high-resolution 600x600 album/song cover artwork and metadata from the free iTunes Search API.
+ * Fetches high-resolution 600x600 album/song cover artwork and metadata from the free iTunes Search API,
+ * including real tracklist resolution for albums.
  */
 export async function fetchItunesMusicMetadata(
   query: string,
@@ -37,6 +47,8 @@ export async function fetchItunesMusicMetadata(
   album?: string;
   releaseYear?: number;
   coverUrl?: string;
+  tracklist?: MusicTrack[];
+  trackCount?: number;
 } | null> {
   const fetchFn = options?.fetchFn ?? fetch;
   const timeoutMs = options?.timeoutMs ?? 4500;
@@ -50,29 +62,82 @@ export async function fetchItunesMusicMetadata(
     const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(
       searchTerm
     )}&entity=${entity}&limit=3`;
-    const res = await fetchFn(itunesUrl, { signal: controller.signal });
-    clearTimeout(timer);
+    let res = await fetchFn(itunesUrl, { signal: controller.signal });
+    let item: any = null;
 
     if (res.ok) {
       const data = await res.json();
-      const item = data?.results?.[0];
-      if (item) {
-        const rawArt: string | undefined = item.artworkUrl100 || item.artworkUrl60;
-        const coverUrl = rawArt
-          ? rawArt.replace(/\d+x\d+bb/, "600x600bb")
-          : undefined;
-        const dateStr: string | undefined = item.releaseDate;
-        const yearMatch = dateStr?.match(/\b(19\d\d|20\d\d)\b/);
-        const releaseYear = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
-        return {
-          title: entity === "song" ? item.trackName || item.collectionName : item.collectionName,
-          artist: item.artistName,
-          album: item.collectionName,
-          releaseYear,
-          coverUrl,
-        };
+      item = data?.results?.[0];
+    }
+
+    // Regional fallback (e.g., Spanish music often indexed under country=ES)
+    if (!item) {
+      try {
+        const esRes = await fetchFn(`${itunesUrl}&country=ES`, { signal: controller.signal });
+        if (esRes.ok) {
+          const esData = await esRes.json();
+          item = esData?.results?.[0];
+        }
+      } catch {
+        // Non-fatal
       }
     }
+
+    if (item) {
+      const rawArt: string | undefined = item.artworkUrl100 || item.artworkUrl60;
+      const coverUrl = rawArt
+        ? rawArt.replace(/\d+x\d+bb/, "600x600bb")
+        : undefined;
+      const dateStr: string | undefined = item.releaseDate;
+      const yearMatch = dateStr?.match(/\b(19\d\d|20\d\d)\b/);
+      const releaseYear = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
+
+      let tracklist: MusicTrack[] | undefined;
+      let trackCount: number | undefined = item.trackCount;
+
+      // Hydrate real tracklist if collectionId is present
+      if (item.collectionId && entity === "album") {
+        try {
+          const countryParam = item.country ? `&country=${item.country.slice(0, 2).toLowerCase()}` : "";
+          const lookupUrl = `https://itunes.apple.com/lookup?id=${item.collectionId}&entity=song${countryParam}`;
+          const lookupRes = await fetchFn(lookupUrl, { signal: controller.signal });
+          if (lookupRes.ok) {
+            const lookupData = await lookupRes.json();
+            const songItems = (lookupData?.results || []).filter(
+              (r: any) => r.wrapperType === "track" && r.kind === "song"
+            );
+            if (songItems.length > 0) {
+              tracklist = songItems.map((s: any, idx: number) => {
+                const ms = s.trackTimeMillis;
+                const duration = ms
+                  ? `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`
+                  : undefined;
+                return {
+                  number: s.trackNumber ?? idx + 1,
+                  title: s.trackName,
+                  duration,
+                  previewUrl: s.previewUrl,
+                };
+              });
+              trackCount = songItems.length;
+            }
+          }
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      return {
+        title: entity === "song" ? item.trackName || item.collectionName : item.collectionName,
+        artist: item.artistName,
+        album: item.collectionName,
+        releaseYear,
+        coverUrl,
+        tracklist,
+        trackCount,
+      };
+    }
+    clearTimeout(timer);
   } catch {
     // Non-fatal
   }
@@ -229,6 +294,8 @@ export async function resolveMusicBrainz(
         rpm: "33",
         recordLabel: label,
         format: isExplicitSong ? "song" : "album",
+        tracklist: itunesMeta?.tracklist,
+        trackCount: itunesMeta?.trackCount,
       },
     };
   }
@@ -256,6 +323,8 @@ export async function resolveMusicBrainz(
         releaseYear,
         rpm: "33",
         format: isExplicitSong ? "song" : "album",
+        tracklist: itunesMeta.tracklist,
+        trackCount: itunesMeta.trackCount,
       },
     };
   }

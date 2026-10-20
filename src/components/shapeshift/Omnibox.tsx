@@ -91,6 +91,17 @@ interface UndoState {
   countdown: number;
 }
 
+export interface OmniboxSuggestion {
+  title: string;
+  subtitle: string;
+  typePath: string;
+  badgeLabel: string;
+  heroImageUrl: string | null;
+  canonicalUrl: string;
+  isExistingSave: boolean;
+  saveId: string | null;
+}
+
 export function Omnibox({
   onCaptured,
   isCapturing: externalIsCapturing,
@@ -103,6 +114,11 @@ export function Omnibox({
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+
+  // Typeahead Entity Suggestions state
+  const [suggestions, setSuggestions] = useState<OmniboxSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
 
   // Intent preview state
   const [intentPreview, setIntentPreview] = useState<IntentPreview | null>(null);
@@ -218,11 +234,76 @@ export function Omnibox({
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setShowSearchDropdown(false);
         setShowDisambiguation(false);
+        setShowSuggestions(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Real-time Typeahead / Autocomplete Suggestions
+  useEffect(() => {
+    const trimmed = input.trim();
+    if (!trimmed || inSearch || trimmed.length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/v1/capture/suggest?q=${encodeURIComponent(trimmed)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const items: OmniboxSuggestion[] = data.suggestions || [];
+          setSuggestions(items);
+          setShowSuggestions(items.length > 0);
+          setSelectedSuggestionIndex(-1);
+        }
+      } catch (err) {
+        console.error("Suggestion fetch error:", err);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [input, inSearch]);
+
+  const handleSelectSuggestion = async (sug: OmniboxSuggestion) => {
+    setShowSuggestions(false);
+    setSuggestions([]);
+    if (sug.isExistingSave && sug.saveId) {
+      router.push(`/card/${sug.saveId}`);
+      setInput("");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await apiFetch("/api/v1/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: sug.canonicalUrl || sug.title,
+          forceNew: true,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to capture entity suggestion");
+      }
+
+      const data = await res.json();
+      setInput("");
+      setIntentPreview(null);
+      if (onCaptured) {
+        onCaptured(data);
+      }
+    } catch (err) {
+      console.error("Failed to capture suggestion:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // Countdown timer for Undo Toast
   useEffect(() => {
@@ -364,11 +445,31 @@ export function Omnibox({
     if (e.key === "Escape") {
       setShowSearchDropdown(false);
       setShowDisambiguation(false);
+      setShowSuggestions(false);
       setIsSearchMode(false);
       if (input.startsWith("/")) {
         setInput("");
       }
       return;
+    }
+
+    // Navigate live typeahead suggestions
+    if (showSuggestions && suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey && selectedSuggestionIndex >= 0 && suggestions[selectedSuggestionIndex]) {
+        e.preventDefault();
+        handleSelectSuggestion(suggestions[selectedSuggestionIndex]);
+        return;
+      }
     }
 
     // Shift + Enter forces "Add as New Card"
@@ -605,6 +706,79 @@ export function Omnibox({
           </div>
         )}
       </form>
+
+      {/* Live Omnibox Typeahead / Autocomplete Suggestions Dropdown */}
+      {!inSearch && !showDisambiguation && showSuggestions && suggestions.length > 0 && (
+        <div className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden backdrop-blur-md">
+          <div className="px-4 py-2 border-b border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-950/40 flex items-center justify-between text-[11px] font-mono text-neutral-400">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>Entity Suggestions</span>
+            </span>
+            <span className="text-[10px]">↑↓ to navigate • ↵ to select</span>
+          </div>
+
+          <div className="max-h-72 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/60">
+            {suggestions.map((sug, idx) => {
+              const isSelected = selectedSuggestionIndex === idx;
+              return (
+                <button
+                  key={`${sug.title}-${sug.canonicalUrl}-${idx}`}
+                  type="button"
+                  onClick={() => handleSelectSuggestion(sug)}
+                  onMouseEnter={() => setSelectedSuggestionIndex(idx)}
+                  className={`w-full text-left p-3 transition flex items-center justify-between gap-3 cursor-pointer ${
+                    isSelected
+                      ? "bg-neutral-100 dark:bg-neutral-800/90 text-neutral-900 dark:text-white"
+                      : "hover:bg-neutral-50 dark:hover:bg-neutral-800/50 text-neutral-800 dark:text-neutral-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shrink-0 flex items-center justify-center">
+                      {sug.heroImageUrl ? (
+                        <img
+                          src={sug.heroImageUrl}
+                          alt={sug.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Sparkles className="w-4 h-4 text-neutral-400" />
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold text-sm truncate">
+                          {sug.title}
+                        </span>
+                        <span className="text-[9px] font-mono uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300">
+                          {sug.badgeLabel}
+                        </span>
+                      </div>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
+                        {sug.subtitle}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0">
+                    {sug.isExistingSave ? (
+                      <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/60">
+                        In saves
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 hidden sm:inline">
+                        1-tap capture →
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 1-Tap Candidate Disambiguation Dropdown */}
       {showDisambiguation && intentPreview?.ambiguousCandidates && (

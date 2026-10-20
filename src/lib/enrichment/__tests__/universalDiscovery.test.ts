@@ -221,6 +221,22 @@ describe("Universal Entity Discovery & Ontology Mapper", () => {
     expect(newEntity).toBeDefined();
     expect(newEntity.typePath).toBe("/media/film");
   });
+
+  it("handles Spanish albums and skips disambiguation pages without false watch mapping", () => {
+    // Disambiguation pages are never classified as items or watches
+    const disambig = mapDescriptionToOntology("página de desambiguación de Wikimedia", "Omega (desambiguación)");
+    expect(disambig.badgeLabel).toBe("NOTE");
+
+    // Spanish album description maps to /media/music/album
+    const morenteAlbum = mapDescriptionToOntology("álbum de 1996 de Enrique Morente y Lagartija Nick", "Omega (álbum)");
+    expect(morenteAlbum.coreType).toBe("MEDIA");
+    expect(morenteAlbum.typePath).toBe("/media/music/album");
+    expect(morenteAlbum.badgeLabel).toBe("ALBUM");
+
+    const { year, creator } = extractYearAndCreator("álbum de 1996 de Enrique Morente y Lagartija Nick");
+    expect(year).toBe(1996);
+    expect(creator).toBe("Enrique Morente y Lagartija Nick");
+  });
 });
 
 

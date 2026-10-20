@@ -24,6 +24,20 @@ function getBadge(cand: CandidateFallback): { label: string; className: string }
   const typePath = (cand.typePath || "").toLowerCase();
   const core = (cand.coreType || "").toUpperCase();
 
+  if (badge === "ALBUM" || typePath.includes("album")) {
+    return {
+      label: "ALBUM",
+      className:
+        "bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+    };
+  }
+  if (badge === "SONG" || typePath.includes("song") || typePath.includes("music") || typePath.includes("vinyl")) {
+    return {
+      label: "SONG",
+      className:
+        "bg-cyan-100 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800",
+    };
+  }
   if (badge === "FILM" || typePath.includes("film") || typePath.includes("movie")) {
     return {
       label: "FILM",
@@ -38,11 +52,11 @@ function getBadge(cand: CandidateFallback): { label: string; className: string }
         "bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800",
     };
   }
-  if (badge === "SONG" || typePath.includes("music") || typePath.includes("vinyl")) {
+  if (badge === "WATCH" || typePath.includes("watch")) {
     return {
-      label: "SONG",
+      label: "WATCH",
       className:
-        "bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+        "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
     };
   }
   if (badge === "WINE" || typePath.includes("wine")) {
@@ -93,16 +107,13 @@ export function DisambiguationBar({
   candidates,
   onSwapped,
 }: DisambiguationBarProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const [isSwapping, setIsSwapping] = useState<string | null>(null);
   const [swappedUrl, setSwappedUrl] = useState<string | null>(null);
-  const [isDismissed, setIsDismissed] = useState(false);
 
-  if (isDismissed || !candidates || candidates.length === 0) {
+  if (!candidates || candidates.length === 0) {
     return null;
   }
-
-  // Limit runner-ups to max 2 items
-  const displayedCandidates = candidates.slice(0, 2);
 
   const handleSwap = async (candidate: CandidateFallback) => {
     if (isSwapping) return;
@@ -123,7 +134,7 @@ export function DisambiguationBar({
       }
 
       setSwappedUrl(candidate.url);
-      setIsDismissed(true);
+      setIsOpen(false);
       if (onSwapped) {
         onSwapped(candidate);
       }
@@ -152,7 +163,7 @@ export function DisambiguationBar({
         throw new Error("Failed to convert save to text note");
       }
 
-      setIsDismissed(true);
+      setIsOpen(false);
       if (onSwapped) {
         onSwapped({
           title: "Text Note",
@@ -169,29 +180,51 @@ export function DisambiguationBar({
     }
   };
 
-  return (
-    <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800/80">
-      <div className="flex items-center justify-between gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 font-medium mb-2">
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span>Not what you meant? 1-tap switch:</span>
-        </div>
+  if (!isOpen) {
+    return (
+      <div className="flex items-center justify-center pt-1">
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            setIsDismissed(true);
+            setIsOpen(true);
           }}
-          className="p-1 rounded hover:bg-neutral-200/60 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition cursor-pointer"
-          title="Dismiss suggestions"
-          aria-label="Dismiss"
+          className="inline-flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 hover:text-neutral-200 dark:text-neutral-500 dark:hover:text-neutral-300 py-0.5 px-2.5 rounded-full hover:bg-white/5 transition cursor-pointer"
+          title="Wrong entity? Click to disambiguate or save as note"
+        >
+          <Sparkles className="w-3 h-3 text-amber-500/80" />
+          <span>Wrong entity?</span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="mt-3 p-3.5 rounded-2xl bg-neutral-900 border border-neutral-700/80 text-white shadow-xl space-y-2.5 z-20 text-xs text-left"
+    >
+      <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+        <div className="flex items-center gap-1.5 font-medium text-neutral-200">
+          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          <span>Disambiguate Entity</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+          aria-label="Close"
         >
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {displayedCandidates.map((cand) => {
+      <p className="text-[11px] text-neutral-400">
+        Select the intended entity below, or save as a text note:
+      </p>
+
+      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+        {candidates.map((cand) => {
           const isCurrent = isSwapping === cand.url;
           const isDone = swappedUrl === cand.url;
           const badge = getBadge(cand);
@@ -200,53 +233,54 @@ export function DisambiguationBar({
             <button
               key={cand.url}
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSwap(cand);
-              }}
+              onClick={() => handleSwap(cand)}
               disabled={Boolean(isSwapping)}
-              title={cand.snippet}
-              className={`group flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all text-left cursor-pointer ${
+              className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl border text-left transition cursor-pointer ${
                 isDone
-                  ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300"
-                  : "bg-neutral-50 dark:bg-neutral-800/60 border-neutral-200/80 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-600 text-neutral-700 dark:text-neutral-300"
+                  ? "bg-emerald-950/60 border-emerald-700 text-emerald-200"
+                  : "bg-neutral-800/80 hover:bg-neutral-800 border-neutral-700/60 text-neutral-200"
               }`}
             >
-              {isCurrent ? (
-                <RefreshCw className="w-3 h-3 animate-spin text-neutral-600" />
-              ) : isDone ? (
-                <Check className="w-3 h-3 text-emerald-600" />
-              ) : (
+              <div className="flex items-center gap-2 min-w-0">
                 <span
-                  className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${badge.className}`}
+                  className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border shrink-0 ${badge.className}`}
                 >
                   {badge.label}
                 </span>
-              )}
-              <span className="max-w-[180px] sm:max-w-[240px] truncate font-medium">
-                {cand.title}
-              </span>
+                <div className="min-w-0">
+                  <span className="font-semibold block truncate text-xs text-neutral-100">
+                    {cand.title}
+                  </span>
+                  {cand.snippet && (
+                    <span className="text-[10px] text-neutral-400 block truncate">
+                      {cand.snippet}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {isCurrent ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-neutral-400 shrink-0" />
+              ) : isDone ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              ) : null}
             </button>
           );
         })}
 
-        {/* 1-tap Save as text note */}
+        {/* 1-Tap Save as text note */}
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSaveAsTextNote();
-          }}
+          onClick={() => handleSaveAsTextNote()}
           disabled={Boolean(isSwapping)}
-          title="Convert card to a text note"
-          className="group flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-neutral-200/80 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 hover:border-neutral-400 dark:hover:border-neutral-600 text-neutral-700 dark:text-neutral-300 transition-all text-left cursor-pointer"
+          className="w-full flex items-center gap-2 p-2 rounded-xl border border-neutral-700/60 bg-neutral-800/40 hover:bg-neutral-800 text-neutral-300 transition text-left cursor-pointer"
         >
           {isSwapping === "text-note" ? (
-            <RefreshCw className="w-3 h-3 animate-spin text-neutral-600 dark:text-neutral-400" />
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-neutral-400" />
           ) : (
-            <FileText className="w-3 h-3 text-neutral-500 dark:text-neutral-400" />
+            <FileText className="w-3.5 h-3.5 text-neutral-400" />
           )}
-          <span className="font-medium">Save as text note</span>
+          <span className="font-medium text-xs">Save as text note</span>
         </button>
       </div>
     </div>

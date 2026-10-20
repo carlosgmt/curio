@@ -21,17 +21,7 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
   const recordLabel = data.recordLabel || data.label || "Curio Pressed Recordings";
   const catalogNumber = data.catalogNumber || "CR-1049";
 
-  const defaultTracklist: Track[] = [
-    { number: "A1", title: "Opening Movement", duration: "5:24" },
-    { number: "A2", title: "Theme in Reverie", duration: "4:12" },
-    { number: "A3", title: "Midnight Soliloquy", duration: "6:48" },
-    { number: "B1", title: "Cadence of Shadows", duration: "5:03" },
-    { number: "B2", title: "Acoustic Reprise", duration: "7:15" },
-  ];
-
-  const tracks: Track[] = Array.isArray(data.tracklist) && data.tracklist.length > 0
-    ? data.tracklist
-    : defaultTracklist;
+  const tracks: Track[] = Array.isArray(data.tracklist) ? data.tracklist : [];
 
   return (
     <div className="flex flex-col h-full bg-neutral-950 text-white rounded-3xl overflow-hidden border border-neutral-800 shadow-2xl">
@@ -143,31 +133,42 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
 
       {/* Tracklist Inspector & Pressing Specs */}
       <div className="p-5 space-y-4 flex-1 overflow-y-auto flex flex-col justify-between">
-        <div>
-          <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
-            Tracklist ({tracks.length} Tracks)
-          </span>
-          <div className="space-y-1.5 max-h-40 overflow-y-auto">
-            {tracks.map((track, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between p-2 rounded-xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800/60 text-xs transition"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="font-mono text-[10px] text-amber-400 font-bold w-5 shrink-0">
-                    {track.number || `A${i + 1}`}
-                  </span>
-                  <span className="font-medium text-neutral-200 truncate">{track.title}</span>
+        {tracks.length > 0 ? (
+          <div>
+            <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
+              Tracklist ({tracks.length} Tracks)
+            </span>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {tracks.map((track, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between p-2 rounded-xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800/60 text-xs transition"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="font-mono text-[10px] text-amber-400 font-bold w-5 shrink-0">
+                      {track.number || `A${i + 1}`}
+                    </span>
+                    <span className="font-medium text-neutral-200 truncate">{track.title}</span>
+                  </div>
+                  {track.duration && (
+                    <span className="font-mono text-[10px] text-neutral-500 shrink-0">
+                      {track.duration}
+                    </span>
+                  )}
                 </div>
-                {track.duration && (
-                  <span className="font-mono text-[10px] text-neutral-500 shrink-0">
-                    {track.duration}
-                  </span>
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="p-4 rounded-2xl bg-neutral-900/40 border border-neutral-800/60 space-y-2">
+            <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold">
+              Album Liner Notes
+            </span>
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              {entity?.summary || `Full studio recording release by ${artist}.`}
+            </p>
+          </div>
+        )}
 
         {/* Pressing Specs & 3-Action Providers */}
         <div className="pt-3 border-t border-neutral-800 space-y-2">

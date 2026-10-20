@@ -174,6 +174,7 @@ interface BrandSpec {
   defaultPriceCents: number;
   sellerName: string;
   sellerSearchUrl: (q: string) => string;
+  requiresModelOrKeywords?: boolean;
   models?: Array<{ pattern: RegExp; canonical: string; priceCents?: number }>;
 }
 
@@ -203,6 +204,7 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
     pattern: /\bomega\b/i,
     canonical: "Omega",
     category: "watch_luxury",
+    requiresModelOrKeywords: true,
     defaultPriceCents: 700000,
     sellerName: "Chrono24",
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
@@ -211,12 +213,16 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
       { pattern: /\bseamaster\b/i, canonical: "Seamaster Diver 300M", priceCents: 590000 },
       { pattern: /\baqua\s+terra\b/i, canonical: "Seamaster Aqua Terra", priceCents: 630000 },
       { pattern: /\bconstellation\b/i, canonical: "Constellation", priceCents: 680000 },
+      { pattern: /\bde\s*ville\b/i, canonical: "De Ville", priceCents: 450000 },
+      { pattern: /\brailmaster\b/i, canonical: "Railmaster", priceCents: 420000 },
+      { pattern: /\bplanet\s+ocean\b/i, canonical: "Planet Ocean", priceCents: 650000 },
     ],
   },
   {
     pattern: /\btudor\b/i,
     canonical: "Tudor",
     category: "watch_luxury",
+    requiresModelOrKeywords: true,
     defaultPriceCents: 425000,
     sellerName: "Chrono24",
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
@@ -227,12 +233,15 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
       { pattern: /\bblack\s+bay\b/i, canonical: "Black Bay", priceCents: 435000 },
       { pattern: /\bpelagos\s*39\b/i, canonical: "Pelagos 39", priceCents: 470000 },
       { pattern: /\bpelagos\b/i, canonical: "Pelagos", priceCents: 502500 },
+      { pattern: /\b1926\b/i, canonical: "Tudor 1926", priceCents: 210000 },
+      { pattern: /\broyal\b/i, canonical: "Tudor Royal", priceCents: 240000 },
     ],
   },
   {
     pattern: /\bcartier\b/i,
     canonical: "Cartier",
     category: "watch_luxury",
+    requiresModelOrKeywords: true,
     defaultPriceCents: 745000,
     sellerName: "Cartier",
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
@@ -242,6 +251,8 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
       { pattern: /\btank\s+louis\b/i, canonical: "Tank Louis Cartier", priceCents: 1300000 },
       { pattern: /\btank\b/i, canonical: "Tank", priceCents: 365000 },
       { pattern: /\bpanth[eè]re\b/i, canonical: "Panthère de Cartier", priceCents: 445000 },
+      { pattern: /\bballon\s+bleu\b/i, canonical: "Ballon Bleu", priceCents: 620000 },
+      { pattern: /\bpasha\b/i, canonical: "Pasha de Cartier", priceCents: 580000 },
     ],
   },
   {
@@ -286,17 +297,28 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
     pattern: /\bcasio\b|\bg-shock\b/i,
     canonical: "Casio",
     category: "watch_luxury",
+    requiresModelOrKeywords: true,
     defaultPriceCents: 15000,
     sellerName: "Casio",
     sellerSearchUrl: (q) => `https://www.casio.com/us/search-result/?q=${encodeURIComponent(q)}`,
+    models: [
+      { pattern: /\bg-shock\b/i, canonical: "G-Shock", priceCents: 15000 },
+      { pattern: /\bf-91w\b/i, canonical: "F-91W", priceCents: 2500 },
+    ],
   },
   {
     pattern: /\biwc\b/i,
     canonical: "IWC Schaffhausen",
     category: "watch_luxury",
+    requiresModelOrKeywords: true,
     defaultPriceCents: 680000,
     sellerName: "Chrono24",
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
+    models: [
+      { pattern: /\bportugieser\b/i, canonical: "Portugieser", priceCents: 750000 },
+      { pattern: /\b(?:pilot|mark\s*(?:xx|xviii|18|20))\b/i, canonical: "Pilot's Watch", priceCents: 520000 },
+      { pattern: /\bportofino\b/i, canonical: "Portofino", priceCents: 540000 },
+    ],
   },
   {
     pattern: /\bjaeger[\s-]*lecoultre\b|\bjlc\b/i,
@@ -305,6 +327,10 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
     defaultPriceCents: 1080000,
     sellerName: "Chrono24",
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
+    models: [
+      { pattern: /\breverso\b/i, canonical: "Reverso", priceCents: 980000 },
+      { pattern: /\bmaster(?:\s+ultra\s+thin)?\b/i, canonical: "Master Ultra Thin", priceCents: 850000 },
+    ],
   },
   {
     pattern: /\btag\s+heuer\b/i,
@@ -313,6 +339,11 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
     defaultPriceCents: 550000,
     sellerName: "Chrono24",
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
+    models: [
+      { pattern: /\bcarrera\b/i, canonical: "Carrera", priceCents: 420000 },
+      { pattern: /\bmonaco\b/i, canonical: "Monaco", priceCents: 650000 },
+      { pattern: /\baquaracer\b/i, canonical: "Aquaracer", priceCents: 280000 },
+    ],
   },
   {
     pattern: /\bbreitling\b/i,
@@ -321,6 +352,11 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
     defaultPriceCents: 690000,
     sellerName: "Chrono24",
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
+    models: [
+      { pattern: /\bnavitimer\b/i, canonical: "Navitimer", priceCents: 680000 },
+      { pattern: /\bchronomat\b/i, canonical: "Chronomat", priceCents: 590000 },
+      { pattern: /\bsuperocean\b/i, canonical: "Superocean", priceCents: 460000 },
+    ],
   },
   {
     pattern: /\bvacheron\s+constantin\b/i,
@@ -329,6 +365,10 @@ const WATCH_AND_LUXURY_BRANDS: BrandSpec[] = [
     defaultPriceCents: 2500000,
     sellerName: "Chrono24",
     sellerSearchUrl: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`,
+    models: [
+      { pattern: /\boverseas\b/i, canonical: "Overseas", priceCents: 2800000 },
+      { pattern: /\bpatrimony\b/i, canonical: "Patrimony", priceCents: 2200000 },
+    ],
   },
   {
     pattern: /\bherman\s+miller\b/i,
@@ -526,6 +566,16 @@ export function detectAndParseCommercialSku(query: string): CommercialSkuAnalysi
         }
       }
 
+      const hasWatchKeywords = /\b(?:watch|wristwatch|reloj|chronograph|chronometer|horology|ref|reference)\b/i.test(trimmed);
+      const hasDigits = /\d/.test(trimmed);
+      const isNonWatchLuxury =
+        brandSpec.canonical === "Herman Miller" || brandSpec.canonical === "Rimowa";
+
+      // Guard: generic brands (Omega, Cartier, Tudor, etc.) MUST have a recognized model, digits/ref, or watch keywords
+      if (brandSpec.requiresModelOrKeywords && !model && !hasDigits && !hasWatchKeywords) {
+        continue;
+      }
+
       let sku: string | null = null;
       let referenceCode: string | null = null;
 
@@ -535,13 +585,20 @@ export function detectAndParseCommercialSku(query: string): CommercialSkuAnalysi
           sku = referenceCode;
         }
       } else if (nonColorTokens.length > 0) {
-        const lastTok = nonColorTokens[nonColorTokens.length - 1];
-        if (/\d/.test(lastTok) || (nonColorTokens.length >= 2 && lastTok.length <= 8)) {
-          referenceCode = lastTok;
-          sku = lastTok;
-          model = normalizeWatchModelName(nonColorTokens.slice(0, -1).join(" "));
+        // Only accept trailing tokens as model/ref if digits are present or watch keywords are present,
+        // unless it's non-watch luxury (like Herman Miller/Rimowa). Never fabricate a watch model out of non-watch proper nouns.
+        if (hasDigits || hasWatchKeywords || isNonWatchLuxury) {
+          const lastTok = nonColorTokens[nonColorTokens.length - 1];
+          if (/\d/.test(lastTok) || (nonColorTokens.length >= 2 && lastTok.length <= 8)) {
+            referenceCode = lastTok;
+            sku = lastTok;
+            model = normalizeWatchModelName(nonColorTokens.slice(0, -1).join(" "));
+          } else {
+            model = normalizeWatchModelName(nonColorTokens.join(" "));
+          }
         } else {
-          model = normalizeWatchModelName(nonColorTokens.join(" "));
+          // Reject fabricating watch model out of unknown proper nouns without digits or watch context
+          continue;
         }
       }
 
@@ -559,9 +616,6 @@ export function detectAndParseCommercialSku(query: string): CommercialSkuAnalysi
       const canonicalTitle = referenceCode
         ? `${baseTitle} Ref. ${referenceCode}`
         : baseTitle;
-
-      const isNonWatchLuxury =
-        brandSpec.canonical === "Herman Miller" || brandSpec.canonical === "Rimowa";
 
       return {
         category: "watch_luxury",

@@ -47,6 +47,20 @@ export function normalizeEntityString(text: string): string {
 }
 
 /**
+ * Detects Wikipedia/Wikidata disambiguation pages
+ */
+export function isDisambiguation(title?: string, description?: string): boolean {
+  const t = normalizeEntityString(title || "");
+  const d = normalizeEntityString(description || "");
+  return (
+    /\b(?:disambiguation|desambiguacion)\b/i.test(t) ||
+    /\b(?:disambiguation page|pagina de desambiguacion)\b/i.test(d) ||
+    d === "disambiguation" ||
+    d === "desambiguacion"
+  );
+}
+
+/**
  * Maps semantic descriptions (from Wikidata/Wikipedia) to Curio's internal ontology
  */
 export function mapDescriptionToOntology(description: string, title?: string): {
@@ -54,21 +68,26 @@ export function mapDescriptionToOntology(description: string, title?: string): {
   typePath: string;
   badgeLabel: string;
 } {
-  const d = (description || "").toLowerCase();
-  const t = (title || "").toLowerCase();
+  const d = normalizeEntityString(description || "");
+  const t = normalizeEntityString(title || "");
 
-  // 1. Cinema & Film
+  // Guard: disambiguation pages should never map to cultural items or watches
+  if (isDisambiguation(title, description)) {
+    return { coreType: "NOTE", typePath: "/note", badgeLabel: "NOTE" };
+  }
+
+  // 1. Cinema & Film (multilingual EN / ES)
   if (
-    /\b(?:film|movie|feature film|motion picture|television series|tv series|anime|documentary|miniseries|directed by|screenplay|filmmaker|director|screenwriter|actor|actress)\b/i.test(
+    /\b(?:film|movie|pelicula|filme|feature film|motion picture|television series|tv series|serie de television|serie de tv|anime|documentary|documental|miniseries|directed by|screenplay|filmmaker|director|screenwriter|actor|actress|actriz|largometraje|cortometraje)\b/i.test(
       d
     )
   ) {
     return { coreType: "MEDIA", typePath: "/media/film", badgeLabel: "FILM" };
   }
 
-  // 2. Books & Literature
+  // 2. Books & Literature (multilingual EN / ES)
   if (
-    /\b(?:novel|novella|book|memoir|biography|autobiography|manga|written work|edition of written work|poem|poetry collection|short story|play by|literary work|non-fiction|author|writer|novelist|poet|playwright)\b/i.test(
+    /\b(?:novel|novela|novella|book|libro|memoir|memorias|biography|biografia|autobiography|manga|written work|obra literaria|edition of written work|poem|poema|poetry collection|poemario|short story|relato|cuento|play by|literary work|non fiction|author|autor|writer|escritor|novelist|poet|poeta|playwright|dramaturgo)\b/i.test(
       d
     )
   ) {
@@ -77,61 +96,63 @@ export function mapDescriptionToOntology(description: string, title?: string): {
 
   // 3. Music: Albums vs Songs (hierarchy: /media/music -> /media/music/album | /media/music/song)
   if (
-    /\b(?:album|studio album|live album|compilation album|double album|concept album|extended play|ep|record by|soundtrack|discography|lp)\b/i.test(
+    /\b(?:album|studio album|album de estudio|live album|album en vivo|compilation album|album recopilatorio|double album|doble album|disco|concept album|extended play|ep|record by|soundtrack|banda sonora|discography|discografia|lp)\b/i.test(
       d
-    )
+    ) ||
+    /\b(?:album)\b/i.test(t)
   ) {
     return { coreType: "MEDIA", typePath: "/media/music/album", badgeLabel: "ALBUM" };
   }
   if (
-    /\b(?:song|original song|single|musical composition|track|ballad|band|musical duo|recorded by|musician|singer|songwriter|composer)\b/i.test(
+    /\b(?:song|cancion|original song|single|sencillo|musical composition|composicion|track|pista|ballad|balada|band|banda|musical duo|duo|recorded by|grabado por|interpretado por|musician|musico|singer|cantante|cantaor|songwriter|cantautor|composer|compositor)\b/i.test(
       d
-    )
+    ) ||
+    /\b(?:cancion)\b/i.test(t)
   ) {
     return { coreType: "MEDIA", typePath: "/media/music/song", badgeLabel: "SONG" };
   }
 
   // 4. Wine & Beverages
   if (
-    /\b(?:wine|vineyard|winery|grape|appellation|cuvée|cuvee|docg|doc|red wine|white wine|champagne|whisky|bourbon|spirit|alcoholic beverage)\b/i.test(d)
+    /\b(?:wine|vineyard|winery|grape|appellation|cuvee|docg|doc|red wine|white wine|champagne|whisky|bourbon|spirit|alcoholic beverage|vino|bodega|vinedo)\b/i.test(d)
   ) {
     return { coreType: "PRODUCT", typePath: "/product/beverage/wine", badgeLabel: "WINE" };
   }
 
   // 5. Video Games
   if (
-    /\b(?:video game|computer game|arcade game|expansion pack|playstation|nintendo|xbox|action game|rpg)\b/i.test(d)
+    /\b(?:video game|computer game|arcade game|expansion pack|playstation|nintendo|xbox|action game|rpg|videojuego)\b/i.test(d)
   ) {
     return { coreType: "VIDEOGAME", typePath: "/media/videogame", badgeLabel: "GAME" };
   }
 
   // 6. Fine Art & Sculptures
   if (
-    /\b(?:painting|sculpture|artwork|installation|drawing|oil on canvas|mural|statue)\b/i.test(d)
+    /\b(?:painting|sculpture|artwork|installation|drawing|oil on canvas|mural|statue|pintura|escultura|obra de arte)\b/i.test(d)
   ) {
     return { coreType: "PRODUCT", typePath: "/product/art", badgeLabel: "ART" };
   }
 
   // 7. Culinary & Recipes
   if (
-    /\b(?:dish|recipe|food|pastry|cocktail|cuisine|soup|dessert|bread|cheese)\b/i.test(d)
+    /\b(?:dish|recipe|food|pastry|cocktail|cuisine|soup|dessert|bread|cheese|receta|plato|gastronomia)\b/i.test(d)
   ) {
     return { coreType: "CULINARY", typePath: "/article/recipe", badgeLabel: "RECIPE" };
   }
 
   // 8. Places, Venues & Architecture
   if (
-    /\b(?:restaurant|cafe|café|hotel|city|comune|municipality|capital|museum|building|park|street|neighborhood|district|mountain|lake|island|province|town|village)\b/i.test(d)
+    /\b(?:restaurant|cafe|hotel|city|comune|municipality|capital|museum|building|park|street|neighborhood|district|mountain|lake|island|province|town|village|ciudad|municipio|restaurante|museo)\b/i.test(d)
   ) {
     return { coreType: "PLACE", typePath: "/place", badgeLabel: "PLACE" };
   }
 
-  // 9. Watches & Horology
+  // 9. Watches & Horology (Do not match generic words like 'omega' or 'cartier' in title alone)
   if (
-    /\b(?:wristwatch|watchmaker|watch manufacturer|watch brand|clockmaker|horology|timepiece|chronograph|luxury watch|diving watch|mechanical watch|automatic watch|swiss watch)\b/i.test(
+    /\b(?:wristwatch|watchmaker|watch manufacturer|watch brand|clockmaker|horology|timepiece|chronograph|luxury watch|diving watch|mechanical watch|automatic watch|swiss watch|reloj|relojeria|reloj de pulsera)\b/i.test(
       d
     ) ||
-    /\b(?:rolex|omega|patek philippe|audemars piguet|vacheron constantin|jaeger-lecoultre|tudor|iwc|breitling|tag heuer|grand seiko|seiko|casio|g-shock|submariner|daytona|datejust|speedmaster|seamaster|royal oak|nautilus)\b/i.test(
+    /\b(?:submariner|daytona|datejust|speedmaster|seamaster|royal oak|nautilus|patek philippe|audemars piguet|vacheron constantin|jaeger lecoultre|reverso)\b/i.test(
       t
     )
   ) {
@@ -139,7 +160,7 @@ export function mapDescriptionToOntology(description: string, title?: string): {
   }
 
   // Title fallback checks if description was too sparse
-  if (/\b(?:wine|cuvée|domaine|chateau|château)\b/i.test(t)) {
+  if (/\b(?:wine|cuvee|domaine|chateau|vino)\b/i.test(t)) {
     return { coreType: "PRODUCT", typePath: "/product/beverage/wine", badgeLabel: "WINE" };
   }
 
@@ -156,9 +177,14 @@ export function extractYearAndCreator(description: string): { year: number | nul
   const year = yearMatch ? parseInt(yearMatch[1], 10) : null;
 
   let creator: string | null = null;
-  const creatorMatch = description.match(
-    /\b(?:by|directed by|written by|recorded by|composed by|authored by)\s+([^,;.]+)/i
-  );
+  const creatorMatch =
+    description.match(
+      /(?:\b(?:de\s+\d{4}\s+de|by|directed by|written by|recorded by|composed by|authored by|dirigida por|dirigido por|escrita por|escrito por|interpretado por|grabado por)\s+)([^,;.]+)/i
+    ) ||
+    description.match(
+      /\b(?:by|directed by|written by|recorded by|composed by|authored by)\s+([^,;.]+)/i
+    );
+
   if (creatorMatch) {
     creator = creatorMatch[1].trim();
   }
@@ -200,11 +226,18 @@ export async function discoverUniversalEntities(
       trimmed
     )}&limit=${Math.min(limit, 5)}`;
 
-    const [wikidataRes, wikipediaRes] = await Promise.allSettled([
+    const esWikipediaUrl = `https://es.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(
+      trimmed
+    )}&limit=${Math.min(limit, 5)}`;
+
+    const [wikidataRes, wikipediaRes, esWikipediaRes] = await Promise.allSettled([
       fetchFn(wikidataUrl, { headers, signal: controller.signal })
         .then((res) => (res.ok ? res.json() : null))
         .catch(() => null),
       fetchFn(wikipediaUrl, { headers, signal: controller.signal })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+      fetchFn(esWikipediaUrl, { headers, signal: controller.signal })
         .then((res) => (res.ok ? res.json() : null))
         .catch(() => null),
     ]);
@@ -213,7 +246,7 @@ export async function discoverUniversalEntities(
     const seenKeys = new Set<string>();
 
     const leadTitleMatch = trimmed.match(
-      /^(.+?)(?:\s+(?:by|directed by|written by|movie|film|cinema|book|novel|album|song)\b)/i
+      /^(.+?)(?:\s+(?:by|directed by|written by|movie|film|cinema|book|novel|album|song|disco|pel[ií]cula)\b)/i
     );
     const leadTitle = leadTitleMatch ? leadTitleMatch[1].trim() : trimmed;
     const normalizedLeadTitle = normalizeEntityString(leadTitle);
@@ -233,14 +266,16 @@ export async function discoverUniversalEntities(
 
       items.forEach((item, index) => {
         const rawTitle = item.label || item.id;
+        const description = item.description || "";
+        if (isDisambiguation(rawTitle, description)) return;
+
         const title = rawTitle
           .replace(
-            /\s*\((?:film|movie|novel|book|album|song|soundtrack|miniseries|tv series|television series|play|video game|game)\)\s*$/i,
+            /\s*\((?:film|movie|pel[ií]cula|filme|novel|novela|book|libro|album|[aá]lbum|song|canci[oó]n|soundtrack|banda sonora|miniseries|tv series|television series|serie de televisi[oó]n|play|obra de teatro|video game|videojuego|game|[^)]*(?:album|[aá]lbum|film|pel[ií]cula|song|canci[oó]n)[^)]*)\)\s*$/i,
             ""
           )
           .trim();
-        const description = item.description || "";
-        const ontology = mapDescriptionToOntology(description, title);
+        const ontology = mapDescriptionToOntology(description, rawTitle);
         const { year, creator } = extractYearAndCreator(description);
 
         const normalizedTitle = normalizeEntityString(title);
@@ -258,26 +293,30 @@ export async function discoverUniversalEntities(
           score += 25;
         }
 
+        if (creator && normalizeEntityString(trimmed).split(/\s+/).some((tok) => tok.length > 2 && normalizeEntityString(creator).includes(tok))) {
+          score += 60;
+        }
+
         // Query intent keywords boost
-        if (/\b(?:movie|film|cinema)\b/i.test(queryLower) && ontology.typePath === "/media/film") {
+        if (/\b(?:movie|film|cinema|pel[ií]cula)\b/i.test(queryLower) && ontology.typePath === "/media/film") {
           score += 70;
         }
-        if (/\b(?:book|novel|memoir|author)\b/i.test(queryLower) && ontology.typePath === "/product/book") {
+        if (/\b(?:book|novel|memoir|author|libro|novela)\b/i.test(queryLower) && ontology.typePath === "/product/book") {
           score += 70;
         }
-        if (/\b(?:song|album|vinyl|music|track)\b/i.test(queryLower) && ontology.typePath.startsWith("/media/music")) {
+        if (/\b(?:song|album|vinyl|music|track|[aá]lbum|disco|canci[oó]n)\b/i.test(queryLower) && ontology.typePath.startsWith("/media/music")) {
           score += 70;
-          if (/\b(?:album|vinyl|lp)\b/i.test(queryLower) && ontology.typePath === "/media/music/album") {
+          if (/\b(?:album|vinyl|lp|[aá]lbum|disco)\b/i.test(queryLower) && ontology.typePath === "/media/music/album") {
             score += 25;
           }
-          if (/\b(?:song|track|single)\b/i.test(queryLower) && ontology.typePath === "/media/music/song") {
+          if (/\b(?:song|track|single|canci[oó]n|sencillo)\b/i.test(queryLower) && ontology.typePath === "/media/music/song") {
             score += 25;
           }
         }
-        if (/\b(?:wine|vineyard|cuvée|château)\b/i.test(queryLower) && ontology.typePath.includes("wine")) {
+        if (/\b(?:wine|vineyard|cuvée|château|vino)\b/i.test(queryLower) && ontology.typePath.includes("wine")) {
           score += 70;
         }
-        if (/\b(?:watch|rolex|omega|tudor|seiko|patek|chronograph)\b/i.test(queryLower) && ontology.typePath === "/product/watch") {
+        if (/\b(?:watch|rolex|speedmaster|seamaster|reloj|chronograph)\b/i.test(queryLower) && ontology.typePath === "/product/watch") {
           score += 70;
         }
 
@@ -312,28 +351,32 @@ export async function discoverUniversalEntities(
       });
     }
 
-    // 2. Process Wikipedia REST results
-    if (wikipediaRes.status === "fulfilled" && wikipediaRes.value?.pages) {
-      const queryLower = trimmed.toLowerCase();
-      const pages = wikipediaRes.value.pages as Array<{
+    // 2. Helper to process Wikipedia REST results (English and Spanish)
+    const processWikiPages = (
+      pages: Array<{
         id: number;
         key: string;
         title: string;
         description?: string;
         excerpt?: string;
         thumbnail?: { url: string };
-      }>;
+      }>,
+      isSpanish: boolean
+    ) => {
+      const queryLower = trimmed.toLowerCase();
 
       pages.forEach((page, index) => {
         const rawTitle = page.title;
+        const description = page.description || page.excerpt?.replace(/<[^>]+>/g, "") || "";
+        if (isDisambiguation(rawTitle, description)) return;
+
         const title = rawTitle
           .replace(
-            /\s*\((?:film|movie|novel|book|album|song|soundtrack|miniseries|tv series|television series|play|video game|game)\)\s*$/i,
+            /\s*\((?:film|movie|pel[ií]cula|filme|novel|novela|book|libro|album|[aá]lbum|song|canci[oó]n|soundtrack|banda sonora|miniseries|tv series|television series|serie de televisi[oó]n|play|obra de teatro|video game|videojuego|game|[^)]*(?:album|[aá]lbum|film|pel[ií]cula|song|canci[oó]n)[^)]*)\)\s*$/i,
             ""
           )
           .trim();
-        const description = page.description || page.excerpt?.replace(/<[^>]+>/g, "") || "";
-        const ontology = mapDescriptionToOntology(description, title);
+        const ontology = mapDescriptionToOntology(description, rawTitle);
         const { year, creator } = extractYearAndCreator(description);
 
         const normalizedTitle = normalizeEntityString(title);
@@ -350,26 +393,30 @@ export async function discoverUniversalEntities(
           score += 20;
         }
 
+        if (creator && normalizeEntityString(trimmed).split(/\s+/).some((tok) => tok.length > 2 && normalizeEntityString(creator).includes(tok))) {
+          score += 60;
+        }
+
         // Query intent keywords boost
-        if (/\b(?:movie|film|cinema)\b/i.test(queryLower) && ontology.typePath === "/media/film") {
+        if (/\b(?:movie|film|cinema|pel[ií]cula)\b/i.test(queryLower) && ontology.typePath === "/media/film") {
           score += 70;
         }
-        if (/\b(?:book|novel|memoir|author)\b/i.test(queryLower) && ontology.typePath === "/product/book") {
+        if (/\b(?:book|novel|memoir|author|libro|novela)\b/i.test(queryLower) && ontology.typePath === "/product/book") {
           score += 70;
         }
-        if (/\b(?:song|album|vinyl|music|track)\b/i.test(queryLower) && ontology.typePath.startsWith("/media/music")) {
+        if (/\b(?:song|album|vinyl|music|track|[aá]lbum|disco|canci[oó]n)\b/i.test(queryLower) && ontology.typePath.startsWith("/media/music")) {
           score += 70;
-          if (/\b(?:album|vinyl|lp)\b/i.test(queryLower) && ontology.typePath === "/media/music/album") {
+          if (/\b(?:album|vinyl|lp|[aá]lbum|disco)\b/i.test(queryLower) && ontology.typePath === "/media/music/album") {
             score += 25;
           }
-          if (/\b(?:song|track|single)\b/i.test(queryLower) && ontology.typePath === "/media/music/song") {
+          if (/\b(?:song|track|single|canci[oó]n|sencillo)\b/i.test(queryLower) && ontology.typePath === "/media/music/song") {
             score += 25;
           }
         }
-        if (/\b(?:wine|vineyard|cuvée|château)\b/i.test(queryLower) && ontology.typePath.includes("wine")) {
+        if (/\b(?:wine|vineyard|cuvée|château|vino)\b/i.test(queryLower) && ontology.typePath.includes("wine")) {
           score += 70;
         }
-        if (/\b(?:watch|rolex|omega|tudor|seiko|patek|chronograph)\b/i.test(queryLower) && ontology.typePath === "/product/watch") {
+        if (/\b(?:watch|rolex|speedmaster|seamaster|reloj|chronograph)\b/i.test(queryLower) && ontology.typePath === "/product/watch") {
           score += 70;
         }
 
@@ -383,7 +430,8 @@ export async function discoverUniversalEntities(
             : page.thumbnail.url
           : null;
 
-        const wikiUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(page.key || page.title.replace(/\s+/g, "_"))}`;
+        const wikiDomain = isSpanish ? "es.wikipedia.org" : "en.wikipedia.org";
+        const wikiUrl = `https://${wikiDomain}/wiki/${encodeURIComponent(page.key || page.title.replace(/\s+/g, "_"))}`;
 
         if (!seenKeys.has(dedupeKey)) {
           seenKeys.add(dedupeKey);
@@ -400,13 +448,22 @@ export async function discoverUniversalEntities(
             score,
           });
         } else {
-          // If already in candidates from Wikidata, augment with thumbnail if missing
+          // If already in candidates, augment with missing fields
           const existing = candidates.find((c) => normalizeEntityString(c.title) === normalizedTitle);
-          if (existing && thumbUrl && !existing.thumbnailUrl) {
-            existing.thumbnailUrl = thumbUrl;
+          if (existing) {
+            if (thumbUrl && !existing.thumbnailUrl) existing.thumbnailUrl = thumbUrl;
+            if (creator && !existing.creator) existing.creator = creator;
+            if (year && !existing.year) existing.year = year;
           }
         }
       });
+    };
+
+    if (wikipediaRes.status === "fulfilled" && wikipediaRes.value?.pages) {
+      processWikiPages(wikipediaRes.value.pages, false);
+    }
+    if (esWikipediaRes.status === "fulfilled" && esWikipediaRes.value?.pages) {
+      processWikiPages(esWikipediaRes.value.pages, true);
     }
 
     // Sort by computed score descending

@@ -45,3 +45,22 @@ describe("place resolution", () => {
     expect(r?.canonicalUrl).toContain("wikipedia.org/wiki/Tate_Modern");
   });
 });
+
+describe("dispatcher place namesake guard", () => {
+  test("Bar Provincias never resolves to a namesake region", async () => {
+    const { enrichCaptureInput } = await import("../../dispatcher");
+    const fetchFn = (async (url: any) => {
+      const u = String(url);
+      if (u.includes("nominatim")) {
+        return new Response(JSON.stringify([{ lat: "37.1757", lon: "-3.6003", name: "Bar Provincias", type: "pub", display_name: "Bar Provincias, Granada, España", address: { city: "Granada", country: "España" } }]), { status: 200 });
+      }
+      if (u.includes("wikidata.org")) {
+        return new Response(JSON.stringify({ search: [{ id: "Q1669578", label: "Syria Palaestina", description: "Roman province", concepturi: "http://www.wikidata.org/entity/Q1669578" }] }), { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+    const r: any = await enrichCaptureInput("Bar Provincias", { fetchFn, skipCache: true });
+    expect(r.title).toBe("Bar Provincias");
+    expect(String(r.canonicalUrl)).not.toContain("Syria");
+  });
+});

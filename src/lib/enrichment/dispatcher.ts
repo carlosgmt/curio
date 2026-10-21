@@ -12,7 +12,7 @@ import {
   detectAndParseCommercialSku,
   resolveCommercialProduct,
 } from "./providers/commercial";
-import { resolvePlace, isAcceptableWikiPlace, type ResolvedPlace } from "./providers/places";
+import { resolvePlace, isAcceptableWikiPlace, hasVenueWords, type ResolvedPlace } from "./providers/places";
 import { resolveCreator, type ResolvedCreator } from "./providers/creators";
 import { parseTransitPass, type ParsedTransitPass } from "./providers/travel";
 import { lookupByCanonicalIdentity } from "../ingest/cacheLookup";
@@ -780,6 +780,18 @@ export async function enrichCaptureInput(
     }
 
     // LAYER 2: Deep Specialist Hydration (Only on True Cache Miss)
+    // Places: the discovery winner may be a fuzzy namesake (e.g. "Bar Provincias" -> Syria Palaestina,
+    // "Bar Provincias Granada" -> the city of Granada). Resolve from the user's own query via OSM instead.
+    const queryLooksLikePlace = hasVenueWords(trimmed) || winning.typePath.startsWith("/place");
+    if (
+      queryLooksLikePlace &&
+      !isAcceptableWikiPlace(trimmed, { title: winning.title, description: winning.snippet })
+    ) {
+      const osmPlace = await resolvePlace(trimmed, { fetchFn });
+      if (osmPlace) {
+        return hydrateSpecialist(trimmed, "/place", null, fetchFn, runnerUpCandidates);
+      }
+    }
     return hydrateSpecialist(winning.title, winning.typePath, winning, fetchFn, runnerUpCandidates);
   }
 

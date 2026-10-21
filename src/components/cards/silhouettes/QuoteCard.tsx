@@ -133,7 +133,7 @@ export function QuoteCard({
 
       <div className="relative z-10">
         {/* Top Header Pill */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 mb-4 pr-28">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/60">
             <QuoteIcon className="w-3 h-3" />
             Quote

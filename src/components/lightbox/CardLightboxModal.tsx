@@ -765,7 +765,7 @@ export function CardLightboxModal({
         {/* Top Lightbox Navigation Bar */}
         <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-3.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50/50 dark:bg-neutral-950/40">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs uppercase tracking-wider text-neutral-400 font-bold">
+            <span className="hidden sm:inline font-mono text-xs uppercase tracking-wider text-neutral-400 font-bold">
               Card Lightbox Inspector
             </span>
           </div>
@@ -798,7 +798,7 @@ export function CardLightboxModal({
               }`}
             >
               <Heart className={`w-3.5 h-3.5 ${wished ? "fill-current" : ""}`} />
-              <span>{wished ? "On wishlist" : wishLabel(card.entity?.typePath || card.save.typePath, card.entity?.coreType)}</span>
+              <span className="whitespace-nowrap"><span className="sm:hidden">{wished ? "Wished" : "Wish"}</span><span className="hidden sm:inline">{wished ? "On wishlist" : wishLabel(card.entity?.typePath || card.save.typePath, card.entity?.coreType)}</span></span>
             </button>
             <button
               type="button"

@@ -499,8 +499,8 @@ export function PolymorphicCard({
       id={`save-${save.id}`}
       className="group/curio-card relative flex flex-col h-full transition-all duration-200"
     >
-      {/* Wish toggle */}
-      <div className={`absolute top-3 left-3 z-30 transition ${wished ? "opacity-100" : "sm:opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90"}`}>
+      {/* Quick Action Toolbar (Wish + Board) */}
+      <div className={`absolute top-3 right-3 z-30 flex items-center gap-1.5 transition ${wished ? "opacity-100" : "sm:opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90"}`}>
         <button
           type="button"
           data-testid="wish-toggle"
@@ -516,11 +516,7 @@ export function PolymorphicCard({
           <Heart className={`w-3 h-3 ${wished ? "fill-current" : ""}`} />
           <span>{wished ? "Wished" : "Wish"}</span>
         </button>
-      </div>
-
-      {/* Quick Action Toolbar (Board) */}
-      {!save.isPrivateMemo && (
-        <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90 transition">
+        {!save.isPrivateMemo && (
           <button
             type="button"
             onClick={(e) => {
@@ -537,8 +533,8 @@ export function PolymorphicCard({
             <FolderPlus className="w-3 h-3 text-neutral-300 dark:text-neutral-700" />
             <span>Board</span>
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Silhouette Card Body */}
       <div

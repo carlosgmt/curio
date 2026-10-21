@@ -770,7 +770,7 @@ export function Omnibox({
 
       {/* Live Omnibox Typeahead / Autocomplete Suggestions Dropdown */}
       {!inSearch && !showDisambiguation && showSuggestions && suggestions.length > 0 && (
-        <div className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden backdrop-blur-md">
+        <div className="absolute left-0 right-0 sm:left-4 sm:right-4 top-full mt-2 z-50 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden backdrop-blur-md">
           <div className="px-4 py-2 border-b border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-950/40 flex items-center justify-between text-[11px] font-mono text-neutral-400">
             <span className="flex items-center gap-1.5 font-medium">
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
@@ -779,7 +779,7 @@ export function Omnibox({
             <span className="text-[10px]">Top result selected by default</span>
           </div>
 
-          <div className="max-h-80 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/60">
+          <div className="max-h-[min(20rem,50dvh)] overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/60">
             {suggestions.map((sug, idx) => {
               const isSelected = selectedSuggestionIndex === idx;
               return (
@@ -891,7 +891,7 @@ export function Omnibox({
 
       {/* 1-Tap Candidate Disambiguation Dropdown */}
       {showDisambiguation && intentPreview?.ambiguousCandidates && (
-        <div className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl bg-white dark:bg-neutral-900 border border-amber-300 dark:border-amber-800 shadow-xl overflow-hidden backdrop-blur-md">
+        <div className="absolute left-0 right-0 sm:left-4 sm:right-4 top-full mt-2 z-50 rounded-2xl bg-white dark:bg-neutral-900 border border-amber-300 dark:border-amber-800 shadow-xl overflow-hidden backdrop-blur-md">
           <div className="px-4 py-2.5 border-b border-neutral-100 dark:border-neutral-800/80 bg-amber-50/70 dark:bg-amber-950/40 flex items-center justify-between text-xs text-amber-800 dark:text-amber-300">
             <span className="flex items-center gap-1.5 font-medium">
               <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
@@ -902,7 +902,7 @@ export function Omnibox({
             </span>
           </div>
 
-          <div className="max-h-64 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/50">
+          <div className="max-h-[min(16rem,45dvh)] overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/50">
             {intentPreview.ambiguousCandidates.map((c) => (
               <button
                 key={c.saveId}
@@ -948,7 +948,7 @@ export function Omnibox({
 
       {/* Semantic Search Results Dropdown */}
       {inSearch && showSearchDropdown && searchQuery.length > 0 && (
-        <div className="absolute left-4 right-4 top-full mt-2 z-50 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden backdrop-blur-md">
+        <div className="absolute left-0 right-0 sm:left-4 sm:right-4 top-full mt-2 z-50 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden backdrop-blur-md">
           <div className="px-4 py-2.5 border-b border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/70 dark:bg-neutral-900/70 flex items-center justify-between text-xs text-neutral-500">
             <span className="flex items-center gap-1.5 font-medium">
               <Compass className="w-3.5 h-3.5 text-purple-500" />
@@ -959,7 +959,7 @@ export function Omnibox({
             </span>
           </div>
 
-          <div className="max-h-80 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/50">
+          <div className="max-h-[min(20rem,50dvh)] overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/50">
             {isSearching && searchResults.length === 0 ? (
               <div className="p-6 text-center text-xs text-neutral-400 flex flex-col items-center gap-2">
                 <Loader2 className="w-5 h-5 animate-spin text-purple-500" />

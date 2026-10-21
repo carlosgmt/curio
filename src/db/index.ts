@@ -137,6 +137,7 @@ sqlite.exec(`
     entity_id TEXT REFERENCES global_entities(id),
     custom_type_id TEXT REFERENCES curio_types(id),
     is_private_memo INTEGER NOT NULL DEFAULT 0,
+    wishlist INTEGER NOT NULL DEFAULT 0,
     private_title TEXT,
     personal_notes TEXT,
     user_custom_values TEXT NOT NULL DEFAULT '{}',
@@ -254,6 +255,7 @@ ensureColumn("curio_types", "own_json_schema", "TEXT DEFAULT '{}'");
 ensureColumn("curio_types", "effective_json_schema", "TEXT DEFAULT '{}'");
 ensureColumn("curio_types", "ui_field_config", "TEXT DEFAULT '[]'");
 
+ensureColumn("user_saves", "wishlist", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("global_entities", "canonical_external_id", "TEXT");
 ensureColumn("global_entities", "identity_fingerprint", "TEXT");
 ensureColumn("global_entities", "brand_or_creator", "TEXT");

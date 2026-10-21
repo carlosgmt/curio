@@ -10,6 +10,7 @@ export interface UpdateSaveDetailsInput {
   typePath?: string | null;
   userCustomValues?: Record<string, unknown>;
   isPrivateMemo?: boolean;
+  wishlist?: boolean;
 }
 
 export interface SaveDetails {
@@ -137,6 +138,7 @@ export async function updateSaveDetails(
   }
   if (updates.userCustomValues !== undefined) patch.userCustomValues = updates.userCustomValues;
   if (updates.isPrivateMemo !== undefined) patch.isPrivateMemo = updates.isPrivateMemo;
+  if (updates.wishlist !== undefined) patch.wishlist = updates.wishlist;
 
   if (Object.keys(patch).length > 0) {
     await db

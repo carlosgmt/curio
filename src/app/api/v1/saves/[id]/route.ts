@@ -9,6 +9,7 @@ const updateSaveSchema = z.object({
   typePath: z.string().optional().nullable(),
   userCustomValues: z.record(z.string(), z.unknown()).optional(),
   isPrivateMemo: z.boolean().optional(),
+  wishlist: z.boolean().optional(),
 });
 
 export async function GET(

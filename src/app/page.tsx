@@ -15,6 +15,7 @@ import { AuthModal } from "@/components/auth/AuthModal";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { UserNav } from "@/components/layout/UserNav";
 import { CurioLandingVitrine } from "@/components/landing/CurioLandingVitrine";
+import { PullToRefresh } from "@/components/pwa/PullToRefresh";
 import { apiFetch } from "@/lib/apiClient";
 import type { SmartList } from "@/db";
 import type { ListWithSections } from "@/lib/lists/service";
@@ -47,6 +48,7 @@ export default function Home() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [dismissedOnboarding, setDismissedOnboarding] = useState(true);
   const [isTypesModalOpen, setIsTypesModalOpen] = useState(false);
+  const [wishOnly, setWishOnly] = useState(false);
   const [layoutEngine, setLayoutEngine] = useState<LayoutEngineType>("masonry");
   const [cardDensity, setCardDensity] = useState<SilhouetteDensity>("standard");
   const [newTypePrompt, setNewTypePrompt] = useState<{ key: string; name: string; coreType?: string } | null>(null);
@@ -247,6 +249,8 @@ export default function Home() {
 
 
 
+  const visibleItems = wishOnly ? items.filter((it) => it.save.wishlist) : items;
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] flex flex-col items-center justify-center p-6 text-center">
@@ -302,7 +306,11 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-12 px-4 sm:px-6 lg:px-8">
+    <PullToRefresh
+      disabled={Boolean(selectedCard) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen}
+      onRefresh={() => Promise.all([fetchItems(), fetchLists()])}
+    >
+    <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-8 sm:py-12 px-4 sm:px-6 lg:px-8 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
       {/* Header */}
       <div className="max-w-4xl mx-auto mb-8">
         <div className="flex items-center justify-end mb-4">
@@ -335,7 +343,7 @@ export default function Home() {
       </div>
 
       {/* Omnibox Universal Capture */}
-      <div className="mb-8">
+      <div className="mb-8 max-w-4xl mx-auto">
         <Omnibox
           onCaptured={handleCaptured}
           onOpenTypeBuilder={() => setIsTypeBuilderOpen(true)}
@@ -379,7 +387,7 @@ export default function Home() {
       )}
 
       {/* My collections */}
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-screen-2xl mx-auto">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-3 border-b border-neutral-200/60 dark:border-neutral-800">
           <div>
             <h2 className="text-xl font-bold font-serif text-neutral-900 dark:text-neutral-100">
@@ -396,7 +404,16 @@ export default function Home() {
           lists={lists}
           activeListSlug={activeListSlug}
           totalAllSavesCount={items.length}
-          onSelectList={setActiveListSlug}
+          onSelectList={(slug) => {
+            setWishOnly(false);
+            setActiveListSlug(slug);
+          }}
+          wishlistActive={wishOnly}
+          wishlistCount={items.filter((it) => it.save.wishlist).length}
+          onToggleWishlist={() => {
+            setActiveListSlug(null);
+            setWishOnly((v) => !v);
+          }}
           onCreateListClick={() => setIsCreateListOpen(true)}
         />
 
@@ -472,10 +489,10 @@ export default function Home() {
               <div className="text-center py-20 text-neutral-400 text-sm">
                 Loading your collections...
               </div>
-            ) : items.length === 0 ? (
+            ) : visibleItems.length === 0 ? (
               <div className="text-center py-20 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl p-8">
                 <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
-                  No items in your collections yet.
+                  {wishOnly ? "Your wishlist is empty. Tap the heart on any card." : "No items in your collections yet."}
                 </p>
                 <p className="text-neutral-400 text-xs max-w-sm mx-auto">
                   Capture a new thought above or import a CSV export from Letterboxd or Goodreads to seed your library.
@@ -485,7 +502,7 @@ export default function Home() {
               <div>
                 {layoutEngine === "masonry" && (
                   <MasonryLayout
-                    items={items}
+                    items={visibleItems}
                     renderItem={(item) => (
                       <PolymorphicCard
                         key={item.save.id}
@@ -498,6 +515,7 @@ export default function Home() {
                         onSwapped={() => fetchItems()}
                         onUnlink={() => fetchItems()}
                         onAddToList={() => fetchLists()}
+                        onWishToggled={(id, w) => setItems((prev) => prev.map((it) => (it.save.id === id ? { ...it, save: { ...it.save, wishlist: w } } : it)))}
                         onCustomFieldsUpdated={(saveId, updatedValues) => {
                           setItems((prev) =>
                             prev.map((it) =>
@@ -520,7 +538,7 @@ export default function Home() {
 
                 {layoutEngine === "grid" && (
                   <GridLayout
-                    items={items}
+                    items={visibleItems}
                     renderItem={(item) => (
                       <PolymorphicCard
                         key={item.save.id}
@@ -533,6 +551,7 @@ export default function Home() {
                         onSwapped={() => fetchItems()}
                         onUnlink={() => fetchItems()}
                         onAddToList={() => fetchLists()}
+                        onWishToggled={(id, w) => setItems((prev) => prev.map((it) => (it.save.id === id ? { ...it, save: { ...it.save, wishlist: w } } : it)))}
                         onCustomFieldsUpdated={(saveId, updatedValues) => {
                           setItems((prev) =>
                             prev.map((it) =>
@@ -555,7 +574,7 @@ export default function Home() {
 
                 {layoutEngine === "timeline" && (
                   <TimelineLayout
-                    items={items}
+                    items={visibleItems}
                     renderItem={(item) => (
                       <PolymorphicCard
                         key={item.save.id}
@@ -568,6 +587,7 @@ export default function Home() {
                         onSwapped={() => fetchItems()}
                         onUnlink={() => fetchItems()}
                         onAddToList={() => fetchLists()}
+                        onWishToggled={(id, w) => setItems((prev) => prev.map((it) => (it.save.id === id ? { ...it, save: { ...it.save, wishlist: w } } : it)))}
                         onCustomFieldsUpdated={(saveId, updatedValues) => {
                           setItems((prev) =>
                             prev.map((it) =>
@@ -706,7 +726,7 @@ export default function Home() {
 
       {/* Floating Dismissable Prompt: Create List for New Type */}
       {newTypePrompt && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-sm p-4 rounded-3xl bg-white dark:bg-neutral-900 border border-amber-300/80 dark:border-amber-800/80 shadow-2xl animate-in slide-in-from-bottom-5 duration-300 backdrop-blur-md">
+        <div className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-4 right-4 sm:left-auto sm:right-6 z-50 sm:max-w-sm p-4 rounded-3xl bg-white dark:bg-neutral-900 border border-amber-300/80 dark:border-amber-800/80 shadow-2xl animate-in slide-in-from-bottom-5 duration-300 backdrop-blur-md">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
@@ -749,5 +769,6 @@ export default function Home() {
         </div>
       )}
     </main>
+    </PullToRefresh>
   );
 }

@@ -17,6 +17,8 @@ export interface CustomFieldsSectionProps {
   userCustomValues?: Record<string, unknown> | null;
   extendedAttributes?: Record<string, unknown> | null;
   onUpdated?: (newCustomValues: Record<string, unknown>) => void;
+  /** Attribute keys that should never render as pills (e.g. quote text/author). */
+  hiddenKeys?: string[];
 }
 
 export function CustomFieldsSection({
@@ -24,6 +26,7 @@ export function CustomFieldsSection({
   userCustomValues = {},
   extendedAttributes = {},
   onUpdated,
+  hiddenKeys = [],
 }: CustomFieldsSectionProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [key, setKey] = useState("");
@@ -112,6 +115,7 @@ export function CustomFieldsSection({
     // Sanitize: only render scalar string, number, or boolean values.
     // Never render objects, arrays, or [object Object]
     if (attrVal === null || attrVal === undefined) return null;
+    if (hiddenKeys.includes(attrKey.toLowerCase())) return null;
     if (typeof attrVal === "object") return null;
     const strVal = String(attrVal).trim();
     if (!strVal || strVal === "[object Object]") return null;

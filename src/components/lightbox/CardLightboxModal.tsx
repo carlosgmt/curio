@@ -34,6 +34,8 @@ import {
   Camera,
   Globe,
 } from "lucide-react";
+import { Heart } from "lucide-react";
+import { wishLabel } from "@/lib/wishlist";
 import type { CardData } from "../cards/PolymorphicCard";
 import { CinemaCulturalMode } from "./modes/CinemaCulturalMode";
 import { BookCulturalMode } from "./modes/BookCulturalMode";
@@ -164,6 +166,8 @@ function detectInitialArchetypeId(card: CardData): string {
   return "book";
 }
 
+const QUOTE_HIDDEN_KEYS = ["text", "quote_text", "quotetext", "author", "speaker", "date", "year", "era", "work", "source", "publication"];
+
 export function CardLightboxModal({
   card,
   isOpen,
@@ -185,6 +189,10 @@ export function CardLightboxModal({
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
   const [isAddToListOpen, setIsAddToListOpen] = useState(false);
+  const [wished, setWished] = useState(false);
+  useEffect(() => {
+    setWished(Boolean(card?.save.wishlist));
+  }, [card?.save.id, card?.save.wishlist]);
   const [connections, setConnections] = useState<ConnectedItem[]>([]);
 
   const loadBoardMemberships = useCallback((targetCard: CardData) => {
@@ -480,11 +488,282 @@ export function CardLightboxModal({
     }
   };
 
+  const typeSwitcher = (
+    <>
+      {/* Prominent Active Type Badge + Edit Type Toggle */}
+      <div className="mb-4 shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs">
+            {currentArchetypeOption.icon}
+            <span>{currentArchetypeOption.label}</span>
+          </div>
+
+          <button
+            type="button"
+            data-testid="edit-type-toggle"
+            onClick={() => setIsEditingType((prev) => !prev)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 bg-white/80 dark:bg-neutral-900/80 border border-neutral-200 dark:border-neutral-800 transition cursor-pointer"
+          >
+            <Pencil className="w-3 h-3" />
+            <span>{isEditingType ? "Done" : "Edit Type"}</span>
+          </button>
+        </div>
+
+        {isEditingType && (
+          <div className="mt-2.5 p-2.5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex flex-wrap gap-1.5 animate-in fade-in duration-150">
+            {allArchetypes.map((arch) => (
+              <button
+                key={arch.id}
+                data-archetype-btn={arch.id}
+                type="button"
+                onClick={() => {
+                  setActiveArchetype(arch.id);
+                  setIsEditingType(false);
+                }}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition cursor-pointer ${
+                  activeArchetype === arch.id
+                    ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
+                    : "bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900"
+                }`}
+              >
+                {arch.icon}
+                <span>{arch.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </>
+  );
+
+  const rightPane = (
+    <div className="md:col-span-6 flex flex-col p-4 sm:p-6 md:overflow-y-auto space-y-6">
+      {/* Editable Title */}
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
+          Curator Title
+        </label>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Give this curation a personal title..."
+          className="w-full text-xl sm:text-2xl font-serif font-bold text-neutral-900 dark:text-neutral-50 bg-transparent border-b border-neutral-200 dark:border-neutral-800 focus:border-neutral-400 focus:outline-none pb-1"
+        />
+      </div>
+
+      {/* Editable Personal Notes */}
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
+          Personal Reflections & Tasting Notes
+        </label>
+        <textarea
+          rows={4}
+          value={personalNotes}
+          onChange={(e) => setPersonalNotes(e.target.value)}
+          placeholder="Where were you? What did it evoke? Unfiltered personal memory..."
+          className="w-full text-xs font-serif leading-relaxed p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+        />
+      </div>
+
+      {/* Curated Board Memberships */}
+      <div>
+        <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
+          Curated Board Memberships
+        </span>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {memberBoards.map((board) => (
+            <span
+              key={board.id}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 shadow-2xs"
+            >
+              <BookmarkCheck className="w-3 h-3" />
+              <span>{board.title}</span>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={() => setIsAddToListOpen(true)}
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 border border-dashed border-neutral-300 dark:border-neutral-700 transition cursor-pointer"
+          >
+            <FolderPlus className="w-3.5 h-3.5 text-neutral-500" />
+            <span>+ Manage Boards</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Synaptic Pairs */}
+      {connections.length > 0 && (
+        <div>
+          <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
+            Synaptic Memory Pairs ({connections.length})
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {connections.map((conn) => (
+              <SynapsePill
+                key={conn.connectionId}
+                connection={conn}
+                onClick={() => {
+                  // Close lightbox and jump to connected save
+                  onClose();
+                  const el = document.getElementById(`save-${conn.saveId}`);
+                  if (el) {
+                    el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    el.classList.add("ring-2", "ring-neutral-400");
+                    setTimeout(() => el.classList.remove("ring-2", "ring-neutral-400"), 2000);
+                  }
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Curio Learns: Custom Attributes Grid */}
+      <div>
+        <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
+          Custom Attributes & Specifications
+        </span>
+        <CustomFieldsSection
+          saveId={card.save.id}
+          userCustomValues={card.save.userCustomValues}
+          extendedAttributes={card.entity?.extendedAttributes}
+        />
+      </div>
+
+      {/* Collapsible Agent JSON-LD Drawer */}
+      <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800">
+        <button
+          type="button"
+          onClick={() => setIsJsonDrawerOpen(!isJsonDrawerOpen)}
+          className="flex items-center justify-between w-full text-xs font-mono text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 transition cursor-pointer"
+        >
+          <div className="flex items-center gap-1.5">
+            <Code2 className="w-3.5 h-3.5" />
+            <span>Agent JSON-LD / Schema.org</span>
+          </div>
+          {isJsonDrawerOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+
+        {isJsonDrawerOpen && (
+          <div className="mt-2.5 p-3 rounded-2xl bg-neutral-900 text-neutral-300 font-mono text-[10px] leading-relaxed relative animate-in fade-in">
+            <button
+              type="button"
+              onClick={handleCopyJson}
+              className="absolute top-2 right-2 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-[9px] transition cursor-pointer"
+            >
+              {copiedJson ? "Copied" : "Copy JSON"}
+            </button>
+            <pre className="overflow-x-auto max-h-40">
+              {JSON.stringify(
+                {
+                  "@context": "https://schema.org",
+                  "@type": card.entity?.coreType || "Thing",
+                  name: card.entity?.title || title,
+                  description: card.entity?.summary,
+                  image: card.entity?.heroImageUrl,
+                  url: card.entity?.canonicalUrl,
+                  coreStructuredData: card.entity?.coreStructuredData,
+                  extendedAttributes: card.entity?.extendedAttributes,
+                },
+                null,
+                2
+              )}
+            </pre>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Actions */}
+      <div className="pt-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between mt-auto">
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={isDeleting}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>Delete</span>
+        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveChanges}
+            disabled={isSaving}
+            className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 shadow-md transition cursor-pointer"
+          >
+            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span>Save Changes</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const isQuote = activeArchetype === "quote";
+  const quoteLayout = (
+    <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-[#f9f8f6] dark:bg-neutral-950/80">
+      <div className="max-w-2xl mx-auto space-y-5">
+        <QuoteCard
+          save={card.save}
+          entity={previewEntity as any}
+          primarySource={card.primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
+          onQuoteSaved={(id, cv, privateTitle) => {
+            setTitle(privateTitle);
+            onCardUpdated?.({ ...card.save, id, userCustomValues: cv, privateTitle });
+          }}
+        />
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {memberBoards.map((board) => (
+              <span key={board.id} className="px-2.5 py-0.5 rounded-full text-[11px] bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900">
+                {board.title}
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => setIsAddToListOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 cursor-pointer"
+            >
+              <FolderPlus className="w-3 h-3" /> Boards
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
+        </div>
+        <details className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+          <summary className="px-4 py-2.5 text-xs font-mono text-neutral-500 cursor-pointer select-none">More</summary>
+          <div className="border-t border-neutral-200 dark:border-neutral-800">
+            <div className="p-4">{typeSwitcher}</div>
+            {rightPane}
+          </div>
+        </details>
+      </div>
+    </div>
+  );
+
   return (
-    <div data-lightbox-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-neutral-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-5xl h-[92vh] rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
+    <div data-lightbox-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-neutral-950/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-5xl h-[100dvh] sm:h-[92vh] rounded-none sm:rounded-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:pt-0 sm:pb-0 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
         {/* Top Lightbox Navigation Bar */}
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50/50 dark:bg-neutral-950/40">
+        <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-3.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50/50 dark:bg-neutral-950/40">
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs uppercase tracking-wider text-neutral-400 font-bold">
               Card Lightbox Inspector
@@ -492,6 +771,35 @@ export function CardLightboxModal({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="lightbox-wish-toggle"
+              aria-pressed={wished}
+              onClick={async () => {
+                const next = !wished;
+                setWished(next);
+                try {
+                  const res = await apiFetch(`/api/v1/saves/${card.save.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ wishlist: next }),
+                  });
+                  if (!res.ok) throw new Error("fail");
+                  const updated = await res.json();
+                  onCardUpdated?.({ ...card.save, ...updated.save, wishlist: next });
+                } catch {
+                  setWished(!next);
+                }
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition cursor-pointer ${
+                wished
+                  ? "bg-rose-500 text-white"
+                  : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              }`}
+            >
+              <Heart className={`w-3.5 h-3.5 ${wished ? "fill-current" : ""}`} />
+              <span>{wished ? "On wishlist" : wishLabel(card.entity?.typePath || card.save.typePath, card.entity?.coreType)}</span>
+            </button>
             <button
               type="button"
               onClick={handleCopyShareLink}
@@ -513,52 +821,11 @@ export function CardLightboxModal({
         </div>
 
         {/* Two-Stage Split Stage View */}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+        {isQuote ? quoteLayout : (
+        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 md:grid-rows-[minmax(0,1fr)] overflow-y-auto md:overflow-hidden">
           {/* Left Stage: Cultural Mode Preview & Collapsible Type Switcher */}
-          <div className="lg:col-span-6 flex flex-col p-5 sm:p-6 border-b lg:border-b-0 lg:border-r border-neutral-200 dark:border-neutral-800 bg-[#f9f8f6] dark:bg-neutral-950/80 overflow-y-auto">
-            {/* Prominent Active Type Badge + Edit Type Toggle */}
-            <div className="mb-4 shrink-0">
-              <div className="flex items-center justify-between gap-2">
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs">
-                  {currentArchetypeOption.icon}
-                  <span>{currentArchetypeOption.label}</span>
-                </div>
-
-                <button
-                  type="button"
-                  data-testid="edit-type-toggle"
-                  onClick={() => setIsEditingType((prev) => !prev)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 bg-white/80 dark:bg-neutral-900/80 border border-neutral-200 dark:border-neutral-800 transition cursor-pointer"
-                >
-                  <Pencil className="w-3 h-3" />
-                  <span>{isEditingType ? "Done" : "Edit Type"}</span>
-                </button>
-              </div>
-
-              {isEditingType && (
-                <div className="mt-2.5 p-2.5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex flex-wrap gap-1.5 animate-in fade-in duration-150">
-                  {allArchetypes.map((arch) => (
-                    <button
-                      key={arch.id}
-                      data-archetype-btn={arch.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveArchetype(arch.id);
-                        setIsEditingType(false);
-                      }}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition cursor-pointer ${
-                        activeArchetype === arch.id
-                          ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-                          : "bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900"
-                      }`}
-                    >
-                      {arch.icon}
-                      <span>{arch.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="md:col-span-6 flex flex-col p-4 sm:p-6 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-[#f9f8f6] dark:bg-neutral-950/80 md:overflow-y-auto">
+            {typeSwitcher}
 
             {/* Cultural Mode Stage Display */}
             <div className="flex-1 flex flex-col justify-center">
@@ -567,177 +834,9 @@ export function CardLightboxModal({
           </div>
 
           {/* Right Stage: Curator's Voice, Synapses, Board Memberships & Metadata */}
-          <div className="lg:col-span-6 flex flex-col p-6 overflow-y-auto space-y-6">
-            {/* Editable Title */}
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
-                Curator Title
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Give this curation a personal title..."
-                className="w-full text-xl sm:text-2xl font-serif font-bold text-neutral-900 dark:text-neutral-50 bg-transparent border-b border-neutral-200 dark:border-neutral-800 focus:border-neutral-400 focus:outline-none pb-1"
-              />
-            </div>
-
-            {/* Editable Personal Notes */}
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
-                Personal Reflections & Tasting Notes
-              </label>
-              <textarea
-                rows={4}
-                value={personalNotes}
-                onChange={(e) => setPersonalNotes(e.target.value)}
-                placeholder="Where were you? What did it evoke? Unfiltered personal memory..."
-                className="w-full text-xs font-serif leading-relaxed p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400"
-              />
-            </div>
-
-            {/* Curated Board Memberships */}
-            <div>
-              <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
-                Curated Board Memberships
-              </span>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                {memberBoards.map((board) => (
-                  <span
-                    key={board.id}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 shadow-2xs"
-                  >
-                    <BookmarkCheck className="w-3 h-3" />
-                    <span>{board.title}</span>
-                  </span>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setIsAddToListOpen(true)}
-                  className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 border border-dashed border-neutral-300 dark:border-neutral-700 transition cursor-pointer"
-                >
-                  <FolderPlus className="w-3.5 h-3.5 text-neutral-500" />
-                  <span>+ Manage Boards</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Synaptic Pairs */}
-            {connections.length > 0 && (
-              <div>
-                <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
-                  Synaptic Memory Pairs ({connections.length})
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {connections.map((conn) => (
-                    <SynapsePill
-                      key={conn.connectionId}
-                      connection={conn}
-                      onClick={() => {
-                        // Close lightbox and jump to connected save
-                        onClose();
-                        const el = document.getElementById(`save-${conn.saveId}`);
-                        if (el) {
-                          el.scrollIntoView({ behavior: "smooth", block: "center" });
-                          el.classList.add("ring-2", "ring-neutral-400");
-                          setTimeout(() => el.classList.remove("ring-2", "ring-neutral-400"), 2000);
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Curio Learns: Custom Attributes Grid */}
-            <div>
-              <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
-                Custom Attributes & Specifications
-              </span>
-              <CustomFieldsSection
-                saveId={card.save.id}
-                userCustomValues={card.save.userCustomValues}
-                extendedAttributes={card.entity?.extendedAttributes}
-              />
-            </div>
-
-            {/* Collapsible Agent JSON-LD Drawer */}
-            <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800">
-              <button
-                type="button"
-                onClick={() => setIsJsonDrawerOpen(!isJsonDrawerOpen)}
-                className="flex items-center justify-between w-full text-xs font-mono text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 transition cursor-pointer"
-              >
-                <div className="flex items-center gap-1.5">
-                  <Code2 className="w-3.5 h-3.5" />
-                  <span>Agent JSON-LD / Schema.org</span>
-                </div>
-                {isJsonDrawerOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
-
-              {isJsonDrawerOpen && (
-                <div className="mt-2.5 p-3 rounded-2xl bg-neutral-900 text-neutral-300 font-mono text-[10px] leading-relaxed relative animate-in fade-in">
-                  <button
-                    type="button"
-                    onClick={handleCopyJson}
-                    className="absolute top-2 right-2 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-white text-[9px] transition cursor-pointer"
-                  >
-                    {copiedJson ? "Copied" : "Copy JSON"}
-                  </button>
-                  <pre className="overflow-x-auto max-h-40">
-                    {JSON.stringify(
-                      {
-                        "@context": "https://schema.org",
-                        "@type": card.entity?.coreType || "Thing",
-                        name: card.entity?.title || title,
-                        description: card.entity?.summary,
-                        image: card.entity?.heroImageUrl,
-                        url: card.entity?.canonicalUrl,
-                        coreStructuredData: card.entity?.coreStructuredData,
-                        extendedAttributes: card.entity?.extendedAttributes,
-                      },
-                      null,
-                      2
-                    )}
-                  </pre>
-                </div>
-              )}
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between mt-auto">
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={isDeleting}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete</span>
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-xl text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveChanges}
-                  disabled={isSaving}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 shadow-md transition cursor-pointer"
-                >
-                  {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                  <span>Save Changes</span>
-                </button>
-              </div>
-            </div>
-          </div>
+          {rightPane}
         </div>
+        )}
 
         {/* Add To List Popover */}
         <AddToListPopover

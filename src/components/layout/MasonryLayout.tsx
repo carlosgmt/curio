@@ -22,7 +22,7 @@ export function MasonryLayout<T = any>({
   return (
     <div
       data-testid="masonry-layout"
-      className={`columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6 space-y-6 ${className}`}
+      className={`columns-1 sm:columns-2 lg:columns-3 min-[1440px]:columns-4 gap-4 sm:gap-6 space-y-4 sm:space-y-6 ${className}`}
     >
       {items.map((item, index) => (
         <div

@@ -284,7 +284,6 @@ const PREVIEW_CARDS: Record<string, CardData> = {
         artist: "John Coltrane",
         album: "A Love Supreme",
         releaseYear: 1965,
-        rpm: "33",
         catalogNumber: "AS-77",
         recordLabel: "Impulse! Records",
         gatefold: true,

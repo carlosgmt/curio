@@ -20,7 +20,7 @@ describe("MasonryLayout Engine (FR-2.0 / Layouts)", () => {
     );
 
     expect(html).toContain('data-testid="masonry-layout"');
-    expect(html).toContain("columns-1 sm:columns-2 lg:columns-3 xl:columns-4");
+    expect(html).toContain("columns-1 sm:columns-2 lg:columns-3 min-[1440px]:columns-4");
 
     // Count item containers and verify each has break-inside-avoid
     const containerMatches = html.match(/class="[^"]*break-inside-avoid[^"]*"/g);

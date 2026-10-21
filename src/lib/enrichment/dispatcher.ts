@@ -12,7 +12,7 @@ import {
   detectAndParseCommercialSku,
   resolveCommercialProduct,
 } from "./providers/commercial";
-import { resolvePlace, type ResolvedPlace } from "./providers/places";
+import { resolvePlace, isAcceptableWikiPlace, type ResolvedPlace } from "./providers/places";
 import { resolveCreator, type ResolvedCreator } from "./providers/creators";
 import { parseTransitPass, type ParsedTransitPass } from "./providers/travel";
 import { lookupByCanonicalIdentity } from "../ingest/cacheLookup";
@@ -262,18 +262,22 @@ async function hydrateSpecialist(
     };
   }
 
-  // Places & Venues
+  // Places & Venues — OSM-first; never trust a non-matching discovery candidate
   if (typePath === "/place" || typePath.startsWith("/place")) {
     const placeRes = await resolvePlace(targetTitle, { fetchFn });
+    const safeCandidate =
+      winningCandidate && isAcceptableWikiPlace(targetTitle, { title: winningCandidate.title, description: winningCandidate.snippet })
+        ? winningCandidate
+        : null;
     if (placeRes) {
       return {
-        title: placeRes.title || winningCandidate?.title || targetTitle,
-        summary: placeRes.summary || winningCandidate?.snippet || `Verified location for ${targetTitle}`,
-        heroImageUrl: placeRes.heroImageUrl || winningCandidate?.thumbnailUrl || null,
+        title: placeRes.title || safeCandidate?.title || targetTitle,
+        summary: placeRes.summary || safeCandidate?.snippet || `Verified location for ${targetTitle}`,
+        heroImageUrl: placeRes.heroImageUrl || safeCandidate?.thumbnailUrl || null,
         coreType: "PLACE",
         typePath: "/place",
-        canonicalExternalId: placeRes.canonicalExternalId || winningCandidate?.conceptUri,
-        canonicalUrl: placeRes.canonicalUrl || winningCandidate?.url || placeRes.googleMapsUrl,
+        canonicalExternalId: placeRes.canonicalExternalId || safeCandidate?.conceptUri,
+        canonicalUrl: placeRes.canonicalUrl || safeCandidate?.url || placeRes.googleMapsUrl,
         brandOrCreator: placeRes.city ? `${placeRes.city}${placeRes.country ? `, ${placeRes.country}` : ""}` : null,
         priceCents: null,
         coreStructuredData: {
@@ -288,17 +292,17 @@ async function hydrateSpecialist(
     }
 
     return {
-      title: winningCandidate?.title || targetTitle,
-      summary: winningCandidate?.snippet || `Verified location for ${targetTitle}`,
-      heroImageUrl: winningCandidate?.thumbnailUrl || null,
+      title: safeCandidate?.title || targetTitle,
+      summary: safeCandidate?.snippet || `Verified location for ${targetTitle}`,
+      heroImageUrl: safeCandidate?.thumbnailUrl || null,
       coreType: "PLACE",
       typePath: "/place",
-      canonicalExternalId: winningCandidate?.conceptUri,
-      canonicalUrl: winningCandidate?.url || `https://maps.google.com/?q=${encodeURIComponent(targetTitle)}`,
+      canonicalExternalId: safeCandidate?.conceptUri,
+      canonicalUrl: safeCandidate?.url || `https://maps.google.com/?q=${encodeURIComponent(targetTitle)}`,
       brandOrCreator: null,
       priceCents: null,
       coreStructuredData: {
-        wikidataUri: winningCandidate?.conceptUri,
+        wikidataUri: safeCandidate?.conceptUri,
         locationName: targetTitle,
       },
       primarySource: {

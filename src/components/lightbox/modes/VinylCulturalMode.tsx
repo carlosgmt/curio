@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Disc3, Music2, Volume2, ShoppingBag, ExternalLink, Play, Pause } from "lucide-react";
+import React from "react";
+import { Disc3 } from "lucide-react";
 import type { CulturalModeProps } from "./CinemaCulturalMode";
 import { CardFooterWaterfall } from "@/components/cards/CardFooterWaterfall";
 
@@ -12,12 +12,9 @@ interface Track {
 }
 
 export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliateTags }: CulturalModeProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
   const data = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
 
   const artist = data.artist || entity?.brandOrCreator || "Unknown Artist";
-  const releaseYear = data.releaseYear || data.year || "33 ⅓ RPM";
-  const rpm = data.rpm || "33 ⅓ RPM";
   const recordLabel = data.recordLabel || data.label || "Curio Pressed Recordings";
   const catalogNumber = data.catalogNumber || "CR-1049";
 
@@ -27,20 +24,9 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
     <div className="flex flex-col h-full bg-neutral-950 text-white rounded-3xl overflow-hidden border border-neutral-800 shadow-2xl">
       {/* Turntable Plinth & Album Cover Jacket Stage */}
       <div className="relative p-6 sm:p-8 bg-gradient-to-b from-neutral-900 via-neutral-950 to-neutral-950 flex flex-col items-center justify-center overflow-hidden border-b border-neutral-800/80">
-        {/* Needle Drop Arm (Visual) */}
-        <div
-          className={`absolute top-6 right-8 w-2 h-36 origin-top bg-gradient-to-b from-neutral-400 to-amber-400 rounded-full shadow-2xl transition-transform duration-700 pointer-events-none z-30 ${
-            isPlaying ? "rotate-20" : "-rotate-12 opacity-70"
-          }`}
-        >
-          <div className="w-4 h-6 -ml-1 mt-32 rounded bg-neutral-900 border border-amber-300 shadow-md" />
-        </div>
-
         {/* Album Jacket + Grooved Vinyl Disc */}
         <div
-          onClick={() => setIsPlaying(!isPlaying)}
-          className="relative flex items-center justify-center w-full max-w-[300px] h-52 sm:h-56 cursor-pointer"
-          title={isPlaying ? "Stop Turntable" : "Drop Needle"}
+          className="relative flex items-center justify-center w-full max-w-[300px] h-52 sm:h-56"
         >
           {/* Square Album Cover Jacket Sleeve */}
           <div className="relative z-20 w-44 h-44 sm:w-48 sm:h-48 -ml-10 rounded-xl overflow-hidden shadow-2xl border border-white/15 bg-neutral-900 shrink-0">
@@ -69,9 +55,7 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
 
           {/* 12" Physical Grooved Vinyl Disc peeking from sleeve */}
           <div
-            className={`relative z-10 -ml-20 w-44 h-44 sm:w-48 sm:h-48 rounded-full shadow-2xl transition-transform duration-700 ease-out flex items-center justify-center border-4 border-neutral-950 shrink-0 ${
-              isPlaying ? "translate-x-6 animate-[spin_4s_linear_infinite]" : "hover:translate-x-3 hover:rotate-6"
-            }`}
+            className={`relative z-10 -ml-20 w-44 h-44 sm:w-48 sm:h-48 rounded-full shadow-2xl transition-transform duration-700 ease-out flex items-center justify-center border-4 border-neutral-950 shrink-0 hover:translate-x-3 hover:rotate-6`}
             style={{
               background:
                 "repeating-radial-gradient(circle at center, #171717 0, #171717 3px, #262626 4px, #0a0a0a 5px, #1f1f1f 7px)",
@@ -102,32 +86,6 @@ export function VinylCulturalMode({ save, entity, primarySource, creatorAffiliat
               )}
             </div>
           </div>
-        </div>
-
-        {/* Play / Needle Trigger */}
-        <div className="mt-5 flex items-center gap-3 z-10">
-          <button
-            type="button"
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold bg-white text-neutral-950 hover:bg-neutral-100 transition shadow-md active:scale-95 cursor-pointer"
-          >
-            {isPlaying ? (
-              <>
-                <Pause className="w-3.5 h-3.5 fill-current" />
-                <span>Lift Tonearm</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Drop Needle</span>
-              </>
-            )}
-          </button>
-
-          <span className="inline-flex items-center gap-1.5 text-xs font-mono text-neutral-400 bg-neutral-900/80 px-3 py-1.5 rounded-full border border-neutral-800">
-            <Disc3 className="w-3.5 h-3.5 text-amber-400" />
-            <span>{rpm}</span>
-          </span>
         </div>
       </div>
 

@@ -192,6 +192,7 @@ export const userSaves = sqliteTable(
     typePath: text("type_path"),
     preferredSourceId: text("preferred_source_id").references(() => entitySources.id),
     isPrivateMemo: integer("is_private_memo", { mode: "boolean" }).default(false).notNull(),
+    wishlist: integer("wishlist", { mode: "boolean" }).default(false).notNull(),
     privateTitle: text("private_title"),
     personalNotes: text("personal_notes"),
     userCustomValues: text("user_custom_values", { mode: "json" }).default({}),

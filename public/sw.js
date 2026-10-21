@@ -1,50 +1,59 @@
-const CACHE_NAME = "brainspace-v2";
-const PRECACHE_ASSETS = ["/", "/manifest.json", "/icon.png", "/icon-192.png", "/icon-512.png"];
+// Curio service worker — minimal app-shell caching. Served from /curio/sw.js (scope /curio/).
+const CACHE_NAME = "curio-shell-v3";
+const BASE = "/curio";
+const PRECACHE = [`${BASE}/manifest.webmanifest`, `${BASE}/icon-192.png`, `${BASE}/icon-512.png`, `${BASE}/apple-touch-icon.png`];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(PRECACHE)).catch(() => {}));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys.map((k) => {
-          if (k !== CACHE_NAME) return caches.delete(k);
-        })
-      )
-    )
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
   );
   self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const req = event.request;
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  // Never cache or intercept API traffic.
+  if (url.pathname.startsWith(`${BASE}/api/`) || url.pathname.startsWith("/api/")) return;
 
-  const url = new URL(event.request.url);
-
-  if (url.pathname.startsWith("/api/")) {
+  // Navigations: network-first, fall back to cached shell if offline.
+  if (req.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
+      fetch(req)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(`${BASE}/`, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(`${BASE}/`).then((r) => r || Response.error()))
     );
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
-    })
-  );
+  // Static assets: stale-while-revalidate.
+  if (url.pathname.startsWith(`${BASE}/_next/static/`) || /\.(png|svg|ico|webmanifest|woff2?)$/.test(url.pathname)) {
+    event.respondWith(
+      caches.match(req).then((cached) => {
+        const network = fetch(req)
+          .then((res) => {
+            if (res && res.status === 200) {
+              const copy = res.clone();
+              caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+            }
+            return res;
+          })
+          .catch(() => cached);
+        return cached || network;
+      })
+    );
+  }
 });

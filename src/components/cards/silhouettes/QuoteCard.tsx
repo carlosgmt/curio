@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Quote as QuoteIcon, Copy, Check, ExternalLink, Share2, Sparkles, BookOpen } from "lucide-react";
+import { Quote as QuoteIcon, Copy, Check, ExternalLink, Share2, BookOpen, Pencil } from "lucide-react";
+import { QuoteEditor } from "./QuoteEditor";
 import { DisambiguationBar, type CandidateFallback } from "../DisambiguationBar";
 import type { UserAffiliateTags } from "../CardFooterWaterfall";
 
@@ -30,6 +31,10 @@ export interface QuoteCardProps {
   primarySource?: any;
   creatorAffiliateTags?: UserAffiliateTags | null;
   onSwapped?: (item: any) => void;
+  /** Called after an inline edit is persisted. */
+  onQuoteSaved?: (saveId: string, customValues: Record<string, unknown>, privateTitle: string) => void;
+  /** Start in edit mode (used by lightbox). */
+  startEditing?: boolean;
 }
 
 export function QuoteCard({
@@ -38,12 +43,17 @@ export function QuoteCard({
   primarySource,
   creatorAffiliateTags,
   onSwapped,
+  onQuoteSaved,
+  startEditing = false,
 }: QuoteCardProps) {
   const [copied, setCopied] = useState(false);
   const [shareFeedback, setShareFeedback] = useState(false);
+  const [isEditing, setIsEditing] = useState(startEditing);
+  const [localCustom, setLocalCustom] = useState<Record<string, any> | null>(null);
 
   const structured = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
-  const custom = (typeof save?.userCustomValues === "object" && save?.userCustomValues) || {};
+  const custom: Record<string, any> =
+    localCustom || (typeof save?.userCustomValues === "object" && save?.userCustomValues) || {};
   const extended = (typeof entity?.extendedAttributes === "object" && entity?.extendedAttributes) || {};
 
   // Resolve quotation text
@@ -66,7 +76,7 @@ export function QuoteCard({
     structured.author ||
     structured.speaker ||
     entity?.brandOrCreator ||
-    (entity?.title && entity.title !== quoteText ? entity.title : "Anonymous");
+    "Anonymous";
 
   // Resolve date or era
   const date =
@@ -129,12 +139,48 @@ export function QuoteCard({
             Quote
           </span>
 
-          {date && (
-            <span className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full border border-neutral-200 dark:border-neutral-700/60">
-              {date}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {date && (
+              <span className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full border border-neutral-200 dark:border-neutral-700/60">
+                {date}
+              </span>
+            )}
+            {!isEditing && (
+              <button
+                type="button"
+                data-testid="quote-edit-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditing(true);
+                }}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+                title="Edit quote"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
+
+        {isEditing ? (
+          <QuoteEditor
+            saveId={save.id}
+            existingCustom={custom}
+            initial={{
+              text: String(quoteText || ""),
+              author: author === "Anonymous" ? "" : String(author),
+              date: date ? String(date) : "",
+              work: work ? String(work) : "",
+            }}
+            onCancel={() => setIsEditing(false)}
+            onSaved={({ customValues, privateTitle }) => {
+              setLocalCustom(customValues);
+              setIsEditing(false);
+              onQuoteSaved?.(save.id, customValues, privateTitle);
+            }}
+          />
+        ) : (
+          <>
 
         {/* Main Quotation Body */}
         <blockquote className="my-2">
@@ -157,6 +203,9 @@ export function QuoteCard({
             </p>
           )}
         </div>
+
+          </>
+        )}
 
         {/* Other Custom Overlay Attributes */}
         {otherCustomEntries.length > 0 && (

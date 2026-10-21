@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Folder, Sparkles, Plus, Layers, Lock, Globe, EyeOff } from "lucide-react";
+import { Folder, Sparkles, Plus, Layers, Heart } from "lucide-react";
 import type { SmartList } from "@/db";
 
 export interface ListTabsBarProps {
@@ -10,6 +10,9 @@ export interface ListTabsBarProps {
   totalAllSavesCount?: number;
   onSelectList: (slug: string | null) => void;
   onCreateListClick: () => void;
+  wishlistActive?: boolean;
+  wishlistCount?: number;
+  onToggleWishlist?: () => void;
 }
 
 export function ListTabsBar({
@@ -18,6 +21,9 @@ export function ListTabsBar({
   totalAllSavesCount,
   onSelectList,
   onCreateListClick,
+  wishlistActive = false,
+  wishlistCount,
+  onToggleWishlist,
 }: ListTabsBarProps) {
   return (
     <div className="flex items-center gap-1.5 overflow-x-auto pb-3 mb-6 scrollbar-none">
@@ -26,7 +32,7 @@ export function ListTabsBar({
         type="button"
         onClick={() => onSelectList(null)}
         className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer shrink-0 ${
-          activeListSlug === null
+          activeListSlug === null && !wishlistActive
             ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
             : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
         }`}
@@ -36,7 +42,7 @@ export function ListTabsBar({
         {totalAllSavesCount !== undefined && (
           <span
             className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-              activeListSlug === null
+              activeListSlug === null && !wishlistActive
                 ? "bg-neutral-700 text-white dark:bg-neutral-200 dark:text-neutral-900"
                 : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500"
             }`}
@@ -45,6 +51,24 @@ export function ListTabsBar({
           </span>
         )}
       </button>
+
+      {/* Wishlist filter */}
+      {onToggleWishlist && (
+        <button
+          type="button"
+          data-testid="wishlist-filter"
+          onClick={onToggleWishlist}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer shrink-0 ${
+            wishlistActive
+              ? "bg-rose-500 text-white shadow-xs"
+              : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+          }`}
+        >
+          <Heart className={`w-3.5 h-3.5 ${wishlistActive ? "fill-current" : "text-rose-500"}`} />
+          <span>Wishlist</span>
+          {wishlistCount !== undefined && <span className="text-[10px] font-mono opacity-80">{wishlistCount}</span>}
+        </button>
+      )}
 
       {/* User Curated Boards */}
       {lists.map((list) => {

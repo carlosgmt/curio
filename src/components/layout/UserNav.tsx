@@ -2,8 +2,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers, Upload } from "lucide-react";
+import { Download, Share, User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers, Upload } from "lucide-react";
 import { AffiliateSettingsModal } from "@/components/commerce/AffiliateSettingsModal";
+import { useInstallPrompt } from "@/components/pwa/useInstallPrompt";
 import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
 
 export interface UserNavProps {
@@ -36,6 +37,7 @@ export function UserNav({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [affiliateModalOpen, setAffiliateModalOpen] = useState(false);
   const [typesModalOpen, setTypesModalOpen] = useState(false);
+  const install = useInstallPrompt();
 
   if (!user) {
     return (
@@ -159,6 +161,33 @@ export function UserNav({
                 <Upload className="w-3.5 h-3.5 text-blue-500" />
                 <span>Import CSV & Data</span>
               </button>
+            )}
+
+            {install.canInstall && !install.isStandalone && (
+              <button
+                type="button"
+                data-testid="pwa-install"
+                onClick={() => {
+                  setDropdownOpen(false);
+                  void install.promptInstall();
+                }}
+                className="w-full flex items-center gap-2 p-2 rounded-xl text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition text-left cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Install Curio app</span>
+              </button>
+            )}
+
+            {!install.canInstall && install.showIosHint && (
+              <div
+                data-testid="pwa-ios-hint"
+                className="flex items-start gap-2 p-2 rounded-xl text-[11px] text-neutral-500 dark:text-neutral-400"
+              >
+                <Share className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                <span>
+                  Install: tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.
+                </span>
+              </div>
             )}
 
             <button

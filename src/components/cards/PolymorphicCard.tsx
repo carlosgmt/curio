@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Link2, FolderPlus } from "lucide-react";
+import { Link2, FolderPlus, Heart } from "lucide-react";
+import { wishLabel } from "@/lib/wishlist";
 import { VinylDiscCard } from "./silhouettes/VinylDiscCard";
 import { MoviePosterCard } from "./silhouettes/MoviePosterCard";
 import { VideoGameCard } from "./silhouettes/VideoGameCard";
@@ -31,6 +32,7 @@ export interface CardData {
     id: string;
     isPrivateMemo: boolean;
     privateTitle?: string | null;
+    wishlist?: boolean | null;
     personalNotes?: string | null;
     userCustomValues?: any;
     candidateFallbacks?: CandidateFallback[] | null;
@@ -68,6 +70,7 @@ export interface PolymorphicCardProps {
   onCustomFieldsUpdated?: (saveId: string, customValues: Record<string, unknown>) => void;
   onAddToList?: (saveId: string) => void;
   onCardClick?: (item: CardData) => void;
+  onWishToggled?: (saveId: string, wishlist: boolean) => void;
 }
 
 export function PolymorphicCard({
@@ -80,11 +83,31 @@ export function PolymorphicCard({
   onCustomFieldsUpdated,
   onAddToList,
   onCardClick,
+  onWishToggled,
 }: PolymorphicCardProps) {
   const { save, entity, primarySource } = item;
   const effectiveTags = item.creatorAffiliateTags || propCreatorTags;
   const [internalConnections, setInternalConnections] = useState<ConnectedItem[]>(item.connections || []);
   const [isAddToListOpen, setIsAddToListOpen] = useState(false);
+  const [wished, setWished] = useState(Boolean(item.save.wishlist));
+  useEffect(() => setWished(Boolean(item.save.wishlist)), [item.save.wishlist]);
+
+  const toggleWish = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = !wished;
+    setWished(next);
+    try {
+      const res = await apiFetch(`/api/v1/saves/${item.save.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wishlist: next }),
+      });
+      if (!res.ok) throw new Error("wish failed");
+      onWishToggled?.(item.save.id, next);
+    } catch {
+      setWished(!next);
+    }
+  };
 
   useEffect(() => {
     if (propConnections !== undefined) {
@@ -151,6 +174,7 @@ export function PolymorphicCard({
           primarySource={primarySource}
           creatorAffiliateTags={effectiveTags}
           onSwapped={onSwapped}
+          onQuoteSaved={(id, cv) => onCustomFieldsUpdated?.(id, cv)}
         />
       );
     }
@@ -475,6 +499,25 @@ export function PolymorphicCard({
       id={`save-${save.id}`}
       className="group/curio-card relative flex flex-col h-full transition-all duration-200"
     >
+      {/* Wish toggle */}
+      <div className={`absolute top-3 left-3 z-30 transition ${wished ? "opacity-100" : "sm:opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90"}`}>
+        <button
+          type="button"
+          data-testid="wish-toggle"
+          aria-pressed={wished}
+          onClick={toggleWish}
+          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium backdrop-blur-md shadow-md border transition cursor-pointer ${
+            wished
+              ? "bg-rose-500 text-white border-rose-400"
+              : "bg-neutral-900/80 text-white border-white/20 dark:bg-neutral-100/90 dark:text-neutral-950"
+          }`}
+          title={wished ? "On your wishlist (click to remove)" : wishLabel(entity?.typePath || save.typePath, entity?.coreType)}
+        >
+          <Heart className={`w-3 h-3 ${wished ? "fill-current" : ""}`} />
+          <span>{wished ? "Wished" : "Wish"}</span>
+        </button>
+      </div>
+
       {/* Quick Action Toolbar (Board) */}
       {!save.isPrivateMemo && (
         <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90 transition">

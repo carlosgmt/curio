@@ -34,6 +34,127 @@ export interface ResolvedPlace {
   };
 }
 
+const GENERIC_PLACE_WORDS = new Set([
+  "bar", "cafe", "café", "restaurant", "pub", "hotel", "museum", "the", "of", "de", "la", "el", "los", "las",
+  "and", "y", "&", "bistro", "tavern", "taberna", "hostel", "club", "shop", "store",
+]);
+
+function normalizeTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+export function hasVenueWords(query: string): boolean {
+  return normalizeTokens(query).some((t) =>
+    ["bar", "cafe", "restaurant", "pub", "hotel", "museum", "bistro", "tavern", "taberna", "hostel", "club", "shop", "store", "gallery"].includes(t)
+  );
+}
+
+/**
+ * Strict validation: >= 0.8 of the query's significant tokens must appear in the candidate title.
+ * Generic venue words are ignored on the query side.
+ */
+export function placeTitleMatches(query: string, candidateTitle: string): boolean {
+  const qTokens = normalizeTokens(query).filter((t) => !GENERIC_PLACE_WORDS.has(t));
+  if (qTokens.length === 0) return false;
+  const cSet = new Set(normalizeTokens(candidateTitle));
+  const hits = qTokens.filter((t) => cSet.has(t)).length;
+  return hits / qTokens.length >= 0.8;
+}
+
+const REGION_DESC = /\b(province|region|ancient|historical|historic region|roman|kingdom|empire|district of)\b/i;
+
+export function isAcceptableWikiPlace(
+  query: string,
+  cand: { title?: string; description?: string; extract?: string }
+): boolean {
+  if (!cand.title || !placeTitleMatches(query, cand.title)) return false;
+  const desc = `${cand.description || ""}`;
+  if (hasVenueWords(query) && REGION_DESC.test(desc)) return false;
+  return true;
+}
+
+async function nominatimLookup(
+  query: string,
+  fetchFn: typeof fetch,
+  limit = 5
+): Promise<any[]> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+      query
+    )}&format=json&limit=${limit}&addressdetails=1&extratags=1`;
+    const res = await fetchFn(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Curio/3.2 (https://github.com/curio-app; places-resolver)",
+        Accept: "application/json",
+      },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const arr = await res.json();
+    return Array.isArray(arr) ? arr.filter((i: any) => i?.lat && i?.lon) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchWikiSummary(
+  pageTitle: string,
+  fetchFn: typeof fetch,
+  timeoutMs: number
+): Promise<any | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetchFn(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`,
+      {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Curio/3.2 (https://github.com/curio-app; hello@curio.local)",
+          Accept: "application/json",
+        },
+      }
+    );
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.type === "standard" && data.title ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchOgImage(website: string, fetchFn: typeof fetch): Promise<string | null> {
+  try {
+    if (!/^https?:\/\//i.test(website)) website = `https://${website}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const res = await fetchFn(website, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; CurioBot/1.0)", Accept: "text/html" },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const html = (await res.text()).slice(0, 200_000);
+    const m =
+      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (!m) return null;
+    return new URL(m[1], website).toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function resolvePlace(
   query: string,
   options?: { fetchFn?: typeof fetch; timeoutMs?: number }
@@ -43,131 +164,68 @@ export async function resolvePlace(
 
   const trimmed = query.trim();
   if (!trimmed) return null;
+  const cleanTitle = trimmed.replace(/^the\s+/i, "").trim();
 
-  const cleanTitle = trimmed
-    .replace(/^the\s+/i, "")
-    .trim();
+  // 1. OSM first
+  const osmResults = await nominatimLookup(trimmed, fetchFn);
+  const osm = osmResults[0];
 
-  const titleVariations = [
-    trimmed.replace(/\s+/g, "_"),
-    cleanTitle.replace(/\s+/g, "_"),
-    `${cleanTitle.replace(/\s+/g, "_")}_(museum)`,
-    `${cleanTitle.replace(/\s+/g, "_")}_(Paris)`,
-    `${cleanTitle.replace(/\s+/g, "_")}_(London)`,
-  ];
-
+  // 2. Wikipedia only when title strictly matches
   let wikiData: any = null;
-  let canonicalPageTitle = trimmed;
-
-  for (const pageTitle of titleVariations) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-      const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
-      const res = await fetchFn(url, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Curio/3.2 (https://github.com/curio-app; hello@curio.local)",
-          Accept: "application/json",
-        },
-      });
-      clearTimeout(timer);
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.type === "standard" && data.title) {
-          wikiData = data;
-          canonicalPageTitle = data.titles?.canonical || pageTitle;
-          break;
-        }
-      }
-    } catch {
-      // Continue to next variation
+  const variations = [trimmed, cleanTitle, `${cleanTitle} (museum)`].map((v) => v.replace(/\s+/g, "_"));
+  if (osm?.name && placeTitleMatches(trimmed, osm.name)) {
+    variations.unshift(osm.name.replace(/\s+/g, "_"));
+  }
+  for (const pageTitle of Array.from(new Set(variations))) {
+    const data = await fetchWikiSummary(pageTitle, fetchFn, timeoutMs);
+    if (data && isAcceptableWikiPlace(trimmed, data)) {
+      wikiData = data;
+      break;
     }
   }
 
-  // Parse details from Wikipedia summary
-  let title = wikiData?.title ? wikiData.title.replace(/\s*\([^)]+\)$/, "").trim() : trimmed;
-  let summary = wikiData?.extract || `Verified location for ${title}`;
-  let heroImageUrl = wikiData?.originalimage?.source || wikiData?.thumbnail?.source || null;
-  let category = wikiData?.description || "Cultural Venue & Landmark";
+  if (!osm && !wikiData) return null;
 
-  let coordinates: { latitude: number; longitude: number } | undefined = undefined;
-  if (wikiData?.coordinates?.lat && wikiData?.coordinates?.lon) {
-    coordinates = {
-      latitude: wikiData.coordinates.lat,
-      longitude: wikiData.coordinates.lon,
-    };
+  let title = wikiData?.title
+    ? wikiData.title.replace(/\s*\([^)]+\)$/, "").trim()
+    : osm?.name || osm?.display_name?.split(",")[0]?.trim() || trimmed;
+  let category: string = wikiData?.description || "";
+  let summary: string = wikiData?.extract || "";
+  let heroImageUrl: string | null = wikiData?.originalimage?.source || wikiData?.thumbnail?.source || null;
+
+  let coordinates: { latitude: number; longitude: number } | undefined;
+  if (osm) {
+    coordinates = { latitude: parseFloat(osm.lat), longitude: parseFloat(osm.lon) };
+  } else if (wikiData?.coordinates?.lat && wikiData?.coordinates?.lon) {
+    coordinates = { latitude: wikiData.coordinates.lat, longitude: wikiData.coordinates.lon };
   }
 
-  let city: string | undefined = undefined;
-  let country: string | undefined = undefined;
-  let address: string | undefined = undefined;
+  const addr = osm?.address || {};
+  const city: string | undefined = addr.city || addr.town || addr.village || addr.municipality || addr.suburb;
+  const country: string | undefined = addr.country;
+  const address: string | undefined = osm?.display_name;
 
-  // Extract location hints from description and extract
-  const desc = (wikiData?.description || "") + " " + (wikiData?.extract || "");
-  const cityMatch = desc.match(/\b(?:in|located in|at)\s+([A-Z][a-zA-Z\s]+?)(?:,\s*([A-Z][a-zA-Z\s]+))?[.;]/);
-  if (cityMatch) {
-    city = cityMatch[1]?.trim();
-    if (cityMatch[2]) {
-      country = cityMatch[2]?.trim();
-    }
+  if (!category) {
+    const cleanType = osm?.type || osm?.class || "venue";
+    category = cleanType.charAt(0).toUpperCase() + cleanType.slice(1).replace(/_/g, " ");
+  }
+  if (!summary) {
+    summary = osm ? `${category} located at ${osm.display_name}` : `Verified location for ${title}`;
   }
 
-  // Fallback / coordinate enhancement via Nominatim if needed
-  if (!coordinates) {
-    try {
-      const nomController = new AbortController();
-      const nomTimer = setTimeout(() => nomController.abort(), 1800);
-      const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-        trimmed
-      )}&format=json&limit=1&addressdetails=1`;
-      const nomRes = await fetchFn(nomUrl, {
-        signal: nomController.signal,
-        headers: {
-          "User-Agent": "Curio/3.2 (https://github.com/curio-app; places-resolver)",
-          Accept: "application/json",
-        },
-      });
-      clearTimeout(nomTimer);
-
-      if (nomRes.ok) {
-        const nomArray = await nomRes.json();
-        if (Array.isArray(nomArray) && nomArray.length > 0) {
-          const first = nomArray[0];
-          coordinates = {
-            latitude: parseFloat(first.lat),
-            longitude: parseFloat(first.lon),
-          };
-          address = first.display_name;
-          if (first.name && !wikiData) {
-            title = first.name;
-          }
-          if (first.address) {
-            city = city || first.address.city || first.address.town || first.address.village;
-            country = country || first.address.country;
-            category = category || first.type || first.class;
-          }
-          if (!wikiData) {
-            const cleanType = first.type || first.class || "venue";
-            category = cleanType.charAt(0).toUpperCase() + cleanType.slice(1);
-            summary = `${category} located at ${first.display_name}`;
-          }
-        }
-      }
-    } catch {
-      // Nominatim best effort
-    }
+  if (!heroImageUrl && osm?.extratags) {
+    const site = osm.extratags.website || osm.extratags["contact:website"];
+    if (site) heroImageUrl = await fetchOgImage(site, fetchFn);
   }
 
-  // Build clean Google Maps URL
   const googleMapsUrl = coordinates
     ? `https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`
     : `https://maps.google.com/?q=${encodeURIComponent(title + (city ? ` ${city}` : ""))}`;
 
   const canonicalUrl = wikiData?.content_urls?.desktop?.page || googleMapsUrl;
-  const canonicalExternalId = wikiData?.wikibase_item || (coordinates ? `osm:${trimmed.toLowerCase().replace(/\s+/g, "-")}` : `place:${canonicalPageTitle}`);
+  const osmId = osm?.osm_type && osm?.osm_id ? `osm:${osm.osm_type}/${osm.osm_id}` : null;
+  const canonicalExternalId =
+    wikiData?.wikibase_item || osmId || `place:${trimmed.toLowerCase().replace(/\s+/g, "-")}`;
 
   return {
     title,
@@ -191,6 +249,8 @@ export async function resolvePlace(
       country,
       latitude: coordinates?.latitude,
       longitude: coordinates?.longitude,
+      googleMapsUrl,
+      wikidataUri: wikiData?.wikibase_item,
     },
   };
 }

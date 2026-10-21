@@ -11,6 +11,10 @@ export interface UpdateSaveDetailsInput {
   userCustomValues?: Record<string, unknown>;
   isPrivateMemo?: boolean;
   wishlist?: boolean;
+  title?: string | null;
+  brandOrCreator?: string | null;
+  summary?: string | null;
+  heroImageUrl?: string | null;
 }
 
 export interface SaveDetails {
@@ -46,10 +50,8 @@ export async function getSaveDetails(saveId: string): Promise<SaveDetails | null
 
   if (!record) return null;
 
-  // Retrieve synaptic connections
   const connections = await getConnectedSaves(saveId);
 
-  // Retrieve lists containing this save
   const listRecords = await db
     .select({
       listItem: listItems,
@@ -64,7 +66,6 @@ export async function getSaveDetails(saveId: string): Promise<SaveDetails | null
     listItem: r.listItem,
   }));
 
-  // Retrieve multi-merchant sources
   let sources: Array<typeof entitySources.$inferSelect> = [];
   if (record.entity?.id) {
     sources = await db
@@ -73,7 +74,6 @@ export async function getSaveDetails(saveId: string): Promise<SaveDetails | null
       .where(eq(entitySources.entityId, record.entity.id));
   }
 
-  // Retrieve save owner
   const [owner] = await db
     .select({
       id: users.id,
@@ -98,6 +98,7 @@ export async function getSaveDetails(saveId: string): Promise<SaveDetails | null
 
 /**
  * Updates a user save (title, personal notes, archetype typePath, custom values)
+ * and optionally updates the linked GlobalEntity's title, creator, summary, or heroImageUrl.
  */
 export async function updateSaveDetails(
   saveId: string,
@@ -115,7 +116,23 @@ export async function updateSaveDetails(
 
   const patch: Record<string, unknown> = {};
   if (updates.privateTitle !== undefined) patch.privateTitle = updates.privateTitle;
+  else if (updates.title !== undefined && existing.isPrivateMemo) patch.privateTitle = updates.title;
   if (updates.personalNotes !== undefined) patch.personalNotes = updates.personalNotes;
+
+  const entityPatch: Record<string, unknown> = {};
+  if (updates.title !== undefined && updates.title !== null && updates.title.trim()) {
+    entityPatch.title = updates.title.trim();
+  }
+  if (updates.brandOrCreator !== undefined) {
+    entityPatch.brandOrCreator = updates.brandOrCreator;
+  }
+  if (updates.summary !== undefined) {
+    entityPatch.summary = updates.summary;
+  }
+  if (updates.heroImageUrl !== undefined) {
+    entityPatch.heroImageUrl = updates.heroImageUrl;
+  }
+
   if (updates.typePath !== undefined) {
     patch.typePath = updates.typePath;
     if (updates.typePath) {
@@ -129,10 +146,7 @@ export async function updateSaveDetails(
         patch.customTypeId = matchedType.userId ? matchedType.id : null;
       }
       if (existing.entityId) {
-        await db
-          .update(globalEntities)
-          .set({ typePath: updates.typePath })
-          .where(eq(globalEntities.id, existing.entityId));
+        entityPatch.typePath = updates.typePath;
       }
     }
   }
@@ -147,6 +161,29 @@ export async function updateSaveDetails(
       .where(eq(userSaves.id, saveId));
   }
 
+  if (existing.entityId && Object.keys(entityPatch).length > 0) {
+    const [ent] = await db
+      .select()
+      .from(globalEntities)
+      .where(eq(globalEntities.id, existing.entityId))
+      .limit(1);
+    if (ent) {
+      const coreData = { ...((ent.coreStructuredData as Record<string, any>) || {}) };
+      if (entityPatch.title) coreData.title = entityPatch.title;
+      if (entityPatch.brandOrCreator !== undefined) {
+        if ((ent.typePath || "").includes("/film")) coreData.director = entityPatch.brandOrCreator;
+        else if ((ent.typePath || "").includes("/book")) coreData.author = entityPatch.brandOrCreator;
+        else if ((ent.typePath || "").includes("/music")) coreData.artist = entityPatch.brandOrCreator;
+      }
+      entityPatch.coreStructuredData = coreData;
+    }
+
+    await db
+      .update(globalEntities)
+      .set(entityPatch)
+      .where(eq(globalEntities.id, existing.entityId));
+  }
+
   if (updates.userCustomValues && existing.entityId) {
     await evaluateAttributePromotion(existing.entityId);
   }
@@ -159,15 +196,12 @@ export async function updateSaveDetails(
  */
 export async function deleteSave(saveId: string): Promise<boolean> {
   return db.transaction((tx) => {
-    // Remove from lists
     tx.delete(listItems).where(eq(listItems.saveId, saveId)).run();
 
-    // Remove from connections
     tx.delete(entryConnections)
       .where(or(eq(entryConnections.sourceSaveId, saveId), eq(entryConnections.targetSaveId, saveId)))
       .run();
 
-    // Remove save
     const res = tx.delete(userSaves).where(eq(userSaves.id, saveId)).returning().all();
 
     return res.length > 0;

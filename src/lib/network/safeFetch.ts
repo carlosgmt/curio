@@ -117,6 +117,10 @@ const DEFAULT_ALLOWED_CONTENT_TYPES = [
   "application/json",
   "text/plain",
   "application/xhtml+xml",
+  "application/rss+xml",
+  "application/xml",
+  "text/xml",
+  "application/atom+xml",
 ];
 
 const DEFAULT_TIMEOUT_MS = 8000;

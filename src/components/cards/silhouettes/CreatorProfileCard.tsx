@@ -117,13 +117,11 @@ export function CreatorProfileCard({
       </div>
 
       {/* Disambiguation Bar */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <DisambiguationBar
+      <DisambiguationBar
           saveId={save.id}
-          candidates={save.candidateFallbacks}
+          candidates={save.candidateFallbacks || []}
           onSwapped={onSwapped}
         />
-      )}
 
       {/* Footer */}
       {entity && (

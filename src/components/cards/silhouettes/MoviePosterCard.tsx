@@ -82,15 +82,13 @@ export function MoviePosterCard({
       </div>
 
       {/* Disambiguation fallback bar if candidate runner-ups exist */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <div className="px-4 pt-2">
+      <div className="px-4 pt-2">
           <DisambiguationBar
             saveId={save.id}
-            candidates={save.candidateFallbacks}
+            candidates={save.candidateFallbacks || []}
             onSwapped={() => onSwapped?.(save)}
           />
         </div>
-      )}
 
       {/* Action Footer */}
       <div className="p-3 bg-neutral-950 border-t border-neutral-900">

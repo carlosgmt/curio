@@ -76,15 +76,13 @@ export function WineLabelCard({
       </div>
 
       {/* Disambiguation Fallback */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <div className="px-5 pt-1">
+      <div className="px-5 pt-1">
           <DisambiguationBar
             saveId={save.id}
-            candidates={save.candidateFallbacks}
+            candidates={save.candidateFallbacks || []}
             onSwapped={() => onSwapped?.(save)}
           />
         </div>
-      )}
 
       {/* Footer */}
       <div className="p-4 bg-stone-100/50 dark:bg-stone-900/80 border-t border-stone-200 dark:border-stone-800">

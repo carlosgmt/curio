@@ -10,6 +10,10 @@ const updateSaveSchema = z.object({
   userCustomValues: z.record(z.string(), z.unknown()).optional(),
   isPrivateMemo: z.boolean().optional(),
   wishlist: z.boolean().optional(),
+  title: z.string().optional().nullable(),
+  brandOrCreator: z.string().optional().nullable(),
+  summary: z.string().optional().nullable(),
+  heroImageUrl: z.string().optional().nullable(),
 });
 
 export async function GET(

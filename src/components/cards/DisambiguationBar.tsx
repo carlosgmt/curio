@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { RefreshCw, Sparkles, Check, FileText, X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { RefreshCw, Sparkles, Check, FileText, X, Search } from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
 
 export interface CandidateFallback {
@@ -11,11 +11,15 @@ export interface CandidateFallback {
   coreType: string;
   typePath?: string;
   badgeLabel?: string;
+  creator?: string | null;
+  year?: number | null;
+  heroImageUrl?: string | null;
 }
 
 interface DisambiguationBarProps {
   saveId: string;
-  candidates: CandidateFallback[];
+  candidates?: CandidateFallback[] | null;
+  initialQuery?: string;
   onSwapped?: (chosenCandidate: CandidateFallback) => void;
 }
 
@@ -105,19 +109,72 @@ function getBadge(cand: CandidateFallback): { label: string; className: string }
 export function DisambiguationBar({
   saveId,
   candidates,
+  initialQuery,
   onSwapped,
 }: DisambiguationBarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSwapping, setIsSwapping] = useState<string | null>(null);
   const [swappedUrl, setSwappedUrl] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState(initialQuery || "");
+  const [liveCandidates, setLiveCandidates] = useState<CandidateFallback[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  if (!candidates || candidates.length === 0) {
-    return null;
-  }
+  const staticCandidates = Array.isArray(candidates) ? candidates : [];
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2) {
+      setLiveCandidates([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/v1/capture/suggest?q=${encodeURIComponent(trimmed)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const suggestions = (data.suggestions || []).filter((s: any) => !s.isExistingSave);
+          const mapped: CandidateFallback[] = suggestions.map((s: any) => ({
+            title: s.title,
+            url: s.canonicalUrl || `https://curio.local/suggest/${encodeURIComponent(s.title)}`,
+            snippet: s.subtitle || "",
+            coreType: s.typePath?.includes("/book")
+              ? "BOOK"
+              : s.typePath?.includes("/film") || s.typePath?.includes("/music")
+              ? "MEDIA"
+              : s.typePath?.includes("/place")
+              ? "PLACE"
+              : "PRODUCT",
+            typePath: s.typePath,
+            badgeLabel: s.badgeLabel,
+            creator: s.creator ?? null,
+            year: s.year ?? null,
+            heroImageUrl: s.heroImageUrl ?? null,
+          }));
+          setLiveCandidates(mapped);
+        }
+      } catch {
+        // Ignore live suggestion fetch error
+      } finally {
+        setIsSearching(false);
+      }
+    }, 220);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, searchQuery]);
+
+  const displayedCandidates =
+    searchQuery.trim().length >= 2 && liveCandidates.length > 0
+      ? liveCandidates
+      : staticCandidates;
 
   const handleSwap = async (candidate: CandidateFallback) => {
     if (isSwapping) return;
-    setIsSwapping(candidate.url);
+    const swapKey = `${candidate.title}-${candidate.url}`;
+    setIsSwapping(swapKey);
 
     try {
       const res = await apiFetch("/api/v1/capture/disambiguate", {
@@ -126,6 +183,16 @@ export function DisambiguationBar({
         body: JSON.stringify({
           saveId,
           targetUrl: candidate.url,
+          targetCandidate: {
+            title: candidate.title,
+            subtitle: candidate.snippet,
+            creator: candidate.creator,
+            year: candidate.year,
+            typePath: candidate.typePath,
+            badgeLabel: candidate.badgeLabel,
+            heroImageUrl: candidate.heroImageUrl,
+            canonicalUrl: candidate.url,
+          },
         }),
       });
 
@@ -133,7 +200,7 @@ export function DisambiguationBar({
         throw new Error("Disambiguation swap failed");
       }
 
-      setSwappedUrl(candidate.url);
+      setSwappedUrl(swapKey);
       setIsOpen(false);
       if (onSwapped) {
         onSwapped(candidate);
@@ -190,7 +257,7 @@ export function DisambiguationBar({
             setIsOpen(true);
           }}
           className="inline-flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 hover:text-neutral-200 dark:text-neutral-500 dark:hover:text-neutral-300 py-0.5 px-2.5 rounded-full hover:bg-white/5 transition cursor-pointer"
-          title="Wrong entity? Click to disambiguate or save as note"
+          title="Wrong entity? Click to search, disambiguate, or save as note"
         >
           <Sparkles className="w-3 h-3 text-amber-500/80" />
           <span>Wrong entity?</span>
@@ -219,19 +286,35 @@ export function DisambiguationBar({
         </button>
       </div>
 
+      {/* Live Search Input for 1-Tap Re-binding */}
+      <div className="relative">
+        <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search exact title, director, author, artist..."
+          className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-neutral-950 border border-neutral-700 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-amber-400"
+        />
+        {isSearching && (
+          <RefreshCw className="w-3 h-3 animate-spin text-amber-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
+        )}
+      </div>
+
       <p className="text-[11px] text-neutral-400">
         Select the intended entity below, or save as a text note:
       </p>
 
       <div className="space-y-1.5 max-h-48 overflow-y-auto">
-        {candidates.map((cand) => {
-          const isCurrent = isSwapping === cand.url;
-          const isDone = swappedUrl === cand.url;
+        {displayedCandidates.map((cand, idx) => {
+          const swapKey = `${cand.title}-${cand.url}`;
+          const isCurrent = isSwapping === swapKey;
+          const isDone = swappedUrl === swapKey;
           const badge = getBadge(cand);
 
           return (
             <button
-              key={cand.url}
+              key={`${swapKey}-${idx}`}
               type="button"
               onClick={() => handleSwap(cand)}
               disabled={Boolean(isSwapping)}

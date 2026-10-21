@@ -121,15 +121,13 @@ export function VinylDiscCard({
       </div>
 
       {/* Discreet Wrong Entity Disambiguation */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <div className="mt-2 flex justify-center z-10">
+      <div className="mt-2 flex justify-center z-10">
           <DisambiguationBar
             saveId={save.id}
-            candidates={save.candidateFallbacks}
+            candidates={save.candidateFallbacks || []}
             onSwapped={() => onSwapped?.(save)}
           />
         </div>
-      )}
 
       {/* Standardized Dual-Slot Waterfall Footer with 3 Actions */}
       <div className="mt-3 pt-2 border-t border-neutral-800/80 z-10">

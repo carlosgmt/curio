@@ -165,11 +165,10 @@ export function ProductCard({
         </div>
 
         {/* Disambiguation Bar */}
-        {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-          <div className="mb-2">
+        <div className="mb-2">
             <DisambiguationBar
               saveId={save.id}
-              candidates={save.candidateFallbacks}
+              candidates={save.candidateFallbacks || []}
               onSwapped={(swappedEntity) => {
                 onSwapped?.({
                   ...save,
@@ -178,7 +177,6 @@ export function ProductCard({
               }}
             />
           </div>
-        )}
 
         {/* Universal Commercial Waterfall Footer */}
         <CardFooterWaterfall

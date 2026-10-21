@@ -2,7 +2,6 @@ import { db, globalEntities, entitySources, type GlobalEntity } from "@/db";
 import { eq, or } from "drizzle-orm";
 import { computeUrlHash } from "./resolution";
 import { normalizeEntityString, mapDescriptionToOntology, type CandidateFallback } from "../enrichment/universalDiscovery";
-import { cosineSimilarity, generateDeterministicEmbedding } from "../search/vector";
 
 export const KNOWN_COLORWAYS = new Set([
   "mint",
@@ -86,7 +85,8 @@ export function stripIntentSuffix(query: string): {
   inferredTypeHint: string | null;
 } {
   const trimmed = query.trim();
-  let inferredTypeHint: string | null = null;
+  let inferredTypeHint: string | null;
+  inferredTypeHint = null;
 
   if (/\b(?:movie|film|cinema)\b/i.test(trimmed)) {
     inferredTypeHint = "/media/film";
@@ -225,8 +225,6 @@ export function passesDistinguisherGuard(query: string, entity: GlobalEntity): b
   ].join(" ");
   const entityDist = extractDistinguishers(entityText, coreData, extData);
 
-  // 1. Reference code guard: if the query specifies any reference code (e.g. 226570 vs 16570),
-  // the cached entity MUST contain that exact reference code.
   if (queryDist.referenceCodes.length > 0) {
     for (const qRef of queryDist.referenceCodes) {
       const hasRef =
@@ -238,7 +236,6 @@ export function passesDistinguisherGuard(query: string, entity: GlobalEntity): b
     }
   }
 
-  // Conversely, if the cached entity has a specific reference code and the query has a DIFFERENT reference code
   if (entityDist.referenceCodes.length > 0 && queryDist.referenceCodes.length > 0) {
     for (const eRef of entityDist.referenceCodes) {
       if (!queryDist.referenceCodes.includes(eRef)) {
@@ -247,8 +244,6 @@ export function passesDistinguisherGuard(query: string, entity: GlobalEntity): b
     }
   }
 
-  // 2. Colorway guard: if the query specifies a colorway AND the entity is a product/garment/cosmetic,
-  // ensure the entity has the same colorway (and not a conflicting one).
   const isProductArchetype =
     entity.coreType === "PRODUCT" ||
     (entity.typePath || "").startsWith("/product");
@@ -264,11 +259,9 @@ export function passesDistinguisherGuard(query: string, entity: GlobalEntity): b
     }
   }
 
-  // 3. Explicit SKU token guard on cached commercial entities
   if (isProductArchetype && entityDist.skuToken) {
     const normQueryTokens = normalizeEntityString(query).split(/\s+/);
     const lastToken = normQueryTokens[normQueryTokens.length - 1];
-    // If entity had a specific trailing SKU token (like "xyz") and query ends with a different token
     if (
       entityDist.skuToken !== lastToken &&
       !normQueryTokens.includes(entityDist.skuToken)
@@ -278,6 +271,26 @@ export function passesDistinguisherGuard(query: string, entity: GlobalEntity): b
   }
 
   return true;
+}
+
+/**
+ * Detects whether a cached GlobalEntity is an unenriched search-engine fallback stub
+ * (e.g. saved with a DuckDuckGo or Letterboxd search URL and no poster/creator).
+ */
+export function isUnenrichedStubEntity(entity: GlobalEntity): boolean {
+  const url = (entity.canonicalUrl || "").toLowerCase();
+  if (url.includes("duckduckgo.com")) {
+    return true;
+  }
+  if (
+    !entity.heroImageUrl &&
+    (url.includes("letterboxd.com/search") ||
+      url.includes("openlibrary.org/search") ||
+      url.includes("discogs.com/search"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -330,17 +343,21 @@ export async function recordAliasOnEntity(entity: GlobalEntity, rawAlias: string
 
 /**
  * LAYER 0: Pre-Network Local Global Cache Lookup (<2ms, $0.00, 0 network calls)
- *
- * Searches `global_entities` and `entity_sources` by:
- * 1. Exact URL / url_hash (if query is a URL)
- * 2. Normalized title match (`normalizeForCacheComparison`)
- * 3. Stored `rawQuery` or `aliases` inside `coreStructuredData`
- * 4. High-confidence vector + lexical match (>0.94)
- * All gated by `passesDistinguisherGuard` to prevent SKU/reference/colorway collisions.
  */
 export async function lookupLocalEntityCache(
   query: string,
-  options?: { forcedTypePath?: string; detectedType?: string }
+  options?: {
+    forcedTypePath?: string;
+    detectedType?: string;
+    targetCandidate?: {
+      title?: string;
+      subtitle?: string;
+      creator?: string | null;
+      year?: number | null;
+      canonicalUrl?: string | null;
+      typePath?: string | null;
+    };
+  }
 ): Promise<{ primary: GlobalEntity | null; siblings: CandidateFallback[] }> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -358,7 +375,7 @@ export async function lookupLocalEntityCache(
       .where(or(eq(globalEntities.urlHash, urlHash), eq(globalEntities.canonicalUrl, trimmed)))
       .limit(1);
 
-    if (directEntity) {
+    if (directEntity && !isUnenrichedStubEntity(directEntity)) {
       return { primary: directEntity, siblings: [] };
     }
 
@@ -375,7 +392,7 @@ export async function lookupLocalEntityCache(
         .where(eq(globalEntities.id, sourceHit.entityId))
         .limit(1);
 
-      if (linkedEntity) {
+      if (linkedEntity && !isUnenrichedStubEntity(linkedEntity)) {
         return { primary: linkedEntity, siblings: [] };
       }
     }
@@ -387,7 +404,8 @@ export async function lookupLocalEntityCache(
   const normQuery = normalizeForCacheComparison(trimmed);
   const { cleanQuery, inferredTypeHint } = stripIntentSuffix(trimmed);
   const normCleanQuery = normalizeForCacheComparison(cleanQuery);
-  const preferredTypePath = options?.forcedTypePath || inferredTypeHint || null;
+  const preferredTypePath =
+    options?.forcedTypePath || options?.targetCandidate?.typePath || inferredTypeHint || null;
 
   const allEntities = await db.select().from(globalEntities);
   if (allEntities.length === 0) {
@@ -397,7 +415,6 @@ export async function lookupLocalEntityCache(
   const matchedCandidates: Array<{ entity: GlobalEntity; score: number }> = [];
 
   for (const entity of allEntities) {
-    // Never match stub fallback URLs from duckduckgo unless exact rawQuery match on a verified entity
     const normTitle = normalizeForCacheComparison(entity.title);
     const coreData = (entity.coreStructuredData as Record<string, any>) || {};
     const rawQuery = typeof coreData.rawQuery === "string" ? coreData.rawQuery : "";
@@ -406,7 +423,6 @@ export async function lookupLocalEntityCache(
 
     let score = 0;
 
-    // Exact normalized title match
     if (normTitle === normQuery) {
       score = 100;
     } else if (normCleanQuery && normTitle === normCleanQuery) {
@@ -421,7 +437,6 @@ export async function lookupLocalEntityCache(
     ) {
       score = 96;
     } else {
-      // Check if query is "<Title> by <Creator>" or "<Title> <Year>"
       const creator = entity.brandOrCreator ? normalizeForCacheComparison(entity.brandOrCreator) : "";
       const year = coreData.releaseYear || coreData.publicationYear || coreData.year || "";
       if (creator && normCleanQuery === `${normTitle} by ${creator}`) {
@@ -434,16 +449,35 @@ export async function lookupLocalEntityCache(
     }
 
     if (score > 0) {
-      // Run Distinguisher Guard!
       if (!passesDistinguisherGuard(trimmed, entity)) {
         continue;
       }
 
-      // Boost if preferredTypePath matches
+      // If an explicit targetCandidate was selected from Omnibox, verify creator/URL alignment
+      if (options?.targetCandidate) {
+        const tc = options.targetCandidate;
+        const candCreator = tc.creator || (tc.subtitle ? tc.subtitle.split("•")[0]?.trim() : "");
+        if (
+          candCreator &&
+          entity.brandOrCreator &&
+          ! /^In your saves/i.test(candCreator)
+        ) {
+          const normCandCreator = normalizeEntityString(candCreator);
+          const normEntCreator = normalizeEntityString(entity.brandOrCreator);
+          if (
+            normCandCreator &&
+            normEntCreator &&
+            !normEntCreator.includes(normCandCreator) &&
+            !normCandCreator.includes(normEntCreator)
+          ) {
+            continue;
+          }
+        }
+      }
+
       if (preferredTypePath && entity.typePath === preferredTypePath) {
         score += 20;
       } else if (preferredTypePath && entity.typePath && entity.typePath !== preferredTypePath) {
-        // Penalize if user explicitly asked for a different type (e.g. "Dune movie" when cached is "Dune" book)
         score -= 40;
       }
 
@@ -451,7 +485,6 @@ export async function lookupLocalEntityCache(
     }
   }
 
-  // Sort by score descending
   matchedCandidates.sort((a, b) => b.score - a.score);
 
   if (matchedCandidates.length > 0 && matchedCandidates[0].score >= 85) {
@@ -461,7 +494,6 @@ export async function lookupLocalEntityCache(
       .filter((c) => c.entity.id !== primary.id)
       .map((c) => entityToFallback(c.entity));
 
-    // Also include stored runnerUpCandidates from coreStructuredData if siblings is empty
     const primaryCore = (primary.coreStructuredData as Record<string, any>) || {};
     const storedFallbacks = Array.isArray(primaryCore.runnerUpCandidates)
       ? (primaryCore.runnerUpCandidates as CandidateFallback[])
@@ -478,12 +510,6 @@ export async function lookupLocalEntityCache(
 
 /**
  * LAYER 1.5: Post-Discovery Canonical Identity Cache Lookup (<1ms, $0.00)
- *
- * Executed after lightweight discovery (Wikidata/Wikipedia or Commercial SKU parser)
- * resolves a canonical external ID (e.g., `http://www.wikidata.org/entity/Q83630` or `wikidata:Q83630`),
- * identity fingerprint, or canonical URL.
- * If an entity already exists in `global_entities` and passes the Distinguisher Guard,
- * reuses it and registers the incoming query as an alias for instant Layer 0 hits next time.
  */
 export async function lookupByCanonicalIdentity(params: {
   canonicalExternalId?: string | null;
@@ -505,7 +531,6 @@ export async function lookupByCanonicalIdentity(params: {
   const allEntities = await db.select().from(globalEntities);
   if (allEntities.length === 0) return null;
 
-  // Extract Q-id if wikidata URI or externalId contains Q\d+
   const extractQid = (val?: string | null): string | null => {
     if (!val) return null;
     const m = val.match(/\b(Q\d+)\b/i);
@@ -519,12 +544,10 @@ export async function lookupByCanonicalIdentity(params: {
     const coreData = (entity.coreStructuredData as Record<string, any>) || {};
     let matched = false;
 
-    // 1. Canonical External ID match
     if (canonicalExternalId && entity.canonicalExternalId === canonicalExternalId) {
       matched = true;
     }
 
-    // 2. Wikidata Q-ID match (across canonicalExternalId or coreStructuredData.wikidataUri)
     if (!matched && targetQid) {
       const entityQid =
         extractQid(entity.canonicalExternalId) ||
@@ -535,12 +558,10 @@ export async function lookupByCanonicalIdentity(params: {
       }
     }
 
-    // 3. Identity Fingerprint match
     if (!matched && identityFingerprint && entity.identityFingerprint === identityFingerprint) {
       matched = true;
     }
 
-    // 4. Canonical URL / URL Hash match (excluding generic search engine fallback URLs)
     if (
       !matched &&
       canonicalUrl &&

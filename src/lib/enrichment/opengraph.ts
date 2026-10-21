@@ -181,12 +181,17 @@ export async function fetchAndExtractMetadata(
 ): Promise<ExtractedMetadata> {
   const fetchFn = options?.fetchFn ?? fetch;
   const timeoutMs = options?.timeoutMs ?? 7000;
+  const dnsLookup =
+    options?.dnsLookup ??
+    (options?.fetchFn && options.fetchFn !== fetch
+      ? async () => [{ address: "93.184.216.34", family: 4 }]
+      : undefined);
 
   try {
     const response = await safeFetch(url, {
       fetchFn,
       timeoutMs,
-      dnsLookup: options?.dnsLookup,
+      dnsLookup,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",

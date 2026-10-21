@@ -16,6 +16,7 @@ import { resolvePlace, isAcceptableWikiPlace, hasVenueWords, type ResolvedPlace 
 import { resolveCreator, type ResolvedCreator } from "./providers/creators";
 import { parseTransitPass, type ParsedTransitPass } from "./providers/travel";
 import { lookupByCanonicalIdentity } from "../ingest/cacheLookup";
+import { routeKnownDomainUrl } from "./urlRouter";
 
 export interface EnrichmentPayload {
   title: string;
@@ -39,12 +40,55 @@ export interface EnrichmentPayload {
   cachedEntityId?: string | null;
 }
 
+export interface TargetCandidateContext {
+  title: string;
+  subtitle?: string;
+  creator?: string | null;
+  year?: number | null;
+  typePath?: string;
+  badgeLabel?: string;
+  heroImageUrl?: string | null;
+  canonicalUrl?: string;
+  conceptUri?: string | null;
+  curioTypeId?: string | null;
+}
+
 export interface EnrichCaptureOptions {
   detectedType?: string;
   forcedTypePath?: string;
+  targetCandidate?: TargetCandidateContext;
   universalCandidates?: DiscoveredCandidate[];
   fetchFn?: typeof fetch;
   skipCache?: boolean;
+}
+
+/**
+ * Extracts creator and year hints from a candidate's discrete fields or formatted subtitle ("Creator • 1996")
+ */
+export function extractCandidateHints(cand?: TargetCandidateContext | null): {
+  creator: string | null;
+  year: number | null;
+} {
+  if (!cand) return { creator: null, year: null };
+  let creator = cand.creator ?? null;
+  let year = cand.year ?? null;
+
+  if ((!creator || !year) && cand.subtitle) {
+    const cleanSub = cand.subtitle
+      .replace(/^In your saves\s*•?\s*/i, "")
+      .replace(/^Quote\s*•?\s*/i, "")
+      .trim();
+    const parts = cleanSub.split(/\s*•\s*/).filter(Boolean);
+    for (const part of parts) {
+      if (/^(1[89]\d\d|20[0-2]\d)$/.test(part)) {
+        if (!year) year = parseInt(part, 10);
+      } else if (!creator && part.length <= 60 && !/^(Place|Save as)/i.test(part)) {
+        creator = part;
+      }
+    }
+  }
+
+  return { creator, year };
 }
 
 /**
@@ -59,23 +103,41 @@ async function hydrateSpecialist(
 ): Promise<EnrichmentPayload> {
   // Cinema & Film
   if (typePath === "/media/film") {
-    const filmRes = await resolveFilm(targetTitle, { fetchFn });
+    const wikiUrlHint =
+      winningCandidate?.url && winningCandidate.url.includes("wikipedia.org")
+        ? winningCandidate.url
+        : null;
+    const filmRes = await resolveFilm(targetTitle, {
+      yearHint: winningCandidate?.year,
+      creatorHint: winningCandidate?.creator,
+      wikiUrlHint,
+      fetchFn,
+    });
     if (filmRes) {
       return {
         title: filmRes.title,
-        summary: filmRes.summary,
-        heroImageUrl: filmRes.posterUrl,
+        summary: filmRes.summary || winningCandidate?.snippet,
+        heroImageUrl: filmRes.posterUrl || winningCandidate?.thumbnailUrl || null,
         coreType: "MEDIA",
         typePath: "/media/film",
         canonicalExternalId: filmRes.canonicalExternalId || winningCandidate?.conceptUri,
         canonicalUrl:
-          filmRes.canonicalUrl ||
+          (filmRes.canonicalUrl && !filmRes.canonicalUrl.includes("/search")
+            ? filmRes.canonicalUrl
+            : null) ||
           winningCandidate?.url ||
+          filmRes.canonicalUrl ||
           `https://en.wikipedia.org/wiki/${encodeURIComponent(filmRes.title)}`,
         brandOrCreator: filmRes.director || winningCandidate?.creator,
         priceCents: filmRes.priceCents,
         coreStructuredData: {
           ...filmRes.coreStructuredData,
+          ...(winningCandidate?.year && !filmRes.coreStructuredData.releaseYear
+            ? { releaseYear: winningCandidate.year }
+            : {}),
+          ...(winningCandidate?.creator && !filmRes.coreStructuredData.director
+            ? { director: winningCandidate.creator }
+            : {}),
           wikidataUri: winningCandidate?.conceptUri,
         },
         primarySource: {
@@ -114,12 +176,16 @@ async function hydrateSpecialist(
 
   // Books
   if (typePath === "/product/book") {
-    const bookRes = await resolveBook(targetTitle, { fetchFn });
+    const bookRes = await resolveBook(targetTitle, {
+      authorHint: winningCandidate?.creator,
+      yearHint: winningCandidate?.year,
+      fetchFn,
+    });
     if (bookRes) {
       return {
         title: bookRes.title,
-        summary: bookRes.summary,
-        heroImageUrl: bookRes.coverUrl,
+        summary: bookRes.summary || winningCandidate?.snippet,
+        heroImageUrl: bookRes.coverUrl || winningCandidate?.thumbnailUrl || null,
         coreType: "BOOK",
         typePath: "/product/book",
         canonicalExternalId: bookRes.canonicalExternalId || winningCandidate?.conceptUri,
@@ -526,29 +592,13 @@ export async function enrichCaptureInput(
 
   // 1. URL Path
   if (isUrl) {
-    // 1a. Spotify URL
-    if (trimmed.includes("spotify.com/")) {
-      const spotifyRes = await resolveSpotifyUrl(trimmed, { fetchFn });
-      if (spotifyRes) {
-        return {
-          title: spotifyRes.title,
-          summary: spotifyRes.summary,
-          heroImageUrl: spotifyRes.coverUrl,
-          coreType: "MEDIA",
-          typePath: "/media/music/vinyl",
-          canonicalExternalId: spotifyRes.canonicalExternalId,
-          canonicalUrl: spotifyRes.canonicalUrl,
-          brandOrCreator: spotifyRes.artist,
-          priceCents: spotifyRes.priceCents,
-          coreStructuredData: spotifyRes.coreStructuredData,
-          primarySource: {
-            sellerName: "Spotify",
-            sourceUrl: trimmed,
-            priceCents: 0,
-          },
-          runnerUpCandidates: [],
-        };
-      }
+    // 1a. Domain-Aware URL Router (Spotify, Apple Music, Letterboxd, IMDb, Goodreads, YouTube, Google Maps, Wikipedia)
+    const domainRouted = await routeKnownDomainUrl(trimmed, {
+      fetchFn,
+      forcedTypePath: options?.forcedTypePath,
+    });
+    if (domainRouted) {
+      return domainRouted;
     }
 
     // 1b. General Webpage OpenGraph + JSON-LD Extraction
@@ -697,9 +747,33 @@ export async function enrichCaptureInput(
     }
   }
 
-  // 3. Forced typePath (e.g. from Disambiguation Swap)
-  if (options?.forcedTypePath) {
-    return hydrateSpecialist(trimmed, options.forcedTypePath, null, fetchFn, []);
+  // 3. Forced typePath / Omnibox Selected Candidate Context
+  if (options?.forcedTypePath || options?.targetCandidate) {
+    const effectivePath =
+      options?.forcedTypePath || options?.targetCandidate?.typePath || "/product/generic";
+    const { creator, year } = extractCandidateHints(options?.targetCandidate);
+    const candidateContext: DiscoveredCandidate | null = options?.targetCandidate
+      ? {
+          title: options.targetCandidate.title || trimmed,
+          snippet: options.targetCandidate.subtitle || "",
+          url: options.targetCandidate.canonicalUrl || "",
+          coreType: effectivePath.includes("/book")
+            ? "BOOK"
+            : effectivePath.includes("/film") || effectivePath.includes("/music")
+            ? "MEDIA"
+            : effectivePath.includes("/place")
+            ? "PLACE"
+            : "PRODUCT",
+          typePath: effectivePath,
+          badgeLabel: options.targetCandidate.badgeLabel || "ITEM",
+          creator,
+          year,
+          thumbnailUrl: options.targetCandidate.heroImageUrl || null,
+          conceptUri: options.targetCandidate.conceptUri || null,
+        }
+      : null;
+
+    return hydrateSpecialist(trimmed, effectivePath, candidateContext, fetchFn, []);
   }
 
   // 4. LAYER 1A: Commercial SKU Detector (Garments, Watches/Luxury, Electronics, Cosmetics)
@@ -748,8 +822,6 @@ export async function enrichCaptureInput(
     }));
 
     // LAYER 1.5: Second Local Cache Gate (Canonical ID / Wikidata Q-ID Deduplication)
-    // E.g. "Mi vida sin mi" -> Wikidata Q83630 -> hits existing "My Life Without Me" entity,
-    // registers "Mi vida sin mi" as an alias, and skips deep specialist hydration (TMDB/OpenLibrary)!
     if (!options?.skipCache) {
       const cachedByCanonical = await lookupByCanonicalIdentity({
         canonicalExternalId: winning.conceptUri,
@@ -780,8 +852,6 @@ export async function enrichCaptureInput(
     }
 
     // LAYER 2: Deep Specialist Hydration (Only on True Cache Miss)
-    // Places: the discovery winner may be a fuzzy namesake (e.g. "Bar Provincias" -> Syria Palaestina,
-    // "Bar Provincias Granada" -> the city of Granada). Resolve from the user's own query via OSM instead.
     const queryLooksLikePlace = hasVenueWords(trimmed) || winning.typePath.startsWith("/place");
     if (
       queryLooksLikePlace &&
@@ -832,7 +902,7 @@ export async function enrichCaptureInput(
         summary: musicRes.summary,
         heroImageUrl: musicRes.coverUrl,
         coreType: "MEDIA",
-        typePath: "/media/music/vinyl",
+        typePath: musicRes.typePath || "/media/music/vinyl",
         canonicalExternalId: musicRes.canonicalExternalId,
         canonicalUrl: musicRes.canonicalUrl,
         brandOrCreator: musicRes.artist,

@@ -224,15 +224,13 @@ export function QuoteCard({
       </div>
 
       {/* Disambiguation Bar ("Wrong entity?") */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <div className="mt-3 relative z-20">
+      <div className="mt-3 relative z-20">
           <DisambiguationBar
             saveId={save.id}
-            candidates={save.candidateFallbacks}
+            candidates={save.candidateFallbacks || []}
             onSwapped={onSwapped}
           />
         </div>
-      )}
 
       {/* Action Footer Providers */}
       <div className="relative z-10 mt-6 pt-3 border-t border-neutral-200/70 dark:border-neutral-800/80 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">

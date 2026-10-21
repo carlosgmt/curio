@@ -10,6 +10,9 @@ import { parseQuoteInput } from "@/lib/types/catalog";
 export interface OmniboxSuggestion {
   title: string;
   subtitle: string;
+  creator?: string | null;
+  year?: number | null;
+  conceptUri?: string | null;
   typePath: string;
   badgeLabel: string;
   heroImageUrl: string | null;
@@ -27,18 +30,15 @@ function findMatchingCurioType(
   const normPath = (typePath || "").toLowerCase().trim();
   const normTitle = (title || "").toLowerCase().trim();
 
-  // Sort candidate types: user-specific first, then deeper type paths
   const sorted = [...types].sort((a, b) => {
     if (a.userId && !b.userId) return -1;
     if (!a.userId && b.userId) return 1;
     return b.typePath.length - a.typePath.length;
   });
 
-  // 1. Exact match on typePath
   const exact = sorted.find((t) => t.typePath.toLowerCase() === normPath);
   if (exact) return exact;
 
-  // 2. Subpath / parent-child match (e.g. /product/beverage/wine/specialty-coffee vs /product/coffee or /product/watch)
   const prefixMatch = sorted.find(
     (t) =>
       normPath.startsWith(t.typePath.toLowerCase()) ||
@@ -46,7 +46,6 @@ function findMatchingCurioType(
   );
   if (prefixMatch) return prefixMatch;
 
-  // 3. Keyword / slug match (e.g. typePath ends with 'watch' or contains 'coffee')
   const lastSegment = normPath.split("/").pop();
   if (lastSegment && lastSegment.length > 2) {
     const slugMatch = sorted.find((t) => {
@@ -56,7 +55,6 @@ function findMatchingCurioType(
     if (slugMatch) return slugMatch;
   }
 
-  // 4. Fallback on name match if query or title mentions the custom type name
   const nameMatch = sorted.find((t) => {
     const tName = t.name.toLowerCase();
     return normPath.includes(tName) || (normTitle && normTitle.includes(tName));
@@ -75,9 +73,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ suggestions: [] });
     }
 
-    // 1. Parallel lookup across existing saves, universal discovery, OpenStreetMap Nominatim, iTunes, and curio_types
     const [existingSavesRes, universalCandidatesRes, nominatimRes, itunesRes, curioTypesRes] = await Promise.allSettled([
-      // A. User's existing saves
       (async () => {
         try {
           const rows = await db
@@ -110,16 +106,12 @@ export async function GET(req: NextRequest) {
         }
       })(),
 
-      // B. Universal discovery (Wikidata + EN/ES Wikipedia)
       discoverUniversalEntities(query, { limit: 5, timeoutMs: 2000 }).catch(() => []),
 
-      // C. OpenStreetMap Nominatim for local venues, cafes, restaurants, bars, museums
       searchNominatimPlaces(query, { limit: 3, timeoutMs: 1800 }).catch(() => []),
 
-      // D. iTunes search for instant music album / song resolution
       fetchItunesMusicMetadata(query, { timeoutMs: 1500 }).catch(() => null),
 
-      // E. Active curio_types (system & user custom types)
       db
         .select({
           id: curioTypes.id,
@@ -136,7 +128,6 @@ export async function GET(req: NextRequest) {
     const suggestions: OmniboxSuggestion[] = [];
     const seenTitles = new Set<string>();
 
-    // 0. Detect quote pattern or quotation input
     const parsedQuoteQuery = parseQuoteInput(query);
     const hasQuoteChar = query.includes('"') || query.includes('“') || query.includes('”') || query.toLowerCase().startsWith("quote:");
     const activeQuoteType = activeCurioTypes.find((t) => t.typePath.toLowerCase() === "/quote");
@@ -148,6 +139,8 @@ export async function GET(req: NextRequest) {
       suggestions.push({
         title: `"${qText}"`,
         subtitle: qAuthor ? `Quote • ${qAuthor}` : "Save as Quote",
+        creator: qAuthor || null,
+        year: null,
         typePath: "/quote",
         badgeLabel: "QUOTE",
         heroImageUrl: null,
@@ -159,7 +152,6 @@ export async function GET(req: NextRequest) {
       seenTitles.add(`"${qText}"`.toLowerCase());
     }
 
-    // Add existing user saves first
     if (existingSavesRes.status === "fulfilled" && existingSavesRes.value) {
       for (const save of existingSavesRes.value) {
         if (!save.title) continue;
@@ -180,6 +172,8 @@ export async function GET(req: NextRequest) {
         suggestions.push({
           title: save.title,
           subtitle: save.creator ? `In your saves • ${save.creator}` : "In your saves",
+          creator: save.creator || null,
+          year: null,
           typePath,
           badgeLabel,
           heroImageUrl: save.heroImageUrl || null,
@@ -191,7 +185,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Helper to add Nominatim place suggestions
     const addNominatimSuggestions = () => {
       if (nominatimRes.status === "fulfilled" && nominatimRes.value) {
         for (const place of nominatimRes.value) {
@@ -213,6 +206,8 @@ export async function GET(req: NextRequest) {
           suggestions.push({
             title: place.title,
             subtitle: subtitleParts.join(" • ") || "Place & Venue",
+            creator: locationStr || null,
+            year: null,
             typePath: "/place",
             badgeLabel: "PLACE",
             heroImageUrl: null,
@@ -227,7 +222,6 @@ export async function GET(req: NextRequest) {
       }
     };
 
-    // Helper to add Universal Discovery candidates
     const addUniversalSuggestions = () => {
       if (universalCandidatesRes.status === "fulfilled" && universalCandidatesRes.value) {
         for (const cand of universalCandidatesRes.value) {
@@ -244,6 +238,9 @@ export async function GET(req: NextRequest) {
           suggestions.push({
             title: cand.title,
             subtitle: subtitleParts.join(" • ") || cand.snippet,
+            creator: cand.creator || null,
+            year: cand.year || null,
+            conceptUri: cand.conceptUri || null,
             typePath: cand.typePath,
             badgeLabel: cand.badgeLabel,
             heroImageUrl: cand.thumbnailUrl || null,
@@ -258,7 +255,6 @@ export async function GET(req: NextRequest) {
       }
     };
 
-    // If query contains venue keywords, prioritize Nominatim place search
     const isPlaceQuery = /\b(?:cafe|cafeteria|bar|restaurant|restaurante|pub|bistro|bakery|pasteleria|hotel|hostel|museum|museo|gallery|galeria|piazza|plaza|street|carrer|calle|avenida|brutal|federal|dishoom)\b/i.test(query);
 
     if (isPlaceQuery) {
@@ -269,7 +265,6 @@ export async function GET(req: NextRequest) {
       addNominatimSuggestions();
     }
 
-    // 3. Add iTunes metadata if it's music and not already covered by universal discovery
     if (suggestions.length < 6 && itunesRes.status === "fulfilled" && itunesRes.value) {
       const it = itunesRes.value;
       if (it.title) {
@@ -280,6 +275,8 @@ export async function GET(req: NextRequest) {
           suggestions.push({
             title: it.title,
             subtitle: [it.artist, it.releaseYear].filter(Boolean).join(" • "),
+            creator: it.artist || null,
+            year: it.releaseYear || null,
             typePath: isAlbum ? "/media/music/album" : "/media/music/song",
             badgeLabel: isAlbum ? "ALBUM" : "SONG",
             heroImageUrl: it.coverUrl || null,
@@ -292,7 +289,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Match all suggestions against active curio_types (especially user custom types)
     for (const sug of suggestions) {
       const matched = findMatchingCurioType(sug.typePath, sug.title, activeCurioTypes);
       if (matched) {

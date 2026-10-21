@@ -94,6 +94,9 @@ interface UndoState {
 export interface OmniboxSuggestion {
   title: string;
   subtitle: string;
+  creator?: string | null;
+  year?: number | null;
+  conceptUri?: string | null;
   typePath: string;
   badgeLabel: string;
   heroImageUrl: string | null;
@@ -153,12 +156,14 @@ export function Omnibox({
             const formData = new FormData();
             formData.append("title", "Pasted Image");
             formData.append("image", file);
-            const res = await fetch("/api/v1/share-target", {
+            const res = await apiFetch("/api/v1/share-target", {
               method: "POST",
+              headers: { Accept: "application/json", "X-Requested-With": "Omnibox" },
               body: formData,
             });
             if (res.ok) {
-              onCaptured?.({ status: "created", isOptimistic: false });
+              const data = await res.json().catch(() => ({ status: "created", isOptimistic: false }));
+              onCaptured?.(data);
             }
           } catch (err) {
             console.error("Paste upload failed:", err);

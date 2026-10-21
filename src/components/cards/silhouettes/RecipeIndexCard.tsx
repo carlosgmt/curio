@@ -169,15 +169,13 @@ export function RecipeIndexCard({
         </div>
 
         {/* Disambiguation Bar */}
-        {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-          <div className="pt-3">
+        <div className="pt-3">
             <DisambiguationBar
               saveId={save.id}
-              candidates={save.candidateFallbacks}
+              candidates={save.candidateFallbacks || []}
               onSwapped={() => onSwapped?.(save)}
             />
           </div>
-        )}
 
         {/* Action Footer */}
         <CardFooterWaterfall

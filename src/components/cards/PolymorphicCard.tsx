@@ -203,6 +203,7 @@ export function PolymorphicCard({
       typePath === "/link" ||
       typePath.startsWith("/link") ||
       typePath === "/article/web" ||
+      typePath === "/media/video" ||
       coreType === "LINK" ||
       tags.includes("link") ||
       tags.includes("bookmark")
@@ -262,8 +263,10 @@ export function PolymorphicCard({
     // 0e. Photo / Full-bleed Photograph (/media/image, /photo)
     if (
       typePath === "/media/image" ||
+      typePath === "/media/photo" ||
       typePath === "/photo" ||
       typePath.startsWith("/media/image") ||
+      typePath.startsWith("/media/photo") ||
       tags.includes("photo") ||
       tags.includes("photography")
     ) {

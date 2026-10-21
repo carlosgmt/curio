@@ -61,6 +61,9 @@ export const users = sqliteTable("users", {
     mapsListEnabled?: boolean;
     ytMusicEnabled?: boolean;
     googleTvEnabled?: boolean;
+    letterboxdUsername?: string;
+    goodreadsUserId?: string;
+    lastFeedSyncAt?: string;
   }>(),
   tasteVector: float32Array("taste_vector", { dimensions: 768 }),
   createdAt: text("created_at")

@@ -1,5 +1,5 @@
-import { db, globalEntities, userSaves, sqlite } from "@/db";
-import { eq, or } from "drizzle-orm";
+import { db, globalEntities, userSaves } from "@/db";
+import { eq, and } from "drizzle-orm";
 import { generateEntityKey, getOrCreateDefaultUser } from "../ingest/cascade";
 import type { ImportedFilm } from "./letterboxd";
 import type { ImportedBook } from "./goodreads";
@@ -16,7 +16,7 @@ export type AnyImportedItem =
   | ImportedPlace;
 
 /**
- * Deterministically hydrates films via TMDB API or Wikipedia Summary REST API.
+ * Deterministically hydrates films via TMDB API, iTunes Movie API, or Wikipedia Summary REST API.
  * Unit Economics: $0.00 (zero LLM / SERP calls).
  */
 async function hydrateFilmDeterministic(
@@ -28,47 +28,14 @@ async function hydrateFilmDeterministic(
   director?: string;
   coreStructuredData: Record<string, any>;
 }> {
-  const tmdbKey = process.env.TMDB_API_KEY;
-  if (tmdbKey) {
-    try {
-      const yearQuery = releaseYear ? `&year=${releaseYear}` : "";
-      const tmdbUrl = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbKey}&query=${encodeURIComponent(
-        title
-      )}${yearQuery}`;
-      const res = await fetch(tmdbUrl, { signal: AbortSignal.timeout(4000) });
-      if (res.ok) {
-        const data = (await res.json()) as any;
-        const first = data.results?.[0];
-        if (first) {
-          const posterUrl = first.poster_path
-            ? `https://image.tmdb.org/t/p/w500${first.poster_path}`
-            : undefined;
-          return {
-            posterUrl,
-            summary: first.overview,
-            coreStructuredData: {
-              title: first.title || title,
-              releaseYear: first.release_date
-                ? parseInt(first.release_date.slice(0, 4), 10)
-                : releaseYear,
-              tmdbId: first.id,
-              voteAverage: first.vote_average,
-            },
-          };
-        }
-      }
-    } catch {}
-  }
-
-  // Fallback to Wikipedia Page Summary REST API
   try {
-    const wikiFilm = await resolveFilm(title);
-    if (wikiFilm) {
+    const film = await resolveFilm(title, { yearHint: releaseYear });
+    if (film) {
       return {
-        posterUrl: wikiFilm.posterUrl,
-        summary: wikiFilm.summary,
-        director: wikiFilm.director,
-        coreStructuredData: wikiFilm.coreStructuredData,
+        posterUrl: film.posterUrl,
+        summary: film.summary,
+        director: film.director,
+        coreStructuredData: film.coreStructuredData,
       };
     }
   } catch {}
@@ -92,9 +59,8 @@ async function hydrateBookDeterministic(
   author?: string;
   coreStructuredData: Record<string, any>;
 }> {
-  const query = isbn ? `isbn:${isbn}` : `${title} ${author || ""}`.trim();
   try {
-    const resolved = await resolveBook(query);
+    const resolved = await resolveBook(title, { authorHint: author, isbnHint: isbn });
     if (resolved) {
       return {
         coverUrl: resolved.coverUrl,
@@ -124,7 +90,6 @@ export async function ingestImportedItems(
     try {
       // Step 0: Handle Google Keep Private Memos (Strict Privacy Guarantee)
       if ("isPrivateMemo" in item && item.isPrivateMemo) {
-        // Zero outbound network calls. Stored strictly in user_saves.
         await db.insert(userSaves).values({
           userId: targetUserId,
           entityId: null,
@@ -160,7 +125,6 @@ export async function ingestImportedItems(
 
       const { urlHash, entityKey } = generateEntityKey(canonicalUrl, item.title);
 
-      // Search existing canonical entity in global_entities
       let existingEntity: any = null;
       if (item.canonicalExternalId) {
         const [byExtId] = await db
@@ -183,11 +147,9 @@ export async function ingestImportedItems(
       let entityId: string;
 
       if (existingEntity) {
-        // Cache Hit! Reuse existing canonical entity
         entityId = existingEntity.id;
         cacheHitCount++;
       } else {
-        // Step 2 & 3: Deterministic Hydration for new canonical entities ($0.00 cost)
         let heroImageUrl: string | undefined = undefined;
         let summary: string | undefined = undefined;
         let brandOrCreator: string | undefined = undefined;
@@ -245,7 +207,7 @@ export async function ingestImportedItems(
         entityId = createdEntity.id;
       }
 
-      // Step 4: Attach new user save with personal metadata
+      // Step 4: Idempotent User Save Upsert on (userId, entityId)
       let personalNotes: string | undefined = undefined;
       let userCustomValues: Record<string, any> = {};
       let autoTags: string[] = [item.coreType.toLowerCase()];
@@ -274,17 +236,36 @@ export async function ingestImportedItems(
           ? item.enrichmentStatus
           : "ENRICHED";
 
-      await db.insert(userSaves).values({
-        userId: targetUserId,
-        entityId,
-        typePath: item.typePath,
-        isPrivateMemo: false,
-        personalNotes: personalNotes || null,
-        userCustomValues,
-        autoTags,
-        enrichmentStatus,
-        visibility: "PRIVATE",
-      });
+      const [existingSave] = await db
+        .select()
+        .from(userSaves)
+        .where(and(eq(userSaves.userId, targetUserId), eq(userSaves.entityId, entityId)))
+        .limit(1);
+
+      if (existingSave) {
+        await db
+          .update(userSaves)
+          .set({
+            userCustomValues: {
+              ...((existingSave.userCustomValues as Record<string, any>) || {}),
+              ...userCustomValues,
+            },
+            personalNotes: personalNotes || existingSave.personalNotes,
+          })
+          .where(eq(userSaves.id, existingSave.id));
+      } else {
+        await db.insert(userSaves).values({
+          userId: targetUserId,
+          entityId,
+          typePath: item.typePath,
+          isPrivateMemo: false,
+          personalNotes: personalNotes || null,
+          userCustomValues,
+          autoTags,
+          enrichmentStatus,
+          visibility: "PRIVATE",
+        });
+      }
 
       insertedCount++;
     } catch (err: any) {

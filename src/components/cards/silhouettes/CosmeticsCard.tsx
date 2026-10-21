@@ -99,13 +99,11 @@ export function CosmeticsCard({
       </div>
 
       {/* Disambiguation Swapper Bar */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <DisambiguationBar
+      <DisambiguationBar
           saveId={save.id}
-          candidates={save.candidateFallbacks}
+          candidates={save.candidateFallbacks || []}
           onSwapped={onSwapped}
         />
-      )}
 
       {/* Footer Waterfall */}
       <CardFooterWaterfall

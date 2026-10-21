@@ -178,6 +178,10 @@ export function CardLightboxModal({
   onListUpdated,
 }: CardLightboxModalProps) {
   const [title, setTitle] = useState("");
+  const [brandOrCreator, setBrandOrCreator] = useState("");
+  const [summary, setSummary] = useState("");
+  const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [personalNotes, setPersonalNotes] = useState("");
   const [activeArchetype, setActiveArchetype] = useState<string>("book");
   const [isEditingType, setIsEditingType] = useState(false);
@@ -259,6 +263,10 @@ export function CardLightboxModal({
     if (!card) return;
 
     setTitle(card.save.privateTitle || card.entity?.title || "");
+    setBrandOrCreator(card.entity?.brandOrCreator || "");
+    setSummary(card.entity?.summary || "");
+    setHeroImageUrl(card.entity?.heroImageUrl || "");
+    setIsEditingDetails(false);
     setPersonalNotes(card.save.personalNotes || "");
     setIsEditingType(false);
     setActiveArchetype(detectInitialArchetypeId(card));
@@ -304,6 +312,10 @@ export function CardLightboxModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           privateTitle: title.trim() || null,
+          title: title.trim() || null,
+          brandOrCreator: brandOrCreator.trim() || null,
+          summary: summary.trim() || null,
+          heroImageUrl: heroImageUrl.trim() || null,
           personalNotes: personalNotes.trim() || null,
           typePath: selectedTypePath,
         }),
@@ -311,7 +323,10 @@ export function CardLightboxModal({
 
       if (res.ok) {
         const updated = await res.json();
-        onCardUpdated?.(updated.save);
+        if (card.entity && updated.entity) {
+          Object.assign(card.entity, updated.entity);
+        }
+        onCardUpdated?.({ ...updated.save, entity: updated.entity });
         onClose();
       }
     } catch (err) {
@@ -539,11 +554,24 @@ export function CardLightboxModal({
 
   const rightPane = (
     <div className="md:col-span-6 flex flex-col p-4 sm:p-6 md:overflow-y-auto space-y-6">
-      {/* Editable Title */}
-      <div>
-        <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
-          Curator Title
-        </label>
+      {/* Editable Title & Inline Entity Metadata Editor */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold">
+            Curator Title
+          </label>
+          {!card.save.isPrivateMemo && (
+            <button
+              type="button"
+              data-testid="edit-card-details-toggle"
+              onClick={() => setIsEditingDetails((prev) => !prev)}
+              className="inline-flex items-center gap-1 text-[11px] font-mono text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 transition cursor-pointer"
+            >
+              <Pencil className="w-3 h-3" />
+              <span>{isEditingDetails ? "Hide Details" : "Edit Card Details"}</span>
+            </button>
+          )}
+        </div>
         <input
           type="text"
           value={title}
@@ -551,6 +579,46 @@ export function CardLightboxModal({
           placeholder="Give this curation a personal title..."
           className="w-full text-xl sm:text-2xl font-serif font-bold text-neutral-900 dark:text-neutral-50 bg-transparent border-b border-neutral-200 dark:border-neutral-800 focus:border-neutral-400 focus:outline-none pb-1"
         />
+        {isEditingDetails && (
+          <div className="grid grid-cols-1 gap-2.5 p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 text-xs">
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Creator / Director / Author / Artist / Location
+              </label>
+              <input
+                type="text"
+                value={brandOrCreator}
+                onChange={(e) => setBrandOrCreator(e.target.value)}
+                placeholder="e.g. Alejandro G. Iñárritu, Enrique Morente..."
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Cover / Poster Image URL
+              </label>
+              <input
+                type="text"
+                value={heroImageUrl}
+                onChange={(e) => setHeroImageUrl(e.target.value)}
+                placeholder="https://..."
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 font-mono text-[11px] focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Summary / Description
+              </label>
+              <textarea
+                rows={2}
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                placeholder="Brief editorial summary..."
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Editable Personal Notes */}

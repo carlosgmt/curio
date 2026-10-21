@@ -1,7 +1,7 @@
 import { db, userSaves, globalEntities } from "@/db";
 import { eq } from "drizzle-orm";
 import { resolveOrCreateCanonicalEntity } from "./resolution";
-import { enrichCaptureInput } from "../enrichment/dispatcher";
+import { enrichCaptureInput, type TargetCandidateContext } from "../enrichment/dispatcher";
 import { mapDescriptionToOntology } from "../enrichment/universalDiscovery";
 
 export interface CandidateFallback {
@@ -11,18 +11,20 @@ export interface CandidateFallback {
   coreType: string;
   typePath?: string;
   badgeLabel?: string;
+  creator?: string | null;
+  year?: number | null;
+  heroImageUrl?: string | null;
 }
 
 /**
  * FR-2.3: 1-Tap Candidate Disambiguation Swapper
- * When the user selects a runner-up candidate from candidate_fallbacks,
- * this function hydrates specialist metadata for the newly selected candidate's typePath
- * and atomically updates the user_save and global_entities records.
+ * Supports both pre-computed candidate_fallbacks and live search selections from "Wrong entity?".
  */
 export async function swapCandidateFallback(
   saveId: string,
   targetUrl: string,
-  newEntityId?: string
+  newEntityId?: string,
+  targetCandidate?: TargetCandidateContext
 ) {
   const [save] = await db.select().from(userSaves).where(eq(userSaves.id, saveId)).limit(1);
   if (!save) {
@@ -32,15 +34,37 @@ export async function swapCandidateFallback(
   const fallbacks = (save.candidateFallbacks || []) as CandidateFallback[];
   const selectedIndex = fallbacks.findIndex((c) => c.url === targetUrl);
 
-  if (selectedIndex === -1 && !newEntityId) {
+  if (selectedIndex === -1 && !newEntityId && !targetCandidate) {
     throw new Error(`Candidate with url ${targetUrl} not found in fallbacks`);
   }
 
-  const selectedCandidate = selectedIndex !== -1 ? fallbacks[selectedIndex] : undefined;
+  const selectedCandidate: CandidateFallback | undefined =
+    selectedIndex !== -1
+      ? fallbacks[selectedIndex]
+      : targetCandidate
+      ? {
+          title: targetCandidate.title,
+          url: targetCandidate.canonicalUrl || targetUrl,
+          snippet: targetCandidate.subtitle || "",
+          coreType: targetCandidate.typePath?.includes("/book")
+            ? "BOOK"
+            : targetCandidate.typePath?.includes("/film") ||
+              targetCandidate.typePath?.includes("/music")
+            ? "MEDIA"
+            : targetCandidate.typePath?.includes("/place")
+            ? "PLACE"
+            : "PRODUCT",
+          typePath: targetCandidate.typePath,
+          badgeLabel: targetCandidate.badgeLabel,
+          creator: targetCandidate.creator,
+          year: targetCandidate.year,
+          heroImageUrl: targetCandidate.heroImageUrl,
+        }
+      : undefined;
+
   const remainingFallbacks =
     selectedIndex !== -1 ? fallbacks.filter((_, idx) => idx !== selectedIndex) : fallbacks;
 
-  // Push existing entity into fallbacks if available
   let updatedFallbacks = remainingFallbacks;
   if (save.entityId) {
     const [existingEntity] = await db
@@ -73,25 +97,43 @@ export async function swapCandidateFallback(
       selectedCandidate.typePath ||
       (selectedCandidate.coreType.startsWith("/")
         ? selectedCandidate.coreType
+        : selectedCandidate.coreType === "BOOK"
+        ? "/product/book"
+        : selectedCandidate.coreType === "MEDIA"
+        ? "/media/film"
         : `/${selectedCandidate.coreType.toLowerCase()}`);
 
-    // Clean title (e.g. remove trailing year like "Norwegian Wood (1965)")
+    const yearMatch = selectedCandidate.title.match(/\((19\d\d|20[0-2]\d)\)$/);
+    const inlineYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
     const cleanTitle = selectedCandidate.title
       .replace(/\s*\((?:19\d\d|20\d\d)\)$/, "")
       .trim();
 
-    // Trigger full specialist hydration for the target typePath
+    const candidateContext: TargetCandidateContext = {
+      title: cleanTitle,
+      subtitle: selectedCandidate.snippet,
+      creator: selectedCandidate.creator ?? null,
+      year: selectedCandidate.year ?? inlineYear,
+      typePath: rawTypePath,
+      badgeLabel: selectedCandidate.badgeLabel,
+      heroImageUrl: selectedCandidate.heroImageUrl ?? null,
+      canonicalUrl: selectedCandidate.url,
+    };
+
     const specialistEnrichment = await enrichCaptureInput(cleanTitle, {
       forcedTypePath: rawTypePath,
+      targetCandidate: candidateContext,
     }).catch(() => null);
 
-    const canonicalUrl = selectedCandidate.url.includes("wikidata.org")
-      ? specialistEnrichment?.canonicalUrl || selectedCandidate.url
-      : selectedCandidate.url;
-    const finalTitle = selectedCandidate.title;
+    const canonicalUrl =
+      selectedCandidate.url.includes("wikidata.org") ||
+      selectedCandidate.url.includes("curio.local/suggest") ||
+      !selectedCandidate.url
+        ? specialistEnrichment?.canonicalUrl || selectedCandidate.url
+        : selectedCandidate.url;
+    const finalTitle = specialistEnrichment?.title || selectedCandidate.title;
     targetTypePath = specialistEnrichment?.typePath || rawTypePath;
 
-    // Check if an entity with this canonicalUrl or title+typePath already exists
     const [existing] = await db
       .select()
       .from(globalEntities)
@@ -102,7 +144,6 @@ export async function swapCandidateFallback(
       targetEntityId = existing.id;
       targetTypePath = existing.typePath || targetTypePath;
 
-      // Augment existing entity if it was a stub
       if (
         (!existing.heroImageUrl && specialistEnrichment?.heroImageUrl) ||
         (!existing.brandOrCreator && specialistEnrichment?.brandOrCreator)
@@ -122,17 +163,32 @@ export async function swapCandidateFallback(
     } else {
       const res = await resolveOrCreateCanonicalEntity({
         url: canonicalUrl,
-        title: finalTitle,
+        title: selectedCandidate.title || finalTitle,
+        brandOrCreator: specialistEnrichment?.brandOrCreator || selectedCandidate.creator || undefined,
         typePath: targetTypePath,
         structuredAttributes: {
           summary: specialistEnrichment?.summary || selectedCandidate.snippet,
-          heroImageUrl: specialistEnrichment?.heroImageUrl || null,
-          brandOrCreator: specialistEnrichment?.brandOrCreator || null,
+          heroImageUrl:
+            specialistEnrichment?.heroImageUrl || selectedCandidate.heroImageUrl || null,
+          brandOrCreator:
+            specialistEnrichment?.brandOrCreator || selectedCandidate.creator || null,
           priceCents: specialistEnrichment?.priceCents ?? null,
           currency: specialistEnrichment?.currency || "USD",
           ...(specialistEnrichment?.coreStructuredData || {}),
         },
       });
+
+      if (specialistEnrichment?.heroImageUrl || selectedCandidate.heroImageUrl) {
+        await db
+          .update(globalEntities)
+          .set({
+            heroImageUrl:
+              specialistEnrichment?.heroImageUrl || selectedCandidate.heroImageUrl || null,
+            summary: specialistEnrichment?.summary || selectedCandidate.snippet || null,
+          })
+          .where(eq(globalEntities.id, res.entity.id));
+      }
+
       targetEntityId = res.entity.id;
       targetTypePath = res.entity.typePath || targetTypePath;
     }

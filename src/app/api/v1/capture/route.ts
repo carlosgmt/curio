@@ -17,6 +17,9 @@ const captureSchema = z.object({
     .object({
       title: z.string(),
       subtitle: z.string().optional(),
+      creator: z.string().nullable().optional(),
+      year: z.number().nullable().optional(),
+      conceptUri: z.string().nullable().optional(),
       typePath: z.string().optional(),
       badgeLabel: z.string().optional(),
       heroImageUrl: z.string().nullable().optional(),

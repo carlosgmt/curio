@@ -57,15 +57,13 @@ export function ArtFrameCard({
       </div>
 
       {/* Disambiguation Fallback */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <div className="px-4 pt-2 bg-neutral-950">
+      <div className="px-4 pt-2 bg-neutral-950">
           <DisambiguationBar
             saveId={save.id}
-            candidates={save.candidateFallbacks}
+            candidates={save.candidateFallbacks || []}
             onSwapped={() => onSwapped?.(save)}
           />
         </div>
-      )}
 
       {/* Action Footer */}
       <div className="p-3 bg-neutral-950 border-t border-neutral-800">

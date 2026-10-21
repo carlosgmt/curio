@@ -7,8 +7,20 @@ import { eq } from "drizzle-orm";
 
 const disambiguateSchema = z.object({
   saveId: z.string().uuid(),
-  targetUrl: z.string().url(),
+  targetUrl: z.string().min(1),
   newEntityId: z.string().uuid().optional(),
+  targetCandidate: z
+    .object({
+      title: z.string(),
+      subtitle: z.string().optional(),
+      creator: z.string().nullable().optional(),
+      year: z.number().nullable().optional(),
+      typePath: z.string().optional(),
+      badgeLabel: z.string().optional(),
+      heroImageUrl: z.string().nullable().optional(),
+      canonicalUrl: z.string().optional(),
+    })
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -38,7 +50,8 @@ export async function POST(req: NextRequest) {
     const result = await swapCandidateFallback(
       parsed.data.saveId,
       parsed.data.targetUrl,
-      parsed.data.newEntityId
+      parsed.data.newEntityId,
+      parsed.data.targetCandidate
     );
 
     return NextResponse.json(result);

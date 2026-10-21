@@ -179,15 +179,13 @@ export function MapPassCard({
         <div className="my-4 border-b border-dashed border-neutral-300 dark:border-neutral-700" />
 
         {/* Disambiguation Bar */}
-        {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-          <div className="mb-2">
+        <div className="mb-2">
             <DisambiguationBar
               saveId={save.id}
-              candidates={save.candidateFallbacks}
+              candidates={save.candidateFallbacks || []}
               onSwapped={() => onSwapped?.(save)}
             />
           </div>
-        )}
 
         {/* Action Footer */}
         <CardFooterWaterfall

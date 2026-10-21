@@ -11,7 +11,7 @@ import {
   type GlobalEntity,
   type UserSave,
 } from "@/db";
-import { eq, or, and, isNull } from "drizzle-orm";
+import { eq, or, and, isNull, desc, asc } from "drizzle-orm";
 import { classifyPrivacyAndModality, type PrivacyClassificationResult } from "../router/privacy";
 import { classifyOmniboxIntent } from "../router/intent";
 import { classifyEntityType } from "../curio-learns/ontology";
@@ -27,6 +27,7 @@ import {
   lookupLocalEntityCache,
   lookupByCanonicalIdentity,
   recordAliasOnEntity,
+  isUnenrichedStubEntity,
 } from "./cacheLookup";
 import { computeIdentityFingerprint } from "./resolution";
 
@@ -55,7 +56,11 @@ export function generateEntityKey(canonicalUrl: string, slug?: string): { urlHas
 }
 
 export async function getOrCreateDefaultUser(): Promise<User> {
-  const [existing] = await db.select().from(users).limit(1);
+  const [existing] = await db
+    .select()
+    .from(users)
+    .orderBy(desc(users.isAdmin), asc(users.createdAt))
+    .limit(1);
   if (existing) return existing;
   const [created] = await db
     .insert(users)
@@ -80,7 +85,6 @@ async function discoverCandidates(
 ): Promise<{ primary: CandidateFallback; runnerUps: CandidateFallback[] }> {
   const trimmed = query.trim();
 
-  // If Tavily API Key is available and network is allowed, use live search
   if (process.env.TAVILY_API_KEY && !options?.skipNetwork) {
     try {
       const res = await fetch("https://api.tavily.com/search", {
@@ -128,7 +132,6 @@ async function discoverCandidates(
     };
   }
 
-  // Dynamic candidate synthesis based on query and detected coreType
   const coreType = detectedType || "PRODUCT";
   const encoded = encodeURIComponent(trimmed);
   const title = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
@@ -229,10 +232,13 @@ export async function ingestCapture(input: string, user?: User | { id: string })
 export interface CandidateTargetPayload {
   title: string;
   subtitle?: string;
+  creator?: string | null;
+  year?: number | null;
   typePath?: string;
   badgeLabel?: string;
   heroImageUrl?: string | null;
   canonicalUrl?: string;
+  conceptUri?: string | null;
   curioTypeId?: string | null;
 }
 
@@ -292,89 +298,89 @@ export async function executeIngestionCascade(params: {
       skipLocalLlm: params.skipLocalLlm,
     });
 
-  if (intentResult.intent === "EDIT_SAVE" && intentResult.targetSave) {
-    const [existingSave] = await db
-      .select()
-      .from(userSaves)
-      .where(eq(userSaves.id, intentResult.targetSave.saveId))
-      .limit(1);
+    if (intentResult.intent === "EDIT_SAVE" && intentResult.targetSave) {
+      const [existingSave] = await db
+        .select()
+        .from(userSaves)
+        .where(eq(userSaves.id, intentResult.targetSave.saveId))
+        .limit(1);
 
-    if (existingSave) {
-      let linkedEntity: GlobalEntity | null = null;
-      if (existingSave.entityId) {
-        const [ent] = await db
-          .select()
-          .from(globalEntities)
-          .where(eq(globalEntities.id, existingSave.entityId))
-          .limit(1);
-        linkedEntity = ent || null;
-      }
+      if (existingSave) {
+        let linkedEntity: GlobalEntity | null = null;
+        if (existingSave.entityId) {
+          const [ent] = await db
+            .select()
+            .from(globalEntities)
+            .where(eq(globalEntities.id, existingSave.entityId))
+            .limit(1);
+          linkedEntity = ent || null;
+        }
 
-      let updatedSaveRecord = existingSave;
+        let updatedSaveRecord = existingSave;
 
-      if (intentResult.action === "RATING" && intentResult.editDetails?.rating !== undefined) {
-        const currentVals = (existingSave.userCustomValues as Record<string, unknown>) || {};
-        const details = await updateSaveDetails(existingSave.id, {
-          userCustomValues: {
-            ...currentVals,
-            rating: intentResult.editDetails.rating,
-          },
-        });
-        if (details?.save) updatedSaveRecord = details.save;
-      } else if (intentResult.action === "NOTE") {
-        const noteToAdd = intentResult.editDetails?.note || input;
-        const currentNotes = existingSave.personalNotes;
-        const mergedNotes = currentNotes ? `${currentNotes}\n${noteToAdd}` : noteToAdd;
-        const details = await updateSaveDetails(existingSave.id, {
-          personalNotes: mergedNotes,
-        });
-        if (details?.save) updatedSaveRecord = details.save;
-      } else if (intentResult.action === "STATUS") {
-        const currentVals = (existingSave.userCustomValues as Record<string, unknown>) || {};
-        const statusVal = intentResult.editDetails?.status || "finished";
-        const details = await updateSaveDetails(existingSave.id, {
-          userCustomValues: {
-            ...currentVals,
-            status: statusVal,
-          },
-          personalNotes: existingSave.personalNotes
-            ? `${existingSave.personalNotes}\n${input}`
-            : input,
-        });
-        if (details?.save) updatedSaveRecord = details.save;
-      } else if (intentResult.action === "LIST_MOVE" && intentResult.editDetails?.targetList) {
-        const listName = intentResult.editDetails.targetList;
-        const [matchedList] = await db
-          .select()
-          .from(smartLists)
-          .where(
-            and(
-              eq(smartLists.userId, user.id),
-              or(
-                eq(smartLists.title, listName),
-                eq(smartLists.slug, listName.toLowerCase().replace(/[^a-z0-9_-]/g, "-"))
+        if (intentResult.action === "RATING" && intentResult.editDetails?.rating !== undefined) {
+          const currentVals = (existingSave.userCustomValues as Record<string, unknown>) || {};
+          const details = await updateSaveDetails(existingSave.id, {
+            userCustomValues: {
+              ...currentVals,
+              rating: intentResult.editDetails.rating,
+            },
+          });
+          if (details?.save) updatedSaveRecord = details.save;
+        } else if (intentResult.action === "NOTE") {
+          const noteToAdd = intentResult.editDetails?.note || input;
+          const currentNotes = existingSave.personalNotes;
+          const mergedNotes = currentNotes ? `${currentNotes}\n${noteToAdd}` : noteToAdd;
+          const details = await updateSaveDetails(existingSave.id, {
+            personalNotes: mergedNotes,
+          });
+          if (details?.save) updatedSaveRecord = details.save;
+        } else if (intentResult.action === "STATUS") {
+          const currentVals = (existingSave.userCustomValues as Record<string, unknown>) || {};
+          const statusVal = intentResult.editDetails?.status || "finished";
+          const details = await updateSaveDetails(existingSave.id, {
+            userCustomValues: {
+              ...currentVals,
+              status: statusVal,
+            },
+            personalNotes: existingSave.personalNotes
+              ? `${existingSave.personalNotes}\n${input}`
+              : input,
+          });
+          if (details?.save) updatedSaveRecord = details.save;
+        } else if (intentResult.action === "LIST_MOVE" && intentResult.editDetails?.targetList) {
+          const listName = intentResult.editDetails.targetList;
+          const [matchedList] = await db
+            .select()
+            .from(smartLists)
+            .where(
+              and(
+                eq(smartLists.userId, user.id),
+                or(
+                  eq(smartLists.title, listName),
+                  eq(smartLists.slug, listName.toLowerCase().replace(/[^a-z0-9_-]/g, "-"))
+                )
               )
             )
-          )
-          .limit(1);
+            .limit(1);
 
-        if (matchedList) {
-          await addItemToList(matchedList.id, existingSave.id);
+          if (matchedList) {
+            await addItemToList(matchedList.id, existingSave.id);
+          }
         }
-      }
 
-      return {
-        status: "edited",
-        action: "edited",
-        is_private_memo: existingSave.isPrivateMemo,
-        entity_id: existingSave.entityId,
-        save: updatedSaveRecord,
-        entity: linkedEntity,
-        editDetails: intentResult.editDetails,
-      };
+        return {
+          status: "edited",
+          action: "edited",
+          is_private_memo: existingSave.isPrivateMemo,
+          entity_id: existingSave.entityId,
+          save: updatedSaveRecord,
+          entity: linkedEntity,
+          editDetails: intentResult.editDetails,
+        };
+      }
     }
   }
-}
 
   const effectiveTitle = params.targetCandidate?.title?.trim() || input.trim();
   let effectiveForcedType = params.forcedTypePath || params.targetCandidate?.typePath;
@@ -480,9 +486,10 @@ export async function executeIngestionCascade(params: {
   const localCacheHit = await lookupLocalEntityCache(query, {
     forcedTypePath: effectiveForcedType || targetType?.typePath,
     detectedType: privacy.detectedType,
+    targetCandidate: params.targetCandidate,
   });
 
-  if (localCacheHit.primary) {
+  if (localCacheHit.primary && !isUnenrichedStubEntity(localCacheHit.primary)) {
     const hitEntity = localCacheHit.primary;
     const skuCheck = detectAndParseCommercialSku(query);
     if (
@@ -568,6 +575,8 @@ export async function executeIngestionCascade(params: {
   try {
     enrichment = await enrichCaptureInput(query, {
       detectedType: privacy.detectedType,
+      forcedTypePath: effectiveForcedType,
+      targetCandidate: params.targetCandidate,
       fetchFn: params.fetchFn,
     });
   } catch {
@@ -634,7 +643,6 @@ export async function executeIngestionCascade(params: {
   } else if (params.customSchemaId && targetPath) {
     finalTypePath = targetPath;
   } else if (enrichPath && targetPath) {
-    // If one is a more specific child of the other (e.g. /product/watch vs /product), pick the deeper path
     finalTypePath =
       enrichPath.startsWith(targetPath + "/") || enrichPath.split("/").length > targetPath.split("/").length
         ? enrichPath
@@ -647,7 +655,6 @@ export async function executeIngestionCascade(params: {
       (finalCoreType === "BOOK" ? "/product/book" : "/product/generic");
   }
 
-  // Ensure targetType matches finalTypePath if a curio_types record exists for finalTypePath
   if (!targetType || targetType.typePath !== finalTypePath) {
     const [exactType] = await db
       .select()
@@ -661,7 +668,7 @@ export async function executeIngestionCascade(params: {
 
   const finalTitle = parsedQuote && finalTypePath === "/quote"
     ? parsedQuote.text
-    : (params.targetCandidate?.title || enrichment?.title || fallbackPrimary.title);
+    : (enrichment?.title || params.targetCandidate?.title || fallbackPrimary.title);
   let finalCanonicalUrl = enrichment?.canonicalUrl;
   if (!finalCanonicalUrl) {
     if (parsedQuote && finalTypePath === "/quote") {
@@ -673,12 +680,12 @@ export async function executeIngestionCascade(params: {
     }
   }
 
-  const finalHeroImage = params.targetCandidate?.heroImageUrl || enrichment?.heroImageUrl || null;
+  const finalHeroImage = enrichment?.heroImageUrl || params.targetCandidate?.heroImageUrl || null;
   const finalPriceCents = enrichment?.priceCents ?? null;
   const finalExternalId = enrichment?.canonicalExternalId || null;
   const finalCreator = parsedQuote && finalTypePath === "/quote"
     ? parsedQuote.author
-    : (enrichment?.brandOrCreator || null);
+    : (enrichment?.brandOrCreator || params.targetCandidate?.creator || null);
 
   // Schema-directed extraction
   const extractedCardData = extractStructuredCardData({
@@ -706,7 +713,6 @@ export async function executeIngestionCascade(params: {
     };
   }
 
-  // Compute canonical identity keys and deterministic identityFingerprint
   const { urlHash, entityKey } = generateEntityKey(finalCanonicalUrl, finalTitle);
   const identityFingerprint = computeIdentityFingerprint(
     finalTypePath,
@@ -719,10 +725,14 @@ export async function executeIngestionCascade(params: {
   );
 
   // =========================================================================
-  // LAYER 1.5: Canonical Identity Cache Check (with Distinguisher Guard)
+  // LAYER 1.5: Canonical Identity Cache Check (or Self-Heal Stub from Layer 0)
   // =========================================================================
-  let cachedEntity: GlobalEntity | null = null;
-  if (enrichment?.cachedEntityId) {
+  let cachedEntity: GlobalEntity | null =
+    localCacheHit.primary && isUnenrichedStubEntity(localCacheHit.primary)
+      ? localCacheHit.primary
+      : null;
+
+  if (!cachedEntity && enrichment?.cachedEntityId) {
     const [found] = await db
       .select()
       .from(globalEntities)
@@ -746,29 +756,39 @@ export async function executeIngestionCascade(params: {
 
   if (cachedEntity) {
     const save = db.transaction((tx) => {
-      // If cached entity was a generic product but live enrichment discovered a specific cultural type
       const currentExtended = (cachedEntity.extendedAttributes as Record<string, unknown>) || {};
       const mergedExtended = {
         ...currentExtended,
         ...extractedCardData.objectiveAttributes,
       };
+      const currentCoreData = (cachedEntity.coreStructuredData as Record<string, unknown>) || {};
+      const mergedCoreData = {
+        ...currentCoreData,
+        ...(enrichment?.coreStructuredData || {}),
+      };
+
+      const wasStub = isUnenrichedStubEntity(cachedEntity);
 
       if (
+        wasStub ||
         (cachedEntity.coreType === "PRODUCT" && finalCoreType !== "PRODUCT") ||
         ((cachedEntity.typePath === "/product/generic" || cachedEntity.typePath === "/product") &&
           finalTypePath !== "/product/generic" &&
           finalTypePath !== "/product") ||
+        (!cachedEntity.heroImageUrl && finalHeroImage) ||
         Object.keys(extractedCardData.objectiveAttributes).length > 0
       ) {
         tx.update(globalEntities)
           .set({
             coreType: finalCoreType,
             typePath: finalTypePath,
+            canonicalUrl: wasStub && finalCanonicalUrl ? finalCanonicalUrl : cachedEntity.canonicalUrl,
             brandOrCreator: finalCreator || cachedEntity.brandOrCreator,
             canonicalExternalId: finalExternalId || cachedEntity.canonicalExternalId,
             identityFingerprint: cachedEntity.identityFingerprint || identityFingerprint,
             heroImageUrl: finalHeroImage || cachedEntity.heroImageUrl,
             summary: finalSummary || cachedEntity.summary,
+            coreStructuredData: mergedCoreData,
             extendedAttributes: mergedExtended,
           })
           .where(eq(globalEntities.id, cachedEntity.id))
@@ -776,11 +796,12 @@ export async function executeIngestionCascade(params: {
 
         cachedEntity.coreType = finalCoreType;
         cachedEntity.typePath = finalTypePath;
+        cachedEntity.coreStructuredData = mergedCoreData;
         cachedEntity.extendedAttributes = mergedExtended;
+        if (finalHeroImage && !cachedEntity.heroImageUrl) cachedEntity.heroImageUrl = finalHeroImage;
         if (finalCreator) cachedEntity.brandOrCreator = finalCreator;
       }
 
-      // Cache HIT! Link save at $0.00 compute atomically
       const [insertedSave] = tx
         .insert(userSaves)
         .values({
@@ -971,7 +992,6 @@ export async function executeBackgroundEnrichment(
       .where(eq(userSaves.id, saveId))
       .returning();
 
-    // If ingestCaptureInput inserted a secondary save, remove it so saveId remains canonical
     if (res.save && res.save.id !== saveId) {
       await db.delete(userSaves).where(eq(userSaves.id, res.save.id));
     }

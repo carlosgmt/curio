@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { MapPin, Navigation, ExternalLink, Compass, Sparkles, Camera, Map } from "lucide-react";
+import { MapPin, Navigation, ExternalLink, Compass, Camera, Map, Globe } from "lucide-react";
 import { CardFooterWaterfall } from "../CardFooterWaterfall";
 import { DisambiguationBar } from "../DisambiguationBar";
 import { PlaceMapPreview } from "./PlaceMapPreview";
@@ -16,14 +16,21 @@ export function PlaceSpotCard({
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity?.coreStructuredData === "object" && entity.coreStructuredData) || {};
+  const ext = (typeof entity?.extendedAttributes === "object" && entity.extendedAttributes) || {};
   const spotName = entity?.title || "Place";
   const city = data.city || entity?.brandOrCreator?.split(",")[0]?.trim();
   const country = data.country || entity?.brandOrCreator?.split(",")[1]?.trim();
   const locationLabel = city ? (country ? `${city}, ${country}` : city) : entity?.brandOrCreator || "Verified Location";
   const category = data.category || data.spotCategory || "Place & Cultural Venue";
   const address = data.address;
+  const rawWebsite = data.website || ext.website;
+  const websiteUrl =
+    typeof rawWebsite === "string" && rawWebsite.trim()
+      ? /^https?:\/\//i.test(rawWebsite.trim())
+        ? rawWebsite.trim()
+        : `https://${rawWebsite.trim()}`
+      : null;
 
-  // Resolve coordinates from direct properties or structured string/object
   const parsedCoords = parseCoordinates(
     typeof data.latitude === "number" && typeof data.longitude === "number"
       ? { latitude: data.latitude, longitude: data.longitude }
@@ -34,7 +41,6 @@ export function PlaceSpotCard({
   const hasCoordinates = typeof latitude === "number" && typeof longitude === "number";
   const hasPhoto = Boolean(entity?.heroImageUrl);
 
-  // Switcher state: default to photo if available, fallback to map if photo missing
   const [viewMode, setViewMode] = useState<"photo" | "map">(
     hasPhoto ? "photo" : "map"
   );
@@ -126,7 +132,7 @@ export function PlaceSpotCard({
                       : "text-stone-300 hover:text-white"
                   }`}
                 >
-                  <Map className="w-3 h-3" />
+                  <Map className="w-3.5 h-3.5" />
                   <span>Map</span>
                 </button>
               </div>
@@ -139,7 +145,7 @@ export function PlaceSpotCard({
           {spotName}
         </h3>
 
-        {/* Coordinates / Address */}
+        {/* Coordinates */}
         {coordsFormatted && (
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-stone-500 dark:text-stone-400 mb-2">
             <Compass className="w-3.5 h-3.5 text-amber-500" />
@@ -149,16 +155,34 @@ export function PlaceSpotCard({
 
         {/* Description / Summary */}
         {entity?.summary && (
-          <p className="text-xs font-serif text-stone-600 dark:text-stone-300 line-clamp-3 leading-relaxed mb-4">
+          <p className="text-xs font-serif text-stone-600 dark:text-stone-300 line-clamp-3 leading-relaxed mb-3">
             {entity.summary}
           </p>
         )}
 
         {/* Address text if available */}
         {address && address !== locationLabel && (
-          <p className="text-[11px] font-mono text-stone-500 dark:text-stone-400 line-clamp-2 mb-4 bg-stone-100 dark:bg-stone-800/60 p-2 rounded-lg">
+          <p className="text-[11px] font-mono text-stone-500 dark:text-stone-400 line-clamp-2 mb-3 bg-stone-100 dark:bg-stone-800/60 p-2 rounded-lg">
             {address}
           </p>
+        )}
+
+        {/* Optional Website Link (visible only if available) */}
+        {websiteUrl && (
+          <a
+            href={websiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="place-card-website-link"
+            className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-700 dark:text-amber-400 hover:underline mb-3 truncate"
+          >
+            <Globe className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">
+              {websiteUrl.replace(/^https?:\/\/(?:www\.)?/i, "").replace(/\/+$/, "")}
+            </span>
+            <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
+          </a>
         )}
 
         {/* Direct Google Maps Navigation Button */}
@@ -167,11 +191,12 @@ export function PlaceSpotCard({
             href={mapsUrl}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
             data-testid="maps-link"
             className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-stone-900 text-white dark:bg-white dark:text-stone-900 text-xs font-semibold hover:bg-stone-800 active:scale-98 transition shadow-xs mt-auto"
           >
             <Navigation className="w-3.5 h-3.5" />
-            <span>Open in Maps</span>
+            <span>Google Maps</span>
             <ExternalLink className="w-3 h-3 opacity-60" />
           </a>
         )}
@@ -179,10 +204,10 @@ export function PlaceSpotCard({
 
       {/* Disambiguation Swapper Bar */}
       <DisambiguationBar
-          saveId={save.id}
-          candidates={save.candidateFallbacks || []}
-          onSwapped={onSwapped}
-        />
+        saveId={save.id}
+        candidates={save.candidateFallbacks || []}
+        onSwapped={onSwapped}
+      />
 
       {/* Footer Waterfall */}
       {entity && (

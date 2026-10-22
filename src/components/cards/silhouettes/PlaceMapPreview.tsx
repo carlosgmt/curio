@@ -43,11 +43,12 @@ export function PlaceMapPreview({
   }, [latitude, longitude, zoom]);
 
   const coordsLabel = `${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`;
+  const fillsParent = aspectRatio.includes("h-full");
 
   const content = (
     <div
       data-testid="place-map-preview"
-      className={`relative w-full ${aspectRatio} overflow-hidden rounded-xl bg-[#e5e3df] dark:bg-[#1f1f1f] border border-stone-200/80 dark:border-stone-800 shadow-inner group/map ${className}`}
+      className={`${fillsParent ? "absolute inset-0 h-full w-full" : `relative w-full ${aspectRatio}`} min-h-[220px] overflow-hidden rounded-xl bg-[#e5e3df] dark:bg-[#1f1f1f] border border-stone-200/80 dark:border-stone-800 shadow-inner group/map ${className}`}
     >
       {/* Slippy Raster Tile Grid Layer */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
@@ -57,10 +58,8 @@ export function PlaceMapPreview({
             <img
               src={tile.url}
               alt=""
-              loading="lazy"
               decoding="async"
-              referrerPolicy="no-referrer"
-              className="absolute pointer-events-none block dark:hidden transition-opacity duration-300"
+              className="absolute pointer-events-none block dark:hidden transition-opacity duration-300 max-w-none"
               style={{
                 width: 256,
                 height: 256,
@@ -68,7 +67,6 @@ export function PlaceMapPreview({
                 top: `calc(50% + ${tile.offsetFromCenterY}px)`,
               }}
               onError={(e) => {
-                // OpenStreetMap fallback
                 const target = e.currentTarget as HTMLImageElement;
                 if (target.src !== tile.osmUrl) {
                   target.src = tile.osmUrl;
@@ -79,10 +77,8 @@ export function PlaceMapPreview({
             <img
               src={tile.darkUrl}
               alt=""
-              loading="lazy"
               decoding="async"
-              referrerPolicy="no-referrer"
-              className="absolute pointer-events-none hidden dark:block transition-opacity duration-300"
+              className="absolute pointer-events-none hidden dark:block transition-opacity duration-300 max-w-none"
               style={{
                 width: 256,
                 height: 256,
@@ -90,7 +86,6 @@ export function PlaceMapPreview({
                 top: `calc(50% + ${tile.offsetFromCenterY}px)`,
               }}
               onError={(e) => {
-                // OpenStreetMap fallback
                 const target = e.currentTarget as HTMLImageElement;
                 if (target.src !== tile.osmUrl) {
                   target.src = tile.osmUrl;
@@ -159,7 +154,7 @@ export function PlaceMapPreview({
         href={targetMapsUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="block cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-amber-500/40 rounded-xl"
+        className={`${fillsParent ? "absolute inset-0 h-full w-full" : "block"} cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-amber-500/40 rounded-xl`}
         title={spotName ? `Open ${spotName} in Maps` : "Open in Maps"}
       >
         {content}

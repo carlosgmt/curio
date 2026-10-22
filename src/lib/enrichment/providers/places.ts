@@ -1,7 +1,8 @@
 /**
  * Place & Venue Specialist Provider
  * Extracts verified location coordinates, physical address, city, country,
- * venue category, and Google Maps direct links via Wikipedia REST & OpenStreetMap Nominatim.
+ * venue category, official website, opening hours, and Google Maps direct links
+ * via Wikipedia REST & OpenStreetMap Nominatim.
  */
 
 export interface ResolvedPlace {
@@ -16,6 +17,8 @@ export interface ResolvedPlace {
   address?: string;
   city?: string;
   country?: string;
+  website?: string;
+  hours?: string;
   coordinates?: {
     latitude: number;
     longitude: number;
@@ -27,6 +30,8 @@ export interface ResolvedPlace {
     address?: string;
     city?: string;
     country?: string;
+    website?: string;
+    hours?: string;
     latitude?: number;
     longitude?: number;
     googleMapsUrl?: string;
@@ -155,6 +160,13 @@ async function fetchOgImage(website: string, fetchFn: typeof fetch): Promise<str
   }
 }
 
+function normalizeWebsiteUrl(rawSite?: string | null): string | undefined {
+  if (!rawSite || typeof rawSite !== "string") return undefined;
+  const trimmed = rawSite.trim();
+  if (!trimmed) return undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export async function resolvePlace(
   query: string,
   options?: { fetchFn?: typeof fetch; timeoutMs?: number }
@@ -213,16 +225,22 @@ export async function resolvePlace(
     summary = osm ? `${category} located at ${osm.display_name}` : `Verified location for ${title}`;
   }
 
-  if (!heroImageUrl && osm?.extratags) {
-    const site = osm.extratags.website || osm.extratags["contact:website"];
-    if (site) heroImageUrl = await fetchOgImage(site, fetchFn);
+  const rawWebsite =
+    osm?.extratags?.website ||
+    osm?.extratags?.["contact:website"] ||
+    osm?.extratags?.url;
+  const website = normalizeWebsiteUrl(rawWebsite);
+  const hours: string | undefined = osm?.extratags?.opening_hours || undefined;
+
+  if (!heroImageUrl && website) {
+    heroImageUrl = await fetchOgImage(website, fetchFn);
   }
 
   const googleMapsUrl = coordinates
     ? `https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`
     : `https://maps.google.com/?q=${encodeURIComponent(title + (city ? ` ${city}` : ""))}`;
 
-  const canonicalUrl = wikiData?.content_urls?.desktop?.page || googleMapsUrl;
+  const canonicalUrl = wikiData?.content_urls?.desktop?.page || website || googleMapsUrl;
   const osmId = osm?.osm_type && osm?.osm_id ? `osm:${osm.osm_type}/${osm.osm_id}` : null;
   const canonicalExternalId =
     wikiData?.wikibase_item || osmId || `place:${trimmed.toLowerCase().replace(/\s+/g, "-")}`;
@@ -239,6 +257,8 @@ export async function resolvePlace(
     address,
     city,
     country,
+    ...(website ? { website } : {}),
+    ...(hours ? { hours } : {}),
     coordinates,
     googleMapsUrl,
     coreStructuredData: {
@@ -247,6 +267,8 @@ export async function resolvePlace(
       address,
       city,
       country,
+      ...(website ? { website } : {}),
+      ...(hours ? { hours } : {}),
       latitude: coordinates?.latitude,
       longitude: coordinates?.longitude,
       googleMapsUrl,

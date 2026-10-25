@@ -11,7 +11,7 @@ export interface ChatMessage {
 
 const DEFAULT_BASE_URL = "http://localhost:11434/v1";
 const DEFAULT_MODEL = "gemma4:12b-it-qat";
-const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_TIMEOUT_MS = 120000;
 
 export function getLocalLlmConfig() {
   const baseUrl = process.env.OLLAMA_BASE_URL || DEFAULT_BASE_URL;

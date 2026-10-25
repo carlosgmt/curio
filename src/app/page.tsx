@@ -172,10 +172,32 @@ export default function Home() {
     }
   };
 
+  const triggerBackgroundFeedSyncIfStale = async (force: boolean = false) => {
+    try {
+      const statusRes = await apiFetch("/api/v1/sync/feeds");
+      if (!statusRes.ok) return;
+      const status = await statusRes.json();
+      const hasFeeds = Boolean(status.letterboxdUsername || status.goodreadsUserId);
+      if (hasFeeds && (force || status.isStale)) {
+        const syncRes = await apiFetch("/api/v1/sync/feeds", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        if (syncRes.ok) {
+          await fetchItems();
+        }
+      }
+    } catch {
+      // Non-fatal background sync check
+    }
+  };
+
   useEffect(() => {
     fetchCurrentUser();
     fetchItems();
     fetchLists();
+    triggerBackgroundFeedSyncIfStale(false);
   }, []);
 
   useEffect(() => {
@@ -308,7 +330,7 @@ export default function Home() {
   return (
     <PullToRefresh
       disabled={Boolean(selectedCard) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen}
-      onRefresh={() => Promise.all([fetchItems(), fetchLists()])}
+      onRefresh={() => Promise.all([fetchItems(), fetchLists(), triggerBackgroundFeedSyncIfStale(false)])}
     >
     <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-8 sm:py-12 px-4 sm:px-6 lg:px-8 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
       {/* Header */}

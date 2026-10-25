@@ -10,22 +10,16 @@ describe("Dynamic Ontology Grafting Service (FR-3.1)", () => {
   beforeAll(async () => {
     await seedCanonicalArchetypes();
 
-    // Ensure a test user exists
+    const runId = Date.now();
     const [user] = await db
       .insert(users)
       .values({
-        email: "grafting-test@curio.app",
-        username: "graftinguser" + Date.now(),
+        email: `grafting-test-${runId}@curio.app`,
+        username: `graftinguser_${runId}`,
       })
-      .onConflictDoNothing()
       .returning();
 
-    if (user) {
-      testUserId = user.id;
-    } else {
-      const [existing] = await db.select().from(users).limit(1);
-      testUserId = existing.id;
-    }
+    testUserId = user.id;
   });
 
   it("grafts synonym alias on existing archetype when similarity > 0.92 without creating duplicate", async () => {

@@ -205,7 +205,7 @@ export function Omnibox({
           try {
             const formData = new FormData();
             formData.append("audio", audioBlob, "recording.webm");
-            const res = await fetch("/api/v1/capture/audio", {
+            const res = await apiFetch("/api/v1/capture/audio", {
               method: "POST",
               body: formData,
             });
@@ -576,6 +576,22 @@ export function Omnibox({
         <span className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded-full border border-purple-200/50 dark:border-purple-800/50">
           <Search className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
           Semantic Search
+        </span>
+      );
+    }
+
+    const trimmedInput = input.trim();
+    if (/^https?:\/\//i.test(trimmedInput)) {
+      let hostLabel = "URL";
+      try {
+        hostLabel = new URL(trimmedInput).hostname.replace(/^www\./, "");
+      } catch {
+        hostLabel = "Link";
+      }
+      return (
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-800/40">
+          <Link2 className="w-3.5 h-3.5" />
+          <span>Link: {hostLabel}</span>
         </span>
       );
     }

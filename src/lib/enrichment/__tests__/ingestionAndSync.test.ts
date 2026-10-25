@@ -261,6 +261,12 @@ describe("Curio v2 Ingestion, URL Routing, Disambiguation & Live RSS Sync Suite"
 
   it("supports 1-tap disambiguation from live search (when candidate is not in save.candidateFallbacks) and inline entity editing", async () => {
     const runId = Date.now();
+    // Ensure any previous run's mutated Omega entity in test DB is restored to "Omega"
+    await db
+      .update(globalEntities)
+      .set({ title: "Omega" })
+      .where(eq(globalEntities.title, "Omega (Edición Especial)"));
+
     const [user] = await db
       .insert(users)
       .values({
@@ -277,7 +283,7 @@ describe("Curio v2 Ingestion, URL Routing, Disambiguation & Live RSS Sync Suite"
         canonicalUrl: `https://example.com/wrong-${runId}`,
         coreType: "MEDIA",
         typePath: "/media/music/song",
-        title: "Omega (EDM Single)",
+        title: `Omega EDM Single ${runId}`,
         brandOrCreator: "DJ Unknown",
         coreStructuredData: {},
       })
@@ -293,13 +299,14 @@ describe("Curio v2 Ingestion, URL Routing, Disambiguation & Live RSS Sync Suite"
       })
       .returning();
 
+    const swapTargetTitle = `Omega Live Swap ${runId}`;
     // Swap using live search targetCandidate not present in candidateFallbacks
     const swapRes = await swapCandidateFallback(
       save.id,
       `https://es.wikipedia.org/wiki/Omega_(album_${runId})`,
       undefined,
       {
-        title: "Omega",
+        title: swapTargetTitle,
         subtitle: "Enrique Morente & Lagartija Nick • 1996",
         creator: "Enrique Morente & Lagartija Nick",
         year: 1996,
@@ -316,13 +323,13 @@ describe("Curio v2 Ingestion, URL Routing, Disambiguation & Live RSS Sync Suite"
 
     // Edit entity details directly via updateSaveDetails (Lightbox inline editor)
     const edited = await updateSaveDetails(save.id, {
-      title: "Omega (Edición Especial)",
+      title: `${swapTargetTitle} (Edición Especial)`,
       brandOrCreator: "Enrique Morente & Lagartija Nick",
       summary: "Obra maestra del flamenco-rock de 1996.",
       heroImageUrl: "https://example.com/omega-remastered.jpg",
     });
 
-    expect(edited?.entity?.title).toBe("Omega (Edición Especial)");
+    expect(edited?.entity?.title).toBe(`${swapTargetTitle} (Edición Especial)`);
     expect(edited?.entity?.brandOrCreator).toBe("Enrique Morente & Lagartija Nick");
     expect(edited?.entity?.summary).toBe("Obra maestra del flamenco-rock de 1996.");
     expect(edited?.entity?.heroImageUrl).toBe("https://example.com/omega-remastered.jpg");
@@ -353,24 +360,42 @@ describe("Curio v2 Ingestion, URL Routing, Disambiguation & Live RSS Sync Suite"
             <tmdb:movieId>915935${runId}</tmdb:movieId>
             <description><![CDATA[<p><img src="https://a.ltrbxd.com/resized/anatomy-poster-0-600-0-900-crop.jpg"/></p><p>Masterful courtroom dissection.</p>]]></description>
           </item>
+          <item>
+            <title>Nosferatu (2024)</title>
+            <guid isPermaLink="false">letterboxd-watchlist-${runId}</guid>
+            <link>https://letterboxd.com/film/nosferatu-${runId}/</link>
+            <letterboxd:filmTitle>Nosferatu ${runId}</letterboxd:filmTitle>
+            <letterboxd:filmYear>2024</letterboxd:filmYear>
+            <description><![CDATA[<p>carlosgmt added Nosferatu to their watchlist</p>]]></description>
+          </item>
         </channel>
       </rss>`;
 
     const parsedLb = parseLetterboxdRssXml(sampleLetterboxdXml);
-    expect(parsedLb.length).toBe(1);
+    expect(parsedLb.length).toBe(2);
     expect(parsedLb[0].filmTitle).toBe(`Anatomy of a Fall ${runId}`);
     expect(parsedLb[0].filmYear).toBe(2023);
     expect(parsedLb[0].memberRating).toBe(4.5);
+    expect(parsedLb[0].isWatchlist).toBe(false);
     expect(parsedLb[0].canonicalFilmUrl).toBe(`https://letterboxd.com/film/anatomy-of-a-fall-${runId}/`);
     expect(parsedLb[0].posterUrl).toContain("anatomy-poster-0-600-0-900-crop.jpg");
     expect(parsedLb[0].reviewText).toBe("Masterful courtroom dissection.");
+    expect(parsedLb[1].filmTitle).toBe(`Nosferatu ${runId}`);
+    expect(parsedLb[1].isWatchlist).toBe(true);
 
     const lbSync1 = await syncLetterboxdRss("carlosgmt", user.id, {
       hydrateMissingDirectors: false,
       fetchFn: (async () => new Response(sampleLetterboxdXml, { status: 200 })) as any,
     });
-    expect(lbSync1.createdEntities).toBe(1);
-    expect(lbSync1.createdSaves).toBe(1);
+    expect(lbSync1.createdEntities).toBe(2);
+    expect(lbSync1.createdSaves).toBe(2);
+
+    const lbSaves = await db
+      .select()
+      .from(userSaves)
+      .where(and(eq(userSaves.userId, user.id), eq(userSaves.typePath, "/media/film")));
+    expect(lbSaves.some((s) => s.wishlist === true)).toBe(true);
+    expect(lbSaves.some((s) => s.wishlist === false)).toBe(true);
 
     // Re-syncing the exact same feed must update in place without creating duplicate saves!
     const lbSync2 = await syncLetterboxdRss("carlosgmt", user.id, {
@@ -379,7 +404,7 @@ describe("Curio v2 Ingestion, URL Routing, Disambiguation & Live RSS Sync Suite"
     });
     expect(lbSync2.createdEntities).toBe(0);
     expect(lbSync2.createdSaves).toBe(0);
-    expect(lbSync2.updatedSaves).toBe(1);
+    expect(lbSync2.updatedSaves).toBe(2);
 
     // Goodreads RSS: First sync on 'to-read' shelf -> sets wishlist = true
     const toReadXml = `<?xml version="1.0" encoding="UTF-8"?>

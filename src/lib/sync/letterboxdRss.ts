@@ -12,6 +12,7 @@ export interface LetterboxdRssItem {
   memberRating?: number;
   watchedDate?: string;
   rewatch?: boolean;
+  isWatchlist?: boolean;
   tmdbId?: string;
   link: string;
   canonicalFilmUrl: string;
@@ -65,6 +66,8 @@ export function parseLetterboxdRssXml(xmlText: string): LetterboxdRssItem[] {
     const ratingTag = extractXmlTag(block, "letterboxd:memberRating");
     const watchedDateTag = extractXmlTag(block, "letterboxd:watchedDate");
     const rewatchTag = extractXmlTag(block, "letterboxd:rewatch");
+    const watchlistTag = extractXmlTag(block, "letterboxd:watchlist");
+    const guidTag = extractXmlTag(block, "guid") || "";
     const tmdbId = extractXmlTag(block, "tmdb:movieId");
     const link = extractXmlTag(block, "link") || "";
     const pubDate = extractXmlTag(block, "pubDate");
@@ -74,11 +77,13 @@ export function parseLetterboxdRssXml(xmlText: string): LetterboxdRssItem[] {
     const slugMatch = link.match(/letterboxd\.com\/(?:[^/]+\/)?film\/([^/?#]+)/i);
     if (!filmTitleTag && !slugMatch) continue;
 
-    // Fallback parse from <title> e.g. "The Revenant, 2015 - ★★★★½"
+    // Fallback parse from <title> e.g. "The Revenant, 2015 - ★★★★½" or "The Revenant (2015)"
     let filmTitle = filmTitleTag || rawTitle;
     let filmYear = filmYearTag ? parseInt(filmYearTag, 10) : undefined;
     if (!filmTitleTag && rawTitle) {
-      const tm = rawTitle.match(/^(.+?),\s*(\d{4})(?:\s*-\s*[★½]+)?$/);
+      const tm =
+        rawTitle.match(/^(.+?),\s*(\d{4})(?:\s*-\s*[★½]+)?$/) ||
+        rawTitle.match(/^(.+?)\s*\((\d{4})\)$/);
       if (tm) {
         filmTitle = tm[1].trim();
         if (!filmYear) filmYear = parseInt(tm[2], 10);
@@ -93,15 +98,21 @@ export function parseLetterboxdRssXml(xmlText: string): LetterboxdRssItem[] {
 
     const memberRating = ratingTag ? parseFloat(ratingTag) : undefined;
     const rewatch = rewatchTag?.toLowerCase() === "yes";
+    const isWatchlist =
+      watchlistTag?.toLowerCase() === "yes" ||
+      guidTag.toLowerCase().includes("watchlist") ||
+      link.toLowerCase().includes("/watchlist") ||
+      /added .* to their watchlist/i.test(rawDescription);
 
     // Extract poster <img> from description CDATA
     const imgMatch = rawDescription.match(/<img[^>]+src=["']([^"']+)["']/i);
     const posterUrl = imgMatch ? imgMatch[1] : undefined;
 
-    // Strip leading poster <p><img .../></p> and "Watched on ..." boilerplate to extract pure review text
+    // Strip leading poster <p><img .../></p> and "Watched on ..." / watchlist boilerplate to extract pure review text
     const cleanReview = rawDescription
       .replace(/<p>\s*<img[^>]*>\s*<\/p>/gi, "")
       .replace(/<p>\s*Watched on [^<]*<\/p>/gi, "")
+      .replace(/<p>[^<]*added [^<]* to their watchlist[^<]*<\/p>/gi, "")
       .replace(/<\/p>\s*<p>/gi, "\n\n")
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<[^>]+>/g, "")
@@ -114,6 +125,7 @@ export function parseLetterboxdRssXml(xmlText: string): LetterboxdRssItem[] {
       memberRating: Number.isFinite(memberRating) ? memberRating : undefined,
       watchedDate: watchedDateTag || undefined,
       rewatch,
+      isWatchlist,
       tmdbId: tmdbId || undefined,
       link: link || canonicalFilmUrl,
       canonicalFilmUrl,
@@ -282,6 +294,8 @@ export async function syncLetterboxdRss(
     if (item.watchedDate) customVals.dateWatched = item.watchedDate;
     if (item.rewatch) customVals.rewatch = true;
 
+    const isWishlist = Boolean(item.isWatchlist);
+
     if (existingSave) {
       const updatedNotes =
         item.reviewText && !existingSave.personalNotes?.includes(item.reviewText)
@@ -293,7 +307,7 @@ export async function syncLetterboxdRss(
       await db
         .update(userSaves)
         .set({
-          wishlist: false, // Watching a film fulfills a watchlist item
+          wishlist: isWishlist,
           userCustomValues: customVals,
           personalNotes: updatedNotes,
         })
@@ -305,10 +319,10 @@ export async function syncLetterboxdRss(
         entityId: matchedEntity.id,
         typePath: "/media/film",
         isPrivateMemo: false,
-        wishlist: false,
+        wishlist: isWishlist,
         personalNotes: item.reviewText || null,
         userCustomValues: customVals,
-        autoTags: ["media", "film", "letterboxd"],
+        autoTags: isWishlist ? ["media", "film", "letterboxd", "watchlist"] : ["media", "film", "letterboxd"],
         enrichmentStatus: "ENRICHED",
         visibility: "PRIVATE",
       });

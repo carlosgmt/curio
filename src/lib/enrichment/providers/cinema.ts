@@ -371,12 +371,14 @@ export async function resolveFilm(
 
             const directorMatch =
               summary.match(
-                /(?:directed by|dirigida por)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑa-záéíóúñ.]+){1,3})/i
+                /(?:directed by|dirigida por)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+(?:[A-ZÁÉÍÓÚÑ]\.|[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)){1,3})/
               ) ||
               (data.description || "").match(
-                /(?:directed by|dirigida por)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑa-záéíóúñ.]+){1,3})/i
+                /(?:directed by|dirigida por)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+(?:[A-ZÁÉÍÓÚÑ]\.|[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)){1,3})/
               );
-            const director = directorMatch ? directorMatch[1].trim() : undefined;
+            const director = directorMatch
+              ? directorMatch[1].replace(/\.\s+(?:The|It|In|A|An|His|Her)\b.*$/i, "").replace(/\.$/, "").trim()
+              : undefined;
 
             return {
               title: displayTitle,

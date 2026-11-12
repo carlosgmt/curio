@@ -1,0 +1,49 @@
+name: Deploy Curio
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy to Portainer
+        run: |
+          echo "Sending webhook to update Curio stack..."
+          MAX_RETRIES=6
+          RETRY_DELAY=10
+          for ((i=1;i<=MAX_RETRIES;i++)); do
+            HTTP_CODE=$(curl -s -k -o /tmp/webhook_response.txt -w "%{http_code}" -X POST "${{ secrets.PORTAINER_WEBHOOK_CURIO }}")
+            echo "Attempt $i/$MAX_RETRIES: Portainer responded with HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" -eq 204 ] || [ "$HTTP_CODE" -eq 200 ]; then
+              echo "Stack redeployment accepted successfully."
+              exit 0
+            elif [ "$HTTP_CODE" -eq 409 ]; then
+              echo "Stack deployment currently in progress: $(cat /tmp/webhook_response.txt 2>/dev/null)"
+              if [ $i -lt $MAX_RETRIES ]; then
+                sleep $RETRY_DELAY
+              else
+                exit 0
+              fi
+            else
+              echo "Unexpected response: $(cat /tmp/webhook_response.txt 2>/dev/null)"
+              if [ $i -lt $MAX_RETRIES ]; then
+                sleep $RETRY_DELAY
+              else
+                exit 1
+              fi
+            fi
+          done

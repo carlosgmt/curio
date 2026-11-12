@@ -3,7 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: curio:latest
     container_name: curio
     restart: unless-stopped
     ports:
@@ -17,7 +16,7 @@ services:
       - MEDIA_PATH=/data/media
       - CURIO_ALLOW_ANON=true
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-      - REBUILD_VERSION=2
+      - REBUILD_VERSION=3
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

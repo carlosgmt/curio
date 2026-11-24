@@ -1,6 +1,7 @@
 import { db, userSaves, globalEntities, curioTypes, listItems, smartLists, entitySources, entryConnections, users } from "@/db";
-import { eq, or } from "drizzle-orm";
-import { getConnectedSaves, type ConnectedItem } from "@/lib/connections/service";
+import { and, eq, inArray, or } from "drizzle-orm";
+import { getConnectedSaves, getConnectedSavesMap, type ConnectedItem } from "@/lib/connections/service";
+import { matchesAutoRules } from "@/lib/lists/service";
 import { evaluateAttributePromotion } from "@/lib/curio-learns/attributes";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 
@@ -93,6 +94,128 @@ export async function getSaveDetails(saveId: string): Promise<SaveDetails | null
     lists,
     sources,
     owner: owner || null,
+  };
+}
+
+export type SaveViewerAccessResult =
+  | { status: "not_found" }
+  | { status: "forbidden" }
+  | { status: "ok"; details: SaveDetails; isOwner: boolean };
+
+/**
+ * Retrieves save details gated and sanitized for the requesting viewer (e.g. `/card/[id]` SSR).
+ * Owners receive full unsanitized details; non-owners only receive non-memo saves that are
+ * standalone PUBLIC/UNLISTED or appear on a non-paywalled PUBLIC/UNLISTED board, with private
+ * notes, private titles, non-public custom fields, and private connection metadata stripped.
+ */
+export async function getSaveDetailsForViewer(
+  saveId: string,
+  viewerUserId?: string | null
+): Promise<SaveViewerAccessResult> {
+  const details = await getSaveDetails(saveId);
+  if (!details) {
+    return { status: "not_found" };
+  }
+
+  const isOwner = Boolean(viewerUserId && viewerUserId === details.save.userId);
+  if (isOwner) {
+    return { status: "ok", details, isOwner: true };
+  }
+
+  if (details.save.isPrivateMemo || !details.entity) {
+    return { status: "forbidden" };
+  }
+
+  let isPubliclyAccessible =
+    details.save.visibility === "PUBLIC" || details.save.visibility === "UNLISTED";
+
+  if (!isPubliclyAccessible) {
+    isPubliclyAccessible = details.lists.some(
+      (list) =>
+        (list.visibility === "PUBLIC" || list.visibility === "UNLISTED") && !list.isPaywalled
+    );
+  }
+
+  if (!isPubliclyAccessible) {
+    const publicOwnerBoards = await db
+      .select()
+      .from(smartLists)
+      .where(
+        and(
+          eq(smartLists.userId, details.save.userId),
+          inArray(smartLists.visibility, ["PUBLIC", "UNLISTED"]),
+          eq(smartLists.isPaywalled, false)
+        )
+      );
+
+    for (const board of publicOwnerBoards) {
+      if (!board.autoRules && board.slug !== "films" && board.slug !== "music") {
+        continue;
+      }
+      if (matchesAutoRules(board.autoRules, { save: details.save, entity: details.entity }, board.slug)) {
+        isPubliclyAccessible = true;
+        break;
+      }
+    }
+  }
+
+  if (!isPubliclyAccessible) {
+    return { status: "forbidden" };
+  }
+
+  let allowedKeys: Set<string> | null = null;
+  if (details.curioType?.publicFieldKeys) {
+    allowedKeys = new Set(details.curioType.publicFieldKeys);
+  } else if (details.save.customTypeId) {
+    const [customCt] = await db
+      .select({ publicFieldKeys: curioTypes.publicFieldKeys })
+      .from(curioTypes)
+      .where(eq(curioTypes.id, details.save.customTypeId))
+      .limit(1);
+    if (customCt?.publicFieldKeys) {
+      allowedKeys = new Set(customCt.publicFieldKeys);
+    }
+  } else if (details.save.typePath) {
+    const [pathCt] = await db
+      .select({ publicFieldKeys: curioTypes.publicFieldKeys })
+      .from(curioTypes)
+      .where(eq(curioTypes.typePath, details.save.typePath))
+      .limit(1);
+    if (pathCt?.publicFieldKeys) {
+      allowedKeys = new Set(pathCt.publicFieldKeys);
+    }
+  }
+
+  const rawCustom = details.save.userCustomValues;
+  const sanitizedCustom: Record<string, unknown> = {};
+  if (allowedKeys && rawCustom && typeof rawCustom === "object") {
+    for (const [k, v] of Object.entries(rawCustom as Record<string, unknown>)) {
+      if (allowedKeys.has(k)) {
+        sanitizedCustom[k] = v;
+      }
+    }
+  }
+
+  const sanitizedConnMap = await getConnectedSavesMap([saveId], { sanitizeForPublic: true });
+  const sanitizedConnections = sanitizedConnMap.get(saveId) ?? [];
+  const publicLists = details.lists.filter(
+    (list) => list.visibility === "PUBLIC" && !list.isPaywalled
+  );
+
+  return {
+    status: "ok",
+    isOwner: false,
+    details: {
+      ...details,
+      save: {
+        ...details.save,
+        personalNotes: null,
+        privateTitle: null,
+        userCustomValues: sanitizedCustom,
+      },
+      connections: sanitizedConnections,
+      lists: publicLists,
+    },
   };
 }
 

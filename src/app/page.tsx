@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Omnibox } from "@/components/shapeshift/Omnibox";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import { ImporterModal } from "@/components/importers/ImporterModal";
@@ -8,6 +8,7 @@ import { PairingModal } from "@/components/connections/PairingModal";
 import { ListTabsBar } from "@/components/lists/ListTabsBar";
 import { CreateListModal } from "@/components/lists/CreateListModal";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
+import { BreadcrumbNav } from "@/components/lists/BreadcrumbNav";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { TypeBuilderModal } from "@/components/shapeshift/TypeBuilderModal";
 import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
@@ -16,10 +17,16 @@ import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { UserNav } from "@/components/layout/UserNav";
 import { CurioLandingVitrine } from "@/components/landing/CurioLandingVitrine";
 import { PullToRefresh } from "@/components/pwa/PullToRefresh";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, getApiUrl } from "@/lib/apiClient";
 import type { SmartList } from "@/db";
 import type { ListWithSections } from "@/lib/lists/service";
-import { MasonryLayout, GridLayout, TimelineLayout } from "@/components/layout";
+import {
+  extractTypeInfo,
+  buildNewTypeAutoRules,
+  isTypeCoveredByBoards,
+  type TypePromptInfo,
+} from "@/lib/lists/promptRules";
+import { MasonryLayout, GridLayout, TimelineLayout, ShelfLayout } from "@/components/layout";
 import { ViewModeSwitcher, type LayoutEngineType } from "@/components/layout/ViewModeSwitcher";
 import type { SilhouetteDensity } from "@/components/cards/registry";
 import {
@@ -27,10 +34,22 @@ import {
   Layers,
   Upload,
   X,
+  RefreshCw,
+  Pencil,
+  Loader2,
+  Shirt,
 } from "lucide-react";
 
 export default function Home() {
   const [items, setItems] = useState<CardData[]>([]);
+  const [streamTotalCount, setStreamTotalCount] = useState<number | null>(null);
+  const [vaultTotalCount, setVaultTotalCount] = useState<number | null>(null);
+  const [wishlistCount, setWishlistCount] = useState<number | null>(null);
+  const [wearLogCount, setWearLogCount] = useState<number | null>(null);
+  const [showWearLogs, setShowWearLogs] = useState(false);
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(true);
   const [isImporterOpen, setIsImporterOpen] = useState(false);
@@ -40,6 +59,8 @@ export default function Home() {
   const [activeListSlug, setActiveListSlug] = useState<string | null>(null);
   const [activeListDetails, setActiveListDetails] = useState<ListWithSections | null>(null);
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
+  const [editingBoard, setEditingBoard] = useState<SmartList | null>(null);
+  const [createListParentId, setCreateListParentId] = useState<string | null>(null);
   const [isTypeBuilderOpen, setIsTypeBuilderOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
   const [user, setUser] = useState<any>(null);
@@ -50,16 +71,49 @@ export default function Home() {
   const [isTypesModalOpen, setIsTypesModalOpen] = useState(false);
   const [wishOnly, setWishOnly] = useState(false);
   const [layoutEngine, setLayoutEngine] = useState<LayoutEngineType>("masonry");
+  const [lightboxPresentation, setLightboxPresentation] = useState<"standard" | "press">("standard");
   const [cardDensity, setCardDensity] = useState<SilhouetteDensity>("standard");
-  const [newTypePrompt, setNewTypePrompt] = useState<{ key: string; name: string; coreType?: string } | null>(null);
+  const [newTypePrompt, setNewTypePrompt] = useState<TypePromptInfo | null>(null);
+  const [garmentCategoryFilter, setGarmentCategoryFilter] = useState<string>("ALL");
+  const [garmentSeasonFilter, setGarmentSeasonFilter] = useState<string>("ALL");
+  const [isSyncingCloset, setIsSyncingCloset] = useState(false);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const fetchSeqRef = useRef(0);
 
-  // Sync dismissal of "Bring in your collections" banner
+  const GARMENT_CATEGORIES = [
+    { id: "ALL", label: "All Items" },
+    { id: "FOOTWEAR", label: "Footwear" },
+    { id: "TOPS", label: "Tops" },
+    { id: "BOTTOMS", label: "Bottoms" },
+    { id: "OUTERWEAR", label: "Outerwear" },
+  ];
+
+  const GARMENT_SEASONS = [
+    { id: "ALL", label: "All Seasons" },
+    { id: "SPRING_SUMMER", label: "Spring / Summer" },
+    { id: "AUTUMN_WINTER", label: "Autumn / Winter" },
+  ];
+
+  // Sync dismissal of "Bring in your collections" banner & wear-log stream preference
   useEffect(() => {
     if (typeof window !== "undefined") {
       const isDismissed = localStorage.getItem("curio_dismissed_bring_collections") === "true";
       setDismissedOnboarding(isDismissed);
+      const savedWearLogs = localStorage.getItem("curio_show_wear_logs") === "true";
+      setShowWearLogs(savedWearLogs);
     }
+    setPrefsHydrated(true);
   }, []);
+
+  const handleToggleWearLogs = () => {
+    setShowWearLogs((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("curio_show_wear_logs", next ? "true" : "false");
+      }
+      return next;
+    });
+  };
 
   const handleDismissBringCollections = () => {
     setDismissedOnboarding(true);
@@ -68,43 +122,10 @@ export default function Home() {
     }
   };
 
-  const extractTypeInfo = (card: CardData): { key: string; name: string; coreType?: string } | null => {
-    if (card.save.isPrivateMemo) return null;
-    if (card.entity?.typePath && card.entity.typePath !== "/") {
-      const segments = card.entity.typePath.split("/").filter(Boolean);
-      const lastSeg = segments[segments.length - 1];
-      const name = lastSeg.charAt(0).toUpperCase() + lastSeg.slice(1);
-      return {
-        key: card.entity.typePath.toLowerCase(),
-        name,
-        coreType: card.entity.coreType,
-      };
-    }
-    if (card.entity?.coreType) {
-      const raw = card.entity.coreType.toLowerCase();
-      const name = raw === "media" ? "Cinema" : raw.charAt(0).toUpperCase() + raw.slice(1);
-      return {
-        key: card.entity.coreType.toLowerCase(),
-        name,
-        coreType: card.entity.coreType,
-      };
-    }
-    if (card.save.typePath) {
-      const segments = card.save.typePath.split("/").filter(Boolean);
-      const lastSeg = segments[segments.length - 1] || "Custom";
-      const name = lastSeg.charAt(0).toUpperCase() + lastSeg.slice(1);
-      return {
-        key: card.save.typePath.toLowerCase(),
-        name,
-      };
-    }
-    return null;
-  };
-
-  const handleCreateListForPrompt = async (typeInfo: { key: string; name: string; coreType?: string }) => {
+  const handleCreateListForPrompt = async (typeInfo: TypePromptInfo) => {
     try {
-      const listTitle = `${typeInfo.name}s`;
-      const autoRules = typeInfo.coreType ? { coreType: typeInfo.coreType } : undefined;
+      const listTitle = typeInfo.listTitle;
+      const autoRules = buildNewTypeAutoRules(typeInfo);
       const res = await apiFetch("/api/v1/lists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -134,8 +155,14 @@ export default function Home() {
       const res = await apiFetch("/api/v1/auth/me");
       if (res.ok) {
         const data = await res.json();
+        if (typeof window !== "undefined" && typeof data.token === "string" && data.token) {
+          localStorage.setItem("curio_token", data.token);
+        }
         setUser(data.user);
       } else {
+        if (res.status === 401 && typeof window !== "undefined") {
+          localStorage.removeItem("curio_token");
+        }
         setUser(null);
       }
     } catch (err) {
@@ -146,21 +173,74 @@ export default function Home() {
     }
   };
 
-  const fetchItems = async () => {
-    try {
-      const res = await apiFetch("/api/v1/capture");
-      if (res.ok) {
-        const data = await res.json();
-        setItems(data.saves || []);
-      }
-    } catch (err) {
-      console.error("Failed to load items:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchItems = useCallback(
+    async (opts?: {
+      reset?: boolean;
+      wishlist?: boolean;
+      includeWearLogs?: boolean;
+      cursor?: string | null;
+    }) => {
+      const reset = opts?.reset ?? true;
+      const seq = reset ? ++fetchSeqRef.current : fetchSeqRef.current;
+      const wishlistFlag = opts?.wishlist ?? wishOnly;
+      const includeWearFlag = opts?.includeWearLogs ?? showWearLogs;
+      const cursorParam = !reset && opts?.cursor ? `&cursor=${encodeURIComponent(opts.cursor)}` : "";
+      const wishParam = wishlistFlag ? "&wishlist=true" : "";
+      const wearLogsParam = !wishlistFlag && includeWearFlag ? "&includeWearLogs=true" : "";
+      if (!reset) setLoadingMore(true);
 
-  const fetchLists = async () => {
+      try {
+        const res = await apiFetch(
+          `/api/v1/capture?limit=50${wishParam}${wearLogsParam}${cursorParam}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (seq !== fetchSeqRef.current) {
+            return;
+          }
+          const fetched: CardData[] = data.saves || [];
+          if (typeof data.totalCount === "number") {
+            setStreamTotalCount(data.totalCount);
+          }
+          if (typeof data.vaultTotalCount === "number") {
+            setVaultTotalCount(data.vaultTotalCount);
+          }
+          if (typeof data.wishlistCount === "number") {
+            setWishlistCount(data.wishlistCount);
+          }
+          if (typeof data.wearLogCount === "number") {
+            setWearLogCount(data.wearLogCount);
+          }
+          setNextCursor(data.nextCursor ?? null);
+
+          if (reset) {
+            setItems((prev) => {
+              const optimistic = prev.filter((it) => it.save.id.startsWith("optimistic-"));
+              const fetchedIds = new Set(fetched.map((f) => f.save.id));
+              return [...optimistic.filter((o) => !fetchedIds.has(o.save.id)), ...fetched];
+            });
+          } else {
+            setItems((prev) => {
+              const existingIds = new Set(prev.map((p) => p.save.id));
+              return [...prev, ...fetched.filter((f) => !existingIds.has(f.save.id))];
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load items:", err);
+      } finally {
+        if (seq === fetchSeqRef.current) {
+          setLoading(false);
+        }
+        if (!reset) {
+          setLoadingMore(false);
+        }
+      }
+    },
+    [wishOnly, showWearLogs]
+  );
+
+  const fetchLists = useCallback(async () => {
     try {
       const res = await apiFetch("/api/v1/lists");
       if (res.ok) {
@@ -170,7 +250,51 @@ export default function Home() {
     } catch (err) {
       console.error("Failed to load lists:", err);
     }
-  };
+  }, []);
+
+  const refreshActiveBoard = useCallback(async (slugOverride?: string | null) => {
+    const targetSlug = slugOverride !== undefined ? slugOverride : activeListSlug;
+    if (!targetSlug) return;
+    try {
+      const res = await apiFetch(`/api/v1/lists/${targetSlug}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.list) {
+          setActiveListDetails(data);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to refresh board details:", err);
+    }
+  }, [activeListSlug]);
+
+  const triggerClosetSync = useCallback(
+    async (force: boolean = false) => {
+      if (force) setIsSyncingCloset(true);
+      try {
+        const res = await apiFetch("/api/v1/sync/closet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force, ifStaleMs: 300_000 }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const didChange = Boolean(data?.synced);
+        if (didChange) {
+          await Promise.all([
+            fetchItems({ reset: true, wishlist: wishOnly }),
+            fetchLists(),
+            refreshActiveBoard(),
+          ]);
+        }
+      } catch {
+        // Non-fatal if closet-ui is offline
+      } finally {
+        if (force) setIsSyncingCloset(false);
+      }
+    },
+    [fetchItems, fetchLists, refreshActiveBoard, wishOnly]
+  );
 
   const triggerBackgroundFeedSyncIfStale = async (force: boolean = false) => {
     try {
@@ -185,7 +309,7 @@ export default function Home() {
           body: JSON.stringify({}),
         });
         if (syncRes.ok) {
-          await fetchItems();
+          await fetchItems({ reset: true });
         }
       }
     } catch {
@@ -195,10 +319,45 @@ export default function Home() {
 
   useEffect(() => {
     fetchCurrentUser();
-    fetchItems();
     fetchLists();
     triggerBackgroundFeedSyncIfStale(false);
-  }, []);
+  }, [fetchLists]);
+
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    fetchItems({ reset: true, wishlist: wishOnly });
+  }, [prefsHydrated, wishOnly, fetchItems]);
+
+  // Automatic Closet <-> Curio background sync on session start + tab focus
+  useEffect(() => {
+    if (!user) return;
+    triggerClosetSync(false);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        triggerClosetSync(false);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [user, triggerClosetSync]);
+
+  // Infinite scroll observer for main feed
+  useEffect(() => {
+    if (activeListSlug !== null || !nextCursor || loadingMore) return;
+    const node = loadMoreSentinelRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && nextCursor && !loadingMore) {
+          fetchItems({ reset: false, wishlist: wishOnly, cursor: nextCursor });
+        }
+      },
+      { rootMargin: "400px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [activeListSlug, nextCursor, loadingMore, wishOnly, fetchItems]);
 
   useEffect(() => {
     if (!activeListSlug) {
@@ -220,12 +379,189 @@ export default function Home() {
     };
   }, [activeListSlug]);
 
+  const activeBoardContext = useMemo(() => {
+    if (!activeListSlug) return null;
+    const board = activeListDetails?.list || lists.find((l) => l.slug === activeListSlug);
+    if (!board) return null;
+    return {
+      id: board.id,
+      slug: board.slug,
+      title: board.title,
+      coreType: board.autoRules?.coreType,
+      typePathPrefix: board.autoRules?.typePathPrefix,
+    };
+  }, [activeListSlug, activeListDetails, lists]);
+
+  const handleOptimisticStart = useCallback((tempCard: CardData) => {
+    setItems((prev) => [tempCard, ...prev]);
+    setVaultTotalCount((prev) => (prev !== null ? prev + 1 : null));
+    setStreamTotalCount((prev) => (prev !== null ? prev + 1 : null));
+  }, []);
+
+  const handleOptimisticSettle = useCallback(
+    (tempId: string, result: any | null) => {
+      if (!result || !result.save) {
+        setItems((prev) => prev.filter((it) => it.save.id !== tempId));
+        setVaultTotalCount((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
+        setStreamTotalCount((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
+        return;
+      }
+
+      if (result.status !== "created") {
+        setVaultTotalCount((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
+        setStreamTotalCount((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
+      }
+
+      const settledCard: CardData = {
+        save: result.save,
+        entity: result.entity,
+        primarySource: result.primary_source,
+        connections: result.connections ?? [],
+      };
+
+      setItems((prev) => {
+        const withoutTemp = prev.filter((it) => it.save.id !== tempId);
+        const existingIdx = withoutTemp.findIndex((it) => it.save.id === settledCard.save.id);
+        if (existingIdx >= 0) {
+          const next = [...withoutTemp];
+          next[existingIdx] = settledCard;
+          return next;
+        }
+        return [settledCard, ...withoutTemp];
+      });
+    },
+    []
+  );
+
+  const handleSelectExistingSave = useCallback(
+    async (saveId: string) => {
+      const inFeed = items.find((it) => it.save.id === saveId);
+      if (inFeed) {
+        setSelectedCard(inFeed);
+        return;
+      }
+      const inBoard = activeListDetails?.sections
+        ?.flatMap((s) => s.items)
+        .find((it) => it.save.id === saveId);
+      if (inBoard) {
+        setSelectedCard({
+          save: inBoard.save,
+          entity: inBoard.entity,
+          connections: inBoard.connections ?? [],
+        });
+        return;
+      }
+      try {
+        const res = await apiFetch(`/api/v1/saves/${encodeURIComponent(saveId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.save) {
+            setSelectedCard({
+              save: data.save,
+              entity: data.entity,
+              connections: data.connections,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to open save in lightbox:", err);
+      }
+    },
+    [items, activeListDetails]
+  );
+
+  const removeConnectionInPlace = useCallback((connectionId: string) => {
+    setItems((prev) =>
+      prev.map((it) =>
+        it.connections
+          ? {
+              ...it,
+              connections: it.connections.filter((c) => c.connectionId !== connectionId),
+            }
+          : it
+      )
+    );
+    setSelectedCard((prev) =>
+      prev
+        ? {
+            ...prev,
+            connections: (prev.connections || []).filter((c) => c.connectionId !== connectionId),
+          }
+        : null
+    );
+    setActiveListDetails((prev) => {
+      if (!prev) return prev;
+      const stripFromSections = (secs: typeof prev.sections) =>
+        secs.map((sec) => ({
+          ...sec,
+          items: sec.items.map((item) =>
+            item.connections
+              ? {
+                  ...item,
+                  connections: item.connections.filter((c) => c.connectionId !== connectionId),
+                }
+              : item
+          ),
+        }));
+      return {
+        ...prev,
+        sections: stripFromSections(prev.sections),
+        children: prev.children?.map((child) => ({
+          ...child,
+          sections: child.sections ? stripFromSections(child.sections) : child.sections,
+        })),
+      };
+    });
+  }, []);
+
+  const pairableCards = useMemo(() => {
+    const byId = new Map<string, CardData>();
+    if (activeListDetails) {
+      for (const sec of activeListDetails.sections || []) {
+        for (const row of sec.items || []) {
+          if (!row.save.isPrivateMemo && !row.save.id.startsWith("optimistic-")) {
+            byId.set(row.save.id, {
+              save: row.save,
+              entity: row.entity,
+              connections: row.connections,
+            });
+          }
+        }
+      }
+      for (const child of activeListDetails.children || []) {
+        for (const sec of child.sections || []) {
+          for (const row of sec.items || []) {
+            if (!row.save.isPrivateMemo && !row.save.id.startsWith("optimistic-")) {
+              byId.set(row.save.id, {
+                save: row.save,
+                entity: row.entity,
+                connections: row.connections,
+              });
+            }
+          }
+        }
+      }
+    }
+    for (const card of items) {
+      if (
+        !card.save.isPrivateMemo &&
+        card.save.enrichmentStatus !== "OPTIMISTIC" &&
+        !card.save.id.startsWith("optimistic-") &&
+        !byId.has(card.save.id)
+      ) {
+        byId.set(card.save.id, card);
+      }
+    }
+    return Array.from(byId.values());
+  }, [activeListDetails, items]);
+
   const handleCaptured = (result: any) => {
     if (result.save) {
       const newCard: CardData = {
         save: result.save,
         entity: result.entity,
         primarySource: result.primary_source,
+        connections: result.connections ?? [],
       };
       setItems((prev) => {
         const existingIdx = prev.findIndex((it) => it.save.id === newCard.save.id);
@@ -237,25 +573,28 @@ export default function Home() {
         return [newCard, ...prev];
       });
 
-      // Update board size counters in real time
+      // Update board size counters & active board view in real time
       fetchLists();
+      if (activeListSlug) {
+        refreshActiveBoard(activeListSlug);
+      }
 
-      // Check if this is the first time adding on this type
-      const typeInfo = extractTypeInfo(newCard);
+      // Check if this is the first time adding a genuinely new card on this type
+      const isNewCreation = !result.status || result.status === "created";
+      const typeInfo = isNewCreation ? extractTypeInfo(newCard) : null;
       if (typeInfo && typeof window !== "undefined") {
         try {
           const promptedRaw = localStorage.getItem("curio_prompted_type_lists");
           const prompted: string[] = promptedRaw ? JSON.parse(promptedRaw) : [];
           if (!prompted.includes(typeInfo.key)) {
             const alreadyHadType = items.some((it) => {
+              if (it.save.id === newCard.save.id || it.save.id.startsWith("optimistic-")) {
+                return false;
+              }
               const t = extractTypeInfo(it);
               return t && t.key === typeInfo.key;
             });
-            const listExists = lists.some(
-              (l) =>
-                l.title.toLowerCase() === `${typeInfo.name}s`.toLowerCase() ||
-                l.title.toLowerCase() === typeInfo.name.toLowerCase()
-            );
+            const listExists = isTypeCoveredByBoards(typeInfo, lists);
 
             if (!alreadyHadType && !listExists) {
               localStorage.setItem("curio_prompted_type_lists", JSON.stringify([...prompted, typeInfo.key]));
@@ -269,9 +608,57 @@ export default function Home() {
     }
   };
 
-
-
   const visibleItems = wishOnly ? items.filter((it) => it.save.wishlist) : items;
+
+  const displayedBoardSections = useMemo(() => {
+    if (!activeListDetails?.sections) return [];
+    if (activeListSlug !== "wardrobe") return activeListDetails.sections;
+
+    if (garmentCategoryFilter === "ALL" && garmentSeasonFilter === "ALL") {
+      return activeListDetails.sections;
+    }
+
+    return activeListDetails.sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => {
+          const structured: any = item.entity?.coreStructuredData || {};
+          const custom: any = item.save?.userCustomValues || {};
+          const tags: string[] = (item.save?.autoTags || []).map((t: string) => t.toLowerCase());
+
+          if (garmentCategoryFilter !== "ALL") {
+            const itemCat = (structured.category || custom.category || "").toLowerCase();
+            const targetCat = garmentCategoryFilter.toLowerCase();
+            const matchesCategory = itemCat === targetCat || tags.includes(targetCat);
+            if (!matchesCategory) return false;
+          }
+
+          if (garmentSeasonFilter !== "ALL") {
+            const itemSeason = (structured.season || custom.season || "").toLowerCase();
+            if (garmentSeasonFilter === "SPRING_SUMMER") {
+              const matches =
+                itemSeason.includes("spring") ||
+                itemSeason.includes("summer") ||
+                tags.includes("spring") ||
+                tags.includes("summer");
+              if (!matches) return false;
+            } else if (garmentSeasonFilter === "AUTUMN_WINTER") {
+              const matches =
+                itemSeason.includes("autumn") ||
+                itemSeason.includes("winter") ||
+                itemSeason.includes("fall") ||
+                tags.includes("autumn") ||
+                tags.includes("winter") ||
+                tags.includes("fall");
+              if (!matches) return false;
+            }
+          }
+
+          return true;
+        }),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [activeListDetails, activeListSlug, garmentCategoryFilter, garmentSeasonFilter]);
 
   if (authLoading) {
     return (
@@ -307,7 +694,7 @@ export default function Home() {
             }
             setUser(authenticatedUser);
             setIsAuthOpen(false);
-            fetchItems();
+            fetchItems({ reset: true });
             fetchLists();
           }}
         />
@@ -319,7 +706,7 @@ export default function Home() {
           onClose={() => setIsOnboardingOpen(false)}
           onComplete={(completedUser) => {
             setUser(completedUser);
-            fetchItems();
+            fetchItems({ reset: true });
             fetchLists();
           }}
         />
@@ -327,10 +714,71 @@ export default function Home() {
     );
   }
 
+  const renderFeedCard = (item: CardData) => (
+    <PolymorphicCard
+      key={item.save.id}
+      item={item}
+      density={cardDensity}
+      onCardClick={(card) => {
+        setLightboxPresentation("standard");
+        setSelectedCard(card);
+      }}
+      onConnect={(card) => {
+        setPairingCard(card);
+        setIsPairingOpen(true);
+      }}
+      onSwapped={() => fetchItems({ reset: true })}
+      onUnlink={(connectionId) => {
+        removeConnectionInPlace(connectionId);
+        fetchItems({ reset: true });
+      }}
+      onAddToList={() => {
+        fetchLists();
+        if (activeListSlug) refreshActiveBoard(activeListSlug);
+      }}
+      onWishToggled={(id, w) => {
+        setItems((prev) =>
+          prev.map((it) => (it.save.id === id ? { ...it, save: { ...it.save, wishlist: w } } : it))
+        );
+        setWishlistCount((prev) =>
+          prev !== null ? Math.max(0, prev + (w ? 1 : -1)) : null
+        );
+      }}
+      onCustomFieldsUpdated={(saveId, updatedValues) => {
+        setItems((prev) =>
+          prev.map((it) =>
+            it.save.id === saveId
+              ? {
+                  ...it,
+                  save: {
+                    ...it.save,
+                    userCustomValues: updatedValues,
+                  },
+                }
+              : it
+          )
+        );
+      }}
+    />
+  );
+
+  const displayedTotalSaves = vaultTotalCount ?? items.length;
+  const displayedStreamTotal = streamTotalCount ?? displayedTotalSaves;
+  const displayedWishlistCount = wishlistCount ?? items.filter((it) => it.save.wishlist).length;
+  const hiddenWearLogCount = !wishOnly && !showWearLogs ? wearLogCount ?? 0 : 0;
+
   return (
     <PullToRefresh
       disabled={Boolean(selectedCard) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen}
-      onRefresh={() => Promise.all([fetchItems(), fetchLists(), triggerBackgroundFeedSyncIfStale(false)])}
+      onRefresh={() =>
+        Promise.all([
+          fetchItems({ reset: true, wishlist: wishOnly }),
+          fetchLists(),
+          refreshActiveBoard(),
+          triggerClosetSync(false),
+          triggerBackgroundFeedSyncIfStale(false),
+        ])
+      }
     >
     <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-8 sm:py-12 px-4 sm:px-6 lg:px-8 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
       {/* Header */}
@@ -351,8 +799,8 @@ export default function Home() {
                 localStorage.removeItem("curio_token");
               }
               setUser(null);
-              fetchItems();
-              fetchLists();
+              setItems([]);
+              setLists([]);
             }}
           />
         </div>
@@ -368,6 +816,10 @@ export default function Home() {
       <div className="mb-8 max-w-4xl mx-auto">
         <Omnibox
           onCaptured={handleCaptured}
+          onOptimisticStart={handleOptimisticStart}
+          onOptimisticSettle={handleOptimisticSettle}
+          onSelectExistingSave={handleSelectExistingSave}
+          activeBoardContext={activeBoardContext}
           onOpenTypeBuilder={() => setIsTypeBuilderOpen(true)}
         />
       </div>
@@ -416,8 +868,43 @@ export default function Home() {
               My collections
             </h2>
             <p className="text-xs text-neutral-500">
-              Showing {items.length} total saves
+              {wishOnly
+                ? `Showing ${visibleItems.length} of ${displayedWishlistCount} wishlisted saves`
+                : hiddenWearLogCount > 0
+                ? `Showing ${items.length} of ${displayedStreamTotal} saves · ${hiddenWearLogCount} ${
+                    hiddenWearLogCount === 1 ? "wear log" : "wear logs"
+                  } tucked in Outfits`
+                : `Showing ${items.length} of ${displayedStreamTotal} total saves`}
             </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0 self-end sm:self-auto">
+            {activeListSlug === null && !wishOnly && ((wearLogCount ?? 0) > 0 || showWearLogs) && (
+              <button
+                type="button"
+                data-testid="toggle-wear-logs"
+                aria-pressed={showWearLogs}
+                onClick={handleToggleWearLogs}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition cursor-pointer ${
+                  showWearLogs
+                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white shadow-xs"
+                    : "bg-white dark:bg-neutral-900 border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                }`}
+                title={
+                  showWearLogs
+                    ? "Tuck daily wear logs out of All stream"
+                    : "Include daily wear logs in All stream"
+                }
+              >
+                <Shirt className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Wear logs{typeof wearLogCount === "number" ? ` (${wearLogCount})` : ""}</span>
+              </button>
+            )}
+            <ViewModeSwitcher
+              layout={layoutEngine}
+              density={cardDensity}
+              onLayoutChange={setLayoutEngine}
+              onDensityChange={setCardDensity}
+            />
           </div>
         </div>
 
@@ -425,23 +912,40 @@ export default function Home() {
         <ListTabsBar
           lists={lists}
           activeListSlug={activeListSlug}
-          totalAllSavesCount={items.length}
+          totalAllSavesCount={displayedStreamTotal}
           onSelectList={(slug) => {
             setWishOnly(false);
             setActiveListSlug(slug);
           }}
           wishlistActive={wishOnly}
-          wishlistCount={items.filter((it) => it.save.wishlist).length}
+          wishlistCount={displayedWishlistCount}
           onToggleWishlist={() => {
             setActiveListSlug(null);
             setWishOnly((v) => !v);
           }}
-          onCreateListClick={() => setIsCreateListOpen(true)}
+          onCreateListClick={() => {
+            setEditingBoard(null);
+            setCreateListParentId(activeListDetails?.list.id || null);
+            setIsCreateListOpen(true);
+          }}
         />
 
         {/* Content View: Board View vs Taste Stream Feed */}
         {activeListSlug !== null ? (
           <div>
+            {/* Breadcrumb Navigation when viewing board */}
+            {activeListDetails && (
+              <BreadcrumbNav
+                ancestors={activeListDetails.ancestors || []}
+                currentTitle={activeListDetails.list.title}
+                onSelectBoard={(slug) => {
+                  setWishOnly(false);
+                  setActiveListSlug(slug);
+                }}
+                className="mb-4"
+              />
+            )}
+
             {/* Board Header details */}
             {activeListDetails && (
               <div className="mb-8 p-6 rounded-3xl bg-neutral-100/60 dark:bg-neutral-900/40 border border-neutral-200/80 dark:border-neutral-800">
@@ -456,37 +960,178 @@ export default function Home() {
                       </p>
                     )}
                   </div>
-                  <a
-                    href={`/list/${activeListDetails.list.slug}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 self-start sm:self-auto transition"
-                  >
-                    <span>View Public Board ↗</span>
-                  </a>
+                  <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                    {(activeListSlug === "wardrobe" || activeListSlug === "outfits") && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => triggerClosetSync(true)}
+                          disabled={isSyncingCloset}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloset ? "animate-spin" : ""}`} />
+                          <span>{isSyncingCloset ? "Syncing Closet..." : "Sync Closet"}</span>
+                        </button>
+                        <a
+                          href={`/closet/#${activeListSlug === "outfits" ? "outfits" : "closet"}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
+                        >
+                          <span>Open Closet ↗</span>
+                        </a>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBoard(activeListDetails.list);
+                        setIsCreateListOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      <span>Edit Board</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBoard(null);
+                        setCreateListParentId(activeListDetails.list.id);
+                        setIsCreateListOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                    >
+                      <span>+ Sub-Board</span>
+                    </button>
+                    <a
+                      href={getApiUrl(`/list/${activeListDetails.list.slug}`)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
+                    >
+                      <span>View Public Board ↗</span>
+                    </a>
+                  </div>
                 </div>
+              </div>
+            )}
+
+            {/* Garment Characteristic Filter Bar (when on Wardrobe board) */}
+            {activeListSlug === "wardrobe" && (
+              <div className="mb-6 flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-1 p-1 bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl">
+                  {GARMENT_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setGarmentCategoryFilter(cat.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider transition ${
+                        garmentCategoryFilter === cat.id
+                          ? "bg-white dark:bg-neutral-800 text-neutral-950 dark:text-neutral-50 shadow-xs font-bold"
+                          : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1 p-1 bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl">
+                  {GARMENT_SEASONS.map((season) => (
+                    <button
+                      key={season.id}
+                      onClick={() => setGarmentSeasonFilter(season.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider transition ${
+                        garmentSeasonFilter === season.id
+                          ? "bg-white dark:bg-neutral-800 text-neutral-950 dark:text-neutral-50 shadow-xs font-bold"
+                          : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                      }`}
+                    >
+                      {season.label}
+                    </button>
+                  ))}
+                </div>
+
+                {(garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL") && (
+                  <button
+                    onClick={() => {
+                      setGarmentCategoryFilter("ALL");
+                      setGarmentSeasonFilter("ALL");
+                    }}
+                    className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 underline underline-offset-4 px-2"
+                  >
+                    Reset filters
+                  </button>
+                )}
               </div>
             )}
 
             {/* Section Group View */}
             {activeListDetails ? (
-              <SectionGroupView
-                sections={activeListDetails.sections}
-                onConnect={(card) => {
-                  setPairingCard(card);
-                  setIsPairingOpen(true);
-                }}
-                onSwapped={() => {
-                  fetchItems();
-                  fetchLists();
-                }}
-                onUnlink={() => {
-                  fetchItems();
-                  fetchLists();
-                }}
-                onAddToList={() => fetchLists()}
-                onCardClick={(card) => setSelectedCard(card)}
-              />
+              (displayedBoardSections.length > 0 || (activeListDetails.children && activeListDetails.children.length > 0)) ? (
+                <SectionGroupView
+                  sections={displayedBoardSections}
+                  childrenBoards={activeListDetails.children}
+                  layout={layoutEngine}
+                  density={cardDensity}
+                  onSelectBoard={(slug) => {
+                    setWishOnly(false);
+                    setActiveListSlug(slug);
+                  }}
+                  onAddSubBoard={() => {
+                    setEditingBoard(null);
+                    setCreateListParentId(activeListDetails.list.id);
+                    setIsCreateListOpen(true);
+                  }}
+                  onConnect={(card) => {
+                    setPairingCard(card);
+                    setIsPairingOpen(true);
+                  }}
+                  onSwapped={() => {
+                    fetchItems({ reset: true });
+                    fetchLists();
+                    refreshActiveBoard(activeListSlug);
+                  }}
+                  onUnlink={(connectionId) => {
+                    removeConnectionInPlace(connectionId);
+                    fetchItems({ reset: true });
+                    fetchLists();
+                    refreshActiveBoard(activeListSlug);
+                  }}
+                  onAddToList={() => {
+                    fetchLists();
+                    refreshActiveBoard(activeListSlug);
+                  }}
+                  onCardClick={(card, presentation) => {
+                    setLightboxPresentation(presentation || "standard");
+                    setSelectedCard(card);
+                  }}
+                />
+              ) : (
+                <div className="text-center py-20 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl p-8">
+                  <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
+                    {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL")
+                      ? "No garments match the selected filters."
+                      : "This board is currently empty."}
+                  </p>
+                  <p className="text-neutral-400 text-xs max-w-sm mx-auto mb-4">
+                    {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL")
+                      ? "Try selecting a different category or season combination."
+                      : "Capture an item above while viewing this board, or click Board on any card."}
+                  </p>
+                  {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL") && (
+                    <button
+                      onClick={() => {
+                        setGarmentCategoryFilter("ALL");
+                        setGarmentSeasonFilter("ALL");
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-950 transition"
+                    >
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
+              )
             ) : (
               <div className="text-center py-20 text-neutral-400 text-sm">
                 Loading board...
@@ -495,17 +1140,6 @@ export default function Home() {
           </div>
         ) : (
           <div>
-            {/* View Mode Switcher */}
-            <div className="flex items-center justify-end mb-6">
-              <ViewModeSwitcher
-                layout={layoutEngine}
-                density={cardDensity}
-                onLayoutChange={setLayoutEngine}
-                onDensityChange={setCardDensity}
-                className="shrink-0"
-              />
-            </div>
-
             {/* Feed Layout Engines */}
             {loading ? (
               <div className="text-center py-20 text-neutral-400 text-sm">
@@ -514,120 +1148,79 @@ export default function Home() {
             ) : visibleItems.length === 0 ? (
               <div className="text-center py-20 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl p-8">
                 <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
-                  {wishOnly ? "Your wishlist is empty. Tap the heart on any card." : "No items in your collections yet."}
+                  {wishOnly
+                    ? "Your wishlist is empty. Tap the heart on any card."
+                    : hiddenWearLogCount > 0
+                    ? `Your ${hiddenWearLogCount} daily ${
+                        hiddenWearLogCount === 1 ? "wear log is" : "wear logs are"
+                      } tucked in Outfits.`
+                    : "No items in your collections yet."}
                 </p>
                 <p className="text-neutral-400 text-xs max-w-sm mx-auto">
-                  Capture a new thought above or import a CSV export from Letterboxd or Goodreads to seed your library.
+                  {hiddenWearLogCount > 0
+                    ? "Capture a new save above, browse your Outfits board, or include wear logs in this stream."
+                    : "Capture a new thought above or import a CSV export from Letterboxd or Goodreads to seed your library."}
                 </p>
+                {hiddenWearLogCount > 0 && (
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleToggleWearLogs}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 transition cursor-pointer"
+                    >
+                      Include wear logs
+                    </button>
+                    {lists.some((l) => l.slug === "outfits") && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveListSlug("outfits")}
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-semibold border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 transition cursor-pointer"
+                      >
+                        Open Outfits
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div>
                 {layoutEngine === "masonry" && (
-                  <MasonryLayout
-                    items={visibleItems}
-                    renderItem={(item) => (
-                      <PolymorphicCard
-                        key={item.save.id}
-                        item={item}
-                        onCardClick={(card) => setSelectedCard(card)}
-                        onConnect={(card) => {
-                          setPairingCard(card);
-                          setIsPairingOpen(true);
-                        }}
-                        onSwapped={() => fetchItems()}
-                        onUnlink={() => fetchItems()}
-                        onAddToList={() => fetchLists()}
-                        onWishToggled={(id, w) => setItems((prev) => prev.map((it) => (it.save.id === id ? { ...it, save: { ...it.save, wishlist: w } } : it)))}
-                        onCustomFieldsUpdated={(saveId, updatedValues) => {
-                          setItems((prev) =>
-                            prev.map((it) =>
-                              it.save.id === saveId
-                                ? {
-                                    ...it,
-                                    save: {
-                                      ...it.save,
-                                      userCustomValues: updatedValues,
-                                    },
-                                  }
-                                : it
-                            )
-                          );
-                        }}
-                      />
-                    )}
-                  />
+                  <MasonryLayout items={visibleItems} renderItem={renderFeedCard} />
                 )}
 
                 {layoutEngine === "grid" && (
-                  <GridLayout
-                    items={visibleItems}
-                    renderItem={(item) => (
-                      <PolymorphicCard
-                        key={item.save.id}
-                        item={item}
-                        onCardClick={(card) => setSelectedCard(card)}
-                        onConnect={(card) => {
-                          setPairingCard(card);
-                          setIsPairingOpen(true);
-                        }}
-                        onSwapped={() => fetchItems()}
-                        onUnlink={() => fetchItems()}
-                        onAddToList={() => fetchLists()}
-                        onWishToggled={(id, w) => setItems((prev) => prev.map((it) => (it.save.id === id ? { ...it, save: { ...it.save, wishlist: w } } : it)))}
-                        onCustomFieldsUpdated={(saveId, updatedValues) => {
-                          setItems((prev) =>
-                            prev.map((it) =>
-                              it.save.id === saveId
-                                ? {
-                                    ...it,
-                                    save: {
-                                      ...it.save,
-                                      userCustomValues: updatedValues,
-                                    },
-                                  }
-                                : it
-                            )
-                          );
-                        }}
-                      />
-                    )}
-                  />
+                  <GridLayout items={visibleItems} renderItem={renderFeedCard} />
                 )}
 
                 {layoutEngine === "timeline" && (
-                  <TimelineLayout
+                  <TimelineLayout items={visibleItems} renderItem={renderFeedCard} />
+                )}
+
+                {layoutEngine === "shelf" && (
+                  <ShelfLayout
                     items={visibleItems}
-                    renderItem={(item) => (
-                      <PolymorphicCard
-                        key={item.save.id}
-                        item={item}
-                        onCardClick={(card) => setSelectedCard(card)}
-                        onConnect={(card) => {
-                          setPairingCard(card);
-                          setIsPairingOpen(true);
-                        }}
-                        onSwapped={() => fetchItems()}
-                        onUnlink={() => fetchItems()}
-                        onAddToList={() => fetchLists()}
-                        onWishToggled={(id, w) => setItems((prev) => prev.map((it) => (it.save.id === id ? { ...it, save: { ...it.save, wishlist: w } } : it)))}
-                        onCustomFieldsUpdated={(saveId, updatedValues) => {
-                          setItems((prev) =>
-                            prev.map((it) =>
-                              it.save.id === saveId
-                                ? {
-                                    ...it,
-                                    save: {
-                                      ...it.save,
-                                      userCustomValues: updatedValues,
-                                    },
-                                  }
-                                : it
-                            )
-                          );
-                        }}
-                      />
-                    )}
+                    onOpenObject={(card, presentation) => {
+                      setLightboxPresentation(presentation || "standard");
+                      setSelectedCard(card);
+                    }}
                   />
+                )}
+
+                {/* Infinite Scroll Sentinel & Load More Fallback */}
+                {nextCursor && (
+                  <div ref={loadMoreSentinelRef} className="mt-10 flex justify-center py-4">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        fetchItems({ reset: false, wishlist: wishOnly, cursor: nextCursor })
+                      }
+                      disabled={loadingMore}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-semibold bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 hover:border-neutral-400 text-neutral-700 dark:text-neutral-200 shadow-xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      {loadingMore && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>{loadingMore ? "Loading more..." : "Load more saves"}</span>
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -641,31 +1234,66 @@ export default function Home() {
         onClose={() => setIsImporterOpen(false)}
         onImported={() => {
           setIsImporterOpen(false);
-          fetchItems();
+          fetchItems({ reset: true });
+          fetchLists();
         }}
       />
 
       {/* Synaptic Memory Edge Pairing Modal */}
       <PairingModal
         sourceCard={pairingCard}
-        availableCards={items}
+        availableCards={pairableCards}
         isOpen={isPairingOpen}
         onClose={() => {
           setIsPairingOpen(false);
           setPairingCard(null);
         }}
         onPaired={() => {
-          fetchItems();
+          fetchItems({ reset: true });
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+          if (selectedCard) {
+            const targetId = selectedCard.save.id;
+            apiFetch(`/api/v1/connections?saveId=${encodeURIComponent(targetId)}`)
+              .then((res) => (res.ok ? res.json() : null))
+              .then((data) => {
+                if (Array.isArray(data?.connections)) {
+                  setSelectedCard((prev) =>
+                    prev && prev.save.id === targetId
+                      ? { ...prev, connections: data.connections }
+                      : prev
+                  );
+                }
+              })
+              .catch(() => {});
+          }
         }}
       />
 
-      {/* Curated Board Creation Modal */}
+      {/* Curated Board Creation / Edit Modal */}
       <CreateListModal
         isOpen={isCreateListOpen}
-        onClose={() => setIsCreateListOpen(false)}
+        editingBoard={editingBoard}
+        defaultParentId={createListParentId}
+        availableBoards={lists.map((l) => ({ id: l.id, title: l.title }))}
+        onClose={() => {
+          setIsCreateListOpen(false);
+          setEditingBoard(null);
+          setCreateListParentId(null);
+        }}
         onCreated={(newList) => {
           fetchLists();
           setActiveListSlug(newList.slug);
+        }}
+        onUpdated={(updatedList) => {
+          fetchLists();
+          refreshActiveBoard(updatedList.slug);
+        }}
+        onDeleted={(deletedSlug) => {
+          fetchLists();
+          if (activeListSlug === deletedSlug) {
+            setActiveListSlug(null);
+            setActiveListDetails(null);
+          }
         }}
       />
 
@@ -674,7 +1302,7 @@ export default function Home() {
         isOpen={isTypeBuilderOpen}
         onClose={() => setIsTypeBuilderOpen(false)}
         onTypeCreated={() => {
-          fetchItems();
+          fetchItems({ reset: true });
           fetchLists();
         }}
       />
@@ -683,11 +1311,30 @@ export default function Home() {
       <CardLightboxModal
         card={selectedCard}
         isOpen={Boolean(selectedCard)}
+        initialPresentation={lightboxPresentation}
+        suppressEscape={isPairingOpen}
         creatorAffiliateTags={user?.affiliateTags}
-        onClose={() => setSelectedCard(null)}
+        onClose={() => {
+          setSelectedCard(null);
+          setLightboxPresentation("standard");
+        }}
+        onConnect={
+          selectedCard && !selectedCard.save.isPrivateMemo
+            ? (card) => {
+                setPairingCard(card);
+                setIsPairingOpen(true);
+              }
+            : undefined
+        }
+        onUnlink={(connectionId) => {
+          removeConnectionInPlace(connectionId);
+          fetchItems({ reset: true });
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
         onCardUpdated={(updatedSave) => {
-          fetchItems();
-          if (activeListSlug) fetchLists();
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
           setSelectedCard((prev) =>
             prev && prev.save.id === updatedSave?.id
               ? {
@@ -702,10 +1349,14 @@ export default function Home() {
         }}
         onCardDeleted={() => {
           setSelectedCard(null);
-          fetchItems();
-          if (activeListSlug) fetchLists();
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
         }}
-        onListUpdated={() => fetchLists()}
+        onListUpdated={() => {
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
       />
 
       {/* Authentication Modal */}
@@ -719,7 +1370,7 @@ export default function Home() {
           }
           setUser(authenticatedUser);
           setIsAuthOpen(false);
-          fetchItems();
+          fetchItems({ reset: true });
           fetchLists();
         }}
       />
@@ -731,7 +1382,7 @@ export default function Home() {
         onClose={() => setIsOnboardingOpen(false)}
         onComplete={(completedUser) => {
           setUser(completedUser);
-          fetchItems();
+          fetchItems({ reset: true });
           fetchLists();
         }}
       />
@@ -785,7 +1436,7 @@ export default function Home() {
               onClick={() => handleCreateListForPrompt(newTypePrompt)}
               className="px-3 py-1.5 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-xs font-semibold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition active:scale-95 cursor-pointer shadow-xs"
             >
-              Create &ldquo;{newTypePrompt.name}s&rdquo; List
+              Create &ldquo;{newTypePrompt.listTitle}&rdquo; List
             </button>
           </div>
         </div>

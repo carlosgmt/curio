@@ -230,4 +230,211 @@ describe("Capture API & Intent Execution (/api/v1/capture)", () => {
     expect(data.save.userCustomValues.author).toBe("Seneca");
     expect(data.save.userCustomValues.date).toBe("c. 65 AD");
   });
+
+  it("tucks daily /style/outfit wear-logs out of default GET /api/v1/capture stream while preserving ideas/memos, hydrating connections, and keeping Outfits/Wardrobe synced", async () => {
+    const { globalEntities } = await import("@/db");
+    const { createConnection } = await import("@/lib/connections/service");
+    const { createList, getListBySlugWithItems } = await import("@/lib/lists/service");
+
+    const ts = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `stream-wear-${ts}@curio.local`,
+        username: `streamwear_${ts}`,
+        displayName: "Stream Signal Tester",
+      })
+      .returning();
+
+    const { token } = await createSession(user.id);
+    const authHeaders = { Authorization: `Bearer ${token}` };
+
+    // 1. Seed older core curations: 1 private memo (NULL typePath/entityId), 1 film, 1 garment, 1 outfit idea
+    const baseTime = ts - 100_000;
+    const [memoSave] = await db
+      .insert(userSaves)
+      .values({
+        userId: user.id,
+        entityId: null,
+        typePath: null,
+        isPrivateMemo: true,
+        privateTitle: "Quiet Morning Journal",
+        createdAt: new Date(baseTime).toISOString(),
+      })
+      .returning();
+
+    const [filmEnt] = await db
+      .insert(globalEntities)
+      .values({
+        canonicalUrl: `https://example.com/film-${ts}`,
+        urlHash: `hash-film-${ts}`,
+        entityKey: `key-film-${ts}`,
+        coreType: "MEDIA",
+        typePath: "/media/film",
+        title: "In the Mood for Love",
+        coreStructuredData: {},
+      })
+      .returning();
+    const [filmSave] = await db
+      .insert(userSaves)
+      .values({
+        userId: user.id,
+        entityId: filmEnt.id,
+        typePath: "/media/film",
+        isPrivateMemo: false,
+        createdAt: new Date(baseTime + 1000).toISOString(),
+      })
+      .returning();
+
+    const [garmentEnt] = await db
+      .insert(globalEntities)
+      .values({
+        canonicalUrl: `closet://garment/${ts}`,
+        urlHash: `hash-garm-${ts}`,
+        entityKey: `key-garm-${ts}`,
+        coreType: "PRODUCT",
+        typePath: "/product/garment",
+        title: "Olive Chore Coat",
+        coreStructuredData: { category: "outerwear" },
+      })
+      .returning();
+    const [garmentSave] = await db
+      .insert(userSaves)
+      .values({
+        userId: user.id,
+        entityId: garmentEnt.id,
+        typePath: "/product/garment",
+        isPrivateMemo: false,
+        createdAt: new Date(baseTime + 2000).toISOString(),
+      })
+      .returning();
+
+    const [ideaEnt] = await db
+      .insert(globalEntities)
+      .values({
+        canonicalUrl: `closet://outfit-idea/${ts}`,
+        urlHash: `hash-idea-${ts}`,
+        entityKey: `key-idea-${ts}`,
+        coreType: "PRODUCT",
+        typePath: "/style/outfit",
+        title: "Autumn Layering Moodboard",
+        coreStructuredData: { kind: "idea", items: [] },
+      })
+      .returning();
+    const [ideaSave] = await db
+      .insert(userSaves)
+      .values({
+        userId: user.id,
+        entityId: ideaEnt.id,
+        typePath: "/style/outfit",
+        isPrivateMemo: false,
+        createdAt: new Date(baseTime + 3000).toISOString(),
+      })
+      .returning();
+
+    // Pair filmSave <-> garmentSave to verify batch connections hydration on GET /api/v1/capture
+    await createConnection({
+      userId: user.id,
+      sourceSaveId: filmSave.id,
+      targetSaveId: garmentSave.id,
+      connectionType: "AESTHETIC_SIBLING",
+    });
+
+    // 2. Seed 55 NEWER daily /style/outfit wear-logs (exceeding limit=50 page 1!)
+    for (let i = 0; i < 55; i++) {
+      const [wornEnt] = await db
+        .insert(globalEntities)
+        .values({
+          canonicalUrl: `closet://outfit/${ts}-${i}`,
+          urlHash: `hash-worn-${ts}-${i}`,
+          entityKey: `key-worn-${ts}-${i}`,
+          coreType: "PRODUCT",
+          typePath: "/style/outfit",
+          title: `Daily Fit #${i}`,
+          // Mix explicit kind="worn" and legacy undefined kind
+          coreStructuredData: i % 2 === 0 ? { kind: "worn", wornDate: "2026-04-01" } : { items: [] },
+        })
+        .returning();
+      await db.insert(userSaves).values({
+        userId: user.id,
+        entityId: wornEnt.id,
+        typePath: "/style/outfit",
+        isPrivateMemo: false,
+        wishlist: i === 0, // Wishlist the first wear-log
+        createdAt: new Date(ts + i * 1000).toISOString(),
+      });
+    }
+
+    // Create Outfits & Wardrobe smart boards
+    const outfitsBoard = await createList(user.id, {
+      title: "Outfits",
+      slug: `outfits-${ts}`,
+      visibility: "PRIVATE",
+      autoRules: { typePathPrefix: "/style/outfit" },
+    });
+    const wardrobeBoard = await createList(user.id, {
+      title: "Wardrobe",
+      slug: `wardrobe-${ts}`,
+      visibility: "PRIVATE",
+      autoRules: { typePathPrefix: "/product/garment" },
+    });
+
+    // 3. Default GET /api/v1/capture?limit=50 tucks all 55 wear-logs at the SQL layer!
+    const defaultRes = await GET(
+      new NextRequest("http://localhost:3000/api/v1/capture?limit=50", { headers: authHeaders })
+    );
+    expect(defaultRes.status).toBe(200);
+    const defaultData = await defaultRes.json();
+    expect(defaultData.wearLogCount).toBe(55);
+    expect(defaultData.vaultTotalCount).toBe(59);
+    expect(defaultData.totalCount).toBe(4);
+    expect(defaultData.nextCursor).toBeNull();
+    expect(defaultData.saves.length).toBe(4);
+
+    const returnedIds = new Set(defaultData.saves.map((r: any) => r.save.id));
+    expect(returnedIds.has(memoSave.id)).toBe(true);
+    expect(returnedIds.has(filmSave.id)).toBe(true);
+    expect(returnedIds.has(garmentSave.id)).toBe(true);
+    expect(returnedIds.has(ideaSave.id)).toBe(true);
+
+    // Every returned item has `connections` hydrated as an array (eliminating client N+1)
+    for (const row of defaultData.saves) {
+      expect(Array.isArray(row.connections)).toBe(true);
+    }
+    const filmRow = defaultData.saves.find((r: any) => r.save.id === filmSave.id);
+    expect(filmRow.connections.length).toBe(1);
+    expect(filmRow.connections[0].saveId).toBe(garmentSave.id);
+    const ideaRow = defaultData.saves.find((r: any) => r.save.id === ideaSave.id);
+    expect(ideaRow.connections).toEqual([]);
+
+    // 4. Opt-in toggle ?includeWearLogs=true returns the full stream including daily wear-logs
+    const withWearRes = await GET(
+      new NextRequest("http://localhost:3000/api/v1/capture?limit=50&includeWearLogs=true", {
+        headers: authHeaders,
+      })
+    );
+    expect(withWearRes.status).toBe(200);
+    const withWearData = await withWearRes.json();
+    expect(withWearData.totalCount).toBe(59);
+    expect(withWearData.wearLogCount).toBe(55);
+    expect(withWearData.saves.length).toBe(50);
+    expect(withWearData.nextCursor).not.toBeNull();
+    expect(withWearData.saves[0].entity.title).toBe("Daily Fit #54");
+
+    // 5. Wishlist filter (?wishlist=true) still includes wishlisted wear-logs
+    const wishRes = await GET(
+      new NextRequest("http://localhost:3000/api/v1/capture?wishlist=true", {
+        headers: authHeaders,
+      })
+    );
+    const wishData = await wishRes.json();
+    expect(wishData.saves.length).toBe(1);
+    expect(wishData.saves[0].entity.title).toBe("Daily Fit #0");
+
+    // 6. Outfits & Wardrobe boards remain 100% populated
+    const outfitsDetails = await getListBySlugWithItems(outfitsBoard.slug, user.id);
+    expect(outfitsDetails?.itemCount).toBe(56); // 55 wear-logs + 1 idea
+    const wardrobeDetails = await getListBySlugWithItems(wardrobeBoard.slug, user.id);
+    expect(wardrobeDetails?.itemCount).toBe(1);
+  });
 });

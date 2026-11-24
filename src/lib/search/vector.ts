@@ -1,6 +1,6 @@
 import { db, userSaves, globalEntities } from "@/db";
 import { eq, desc } from "drizzle-orm";
-import { getLocalLlmConfig } from "@/lib/llm/client";
+import { getLocalLlmConfig, isLocalLlmDisabled } from "@/lib/llm/client";
 import { decryptPrivateField } from "@/lib/security/encryption";
 
 export interface HybridSearchOptions {
@@ -28,7 +28,8 @@ export interface HybridSearchResult {
 
 const DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
 const EMBEDDING_TIMEOUT_MS = 2000;
-const embeddingCache = new Map<string, number[]>();
+const neuralEmbeddingCache = new Map<string, number[]>();
+const deterministicEmbeddingCache = new Map<string, number[]>();
 const MAX_CACHE_SIZE = 1000;
 
 /**
@@ -110,57 +111,74 @@ export function generateDeterministicEmbedding(text: string, dimensions: number 
   return vector.map((v) => v / mag);
 }
 
+function getCachedDeterministicEmbedding(text: string, dimensions: number = 768): number[] {
+  const cacheKey = `${dimensions}:${text.trim()}`;
+  if (deterministicEmbeddingCache.has(cacheKey)) {
+    return deterministicEmbeddingCache.get(cacheKey)!;
+  }
+  const vec = generateDeterministicEmbedding(text, dimensions);
+  if (deterministicEmbeddingCache.size >= MAX_CACHE_SIZE) {
+    deterministicEmbeddingCache.clear();
+  }
+  deterministicEmbeddingCache.set(cacheKey, vec);
+  return vec;
+}
+
+export async function generateEmbeddingWithMeta(
+  text: string
+): Promise<{ vector: number[]; source: "neural" | "deterministic" }> {
+  const cacheKey = text.trim();
+  if (!isLocalLlmDisabled() && neuralEmbeddingCache.has(cacheKey)) {
+    return { vector: neuralEmbeddingCache.get(cacheKey)!, source: "neural" };
+  }
+
+  if (!isLocalLlmDisabled()) {
+    const { baseUrl } = getLocalLlmConfig();
+    const model = process.env.LOCAL_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
+
+      const res = await fetch(`${baseUrl}/embeddings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          input: text,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json();
+        const embedding = data?.data?.[0]?.embedding;
+        if (Array.isArray(embedding) && embedding.length > 0) {
+          if (neuralEmbeddingCache.size >= MAX_CACHE_SIZE) {
+            neuralEmbeddingCache.clear();
+          }
+          neuralEmbeddingCache.set(cacheKey, embedding);
+          return { vector: embedding, source: "neural" };
+        }
+      }
+    } catch {
+      // Ollama offline or timed out; fall back gracefully without poisoning neural cache
+    }
+  }
+
+  return { vector: getCachedDeterministicEmbedding(text, 768), source: "deterministic" };
+}
+
 /**
  * Generates vector embeddings for a given text.
  * Queries local Ollama `/v1/embeddings` endpoint with timeout.
- * Automatically and gracefully falls back to deterministic 384-d dense vector when Ollama is offline.
+ * Automatically and gracefully falls back to deterministic 768-d dense vector when Ollama is offline.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const cacheKey = text.trim();
-  if (embeddingCache.has(cacheKey)) {
-    return embeddingCache.get(cacheKey)!;
-  }
-
-  const { baseUrl } = getLocalLlmConfig();
-  const model = process.env.LOCAL_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
-
-    const res = await fetch(`${baseUrl}/embeddings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        input: text,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (res.ok) {
-      const data = await res.json();
-      const embedding = data?.data?.[0]?.embedding;
-      if (Array.isArray(embedding) && embedding.length > 0) {
-        if (embeddingCache.size >= MAX_CACHE_SIZE) {
-          embeddingCache.clear();
-        }
-        embeddingCache.set(cacheKey, embedding);
-        return embedding;
-      }
-    }
-  } catch {
-    // Ollama offline or timed out; fall back gracefully to deterministic dense vector
-  }
-
-  const fallback = generateDeterministicEmbedding(text);
-  if (embeddingCache.size >= MAX_CACHE_SIZE) {
-    embeddingCache.clear();
-  }
-  embeddingCache.set(cacheKey, fallback);
-  return fallback;
+  const { vector } = await generateEmbeddingWithMeta(text);
+  return vector;
 }
 
 /**
@@ -275,10 +293,11 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     });
   }
 
-  const queryEmbedding = await generateEmbedding(trimmed);
-  const scoredItems: HybridSearchResult[] = [];
+  const queryEmbeddingMeta = await generateEmbeddingWithMeta(trimmed);
+  const queryDetFallback =
+    queryEmbeddingMeta.source === "neural" ? getCachedDeterministicEmbedding(trimmed, 768) : queryEmbeddingMeta.vector;
 
-  for (const r of records) {
+  const preparedDocs = records.map((r) => {
     const decryptedTitle = r.save.privateTitle ? decryptPrivateField(r.save.privateTitle) : null;
     const decryptedNotes = r.save.personalNotes ? decryptPrivateField(r.save.personalNotes) : null;
 
@@ -288,7 +307,6 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     const autoTags = r.save.autoTags || [];
     const brand = r.entity?.brandOrCreator || null;
 
-    // 1. Lexical Score
     const lexicalScore = computeLexicalScore(trimmed, {
       title,
       summary,
@@ -297,15 +315,95 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
       brandOrCreator: brand,
     });
 
-    // 2. Semantic Score
     const docRepresentation = [title, summary, personalNotes, autoTags.join(" "), brand]
       .filter(Boolean)
-      .join(" ");
+      .join(" ")
+      .trim();
 
-    const docEmbedding = await generateEmbedding(docRepresentation);
+    return {
+      r,
+      decryptedTitle,
+      decryptedNotes,
+      title,
+      summary,
+      personalNotes,
+      lexicalScore,
+      docRepresentation,
+    };
+  });
+
+  // Batch any uncached document embeddings into a single /embeddings call (prevents O(N) sequential Ollama contention)
+  let useNeuralSpace = queryEmbeddingMeta.source === "neural" && !isLocalLlmDisabled();
+  if (useNeuralSpace) {
+    const uncachedDocs = Array.from(
+      new Set(
+        preparedDocs
+          .map((d) => d.docRepresentation)
+          .filter((doc) => doc.length > 0 && !neuralEmbeddingCache.has(doc))
+      )
+    );
+
+    if (uncachedDocs.length > 0) {
+      try {
+        const { baseUrl } = getLocalLlmConfig();
+        const model = process.env.LOCAL_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS + 1000);
+
+        const res = await fetch(`${baseUrl}/embeddings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            input: uncachedDocs,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (res.ok) {
+          const data = await res.json();
+          const items: any[] = Array.isArray(data?.data) ? data.data : [];
+          if (items.length === uncachedDocs.length) {
+            if (neuralEmbeddingCache.size + items.length > MAX_CACHE_SIZE) {
+              neuralEmbeddingCache.clear();
+            }
+            for (let i = 0; i < uncachedDocs.length; i++) {
+              const emb = items[i]?.embedding;
+              if (Array.isArray(emb) && emb.length > 0) {
+                neuralEmbeddingCache.set(uncachedDocs[i], emb);
+              } else {
+                useNeuralSpace = false;
+              }
+            }
+          } else {
+            useNeuralSpace = false;
+          }
+        } else {
+          useNeuralSpace = false;
+        }
+      } catch {
+        useNeuralSpace = false;
+      }
+    }
+  }
+
+  const qVec = useNeuralSpace ? queryEmbeddingMeta.vector : queryDetFallback;
+  const scoredItems: HybridSearchResult[] = [];
+
+  for (const item of preparedDocs) {
+    const { r, decryptedTitle, decryptedNotes, title, summary, personalNotes, lexicalScore, docRepresentation } = item;
+
+    let docEmbedding: number[];
+    if (useNeuralSpace && docRepresentation && neuralEmbeddingCache.has(docRepresentation)) {
+      docEmbedding = neuralEmbeddingCache.get(docRepresentation)!;
+    } else {
+      docEmbedding = getCachedDeterministicEmbedding(docRepresentation, 768);
+    }
+
     let semanticScore = 0;
-    if (queryEmbedding.length === docEmbedding.length) {
-      const cosSim = cosineSimilarity(queryEmbedding, docEmbedding);
+    if (qVec.length === docEmbedding.length) {
+      const cosSim = cosineSimilarity(qVec, docEmbedding);
       // Map [-1, 1] to [0, 1]
       semanticScore = Math.max(0, cosSim);
     }

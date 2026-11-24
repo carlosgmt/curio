@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, smartLists, listItems, userSaves, globalEntities } from "@/db";
 import { eq, or } from "drizzle-orm";
+import { AuthError, getOptionalAuth, requireAuth } from "@/lib/auth/service";
 
 function escapeXml(str: string): string {
   return str
@@ -37,6 +38,25 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    let isOwner = false;
+    if (board.visibility === "PRIVATE") {
+      const auth = await requireAuth(req);
+      const isStrictOrSession =
+        auth.session !== null ||
+        process.env.NODE_ENV === "production" ||
+        req.headers.get("x-strict-auth") === "true";
+      if (isStrictOrSession && auth.user.id !== board.userId) {
+        return NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 }
+        );
+      }
+      isOwner = !isStrictOrSession || auth.user.id === board.userId;
+    } else {
+      const optAuth = await getOptionalAuth(req);
+      isOwner = optAuth?.user.id === board.userId;
+    }
+
     const rows = await db
       .select({
         listItem: listItems,
@@ -65,7 +85,7 @@ export async function GET(req: NextRequest) {
       })
       .map((r, idx) => {
         const ext = (r.entity?.extendedAttributes as any) || {};
-        const title = r.entity?.title || r.save.privateTitle || `Spot ${idx + 1}`;
+        const title = r.entity?.title || (isOwner ? r.save.privateTitle : null) || `Spot ${idx + 1}`;
         const description = r.entity?.summary || r.listItem?.curatorNote || "";
         const address = ext.address || ext.location || "";
         const lat = ext.latitude ?? (Array.isArray(ext.coordinates) ? ext.coordinates[1] : 37.7749);
@@ -76,7 +96,7 @@ export async function GET(req: NextRequest) {
           title,
           description,
           address,
-          curatorNote: r.listItem?.curatorNote || r.save.personalNotes || null,
+          curatorNote: r.listItem?.curatorNote || (isOwner ? r.save.personalNotes : null) || null,
           lat: Number(lat) || 0,
           lng: Number(lng) || 0,
           canonicalUrl: r.entity?.canonicalUrl || null,
@@ -149,6 +169,9 @@ ${placemarksXml}
       },
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json(
       { success: false, error: error.message || "Failed to generate KML/GeoJSON export" },
       { status: 500 }

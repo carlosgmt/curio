@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getOrCreateDefaultUser,
   executeIngestionCascade,
   generateEntityKey,
 } from "@/lib/ingest/cascade";
-import { getOptionalAuth } from "@/lib/auth/service";
+import { AuthError, requireAuth } from "@/lib/auth/service";
 import { db, userSaves, globalEntities } from "@/db";
 import { eq } from "drizzle-orm";
 import { writeFile, mkdir } from "fs/promises";
@@ -39,8 +38,7 @@ export async function POST(req: NextRequest) {
   const redirectPrefix = hasBasePath ? "/curio" : "";
 
   try {
-    const auth = await getOptionalAuth(req);
-    const user = auth?.user ?? (await getOrCreateDefaultUser());
+    const { user } = await requireAuth(req);
     const contentType = req.headers.get("content-type") || "";
 
     let title = "";
@@ -166,7 +164,7 @@ export async function POST(req: NextRequest) {
         skipLocalLlm: true,
       });
 
-      if (res.save) {
+      if (res.save && (res.status === "created" || Boolean(url))) {
         const mergedNotes = [res.save.personalNotes, surroundingNotes]
           .filter(Boolean)
           .join("\n")
@@ -181,7 +179,7 @@ export async function POST(req: NextRequest) {
           res.save.personalNotes = mergedNotes;
         }
 
-        if (uploadedImageUrl && res.entity && !res.entity.heroImageUrl) {
+        if (res.status === "created" && uploadedImageUrl && res.entity && !res.entity.heroImageUrl) {
           await db
             .update(globalEntities)
             .set({ heroImageUrl: uploadedImageUrl })
@@ -203,6 +201,17 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err: any) {
+    if (err instanceof AuthError) {
+      if (wantsJson) {
+        return NextResponse.json({ error: err.message }, { status: err.statusCode });
+      }
+      return new Response(null, {
+        status: 303,
+        headers: {
+          Location: `${redirectPrefix}/?auth=required`,
+        },
+      });
+    }
     if (wantsJson) {
       return NextResponse.json({ error: err.message || "Share target error" }, { status: 500 });
     }

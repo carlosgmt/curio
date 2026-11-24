@@ -16,6 +16,7 @@ export interface CustomFieldsSectionProps {
   saveId: string;
   userCustomValues?: Record<string, unknown> | null;
   extendedAttributes?: Record<string, unknown> | null;
+  readOnly?: boolean;
   onUpdated?: (newCustomValues: Record<string, unknown>) => void;
   /** Attribute keys that should never render as pills (e.g. quote text/author). */
   hiddenKeys?: string[];
@@ -25,6 +26,7 @@ export function CustomFieldsSection({
   saveId,
   userCustomValues = {},
   extendedAttributes = {},
+  readOnly = false,
   onUpdated,
   hiddenKeys = [],
 }: CustomFieldsSectionProps) {
@@ -238,11 +240,16 @@ export function CustomFieldsSection({
         {/* User Specific Custom Attributes */}
         {Object.entries(localCustomValues).map(([attrKey, attrVal]) => {
           if (attrVal === null || attrVal === undefined) return null;
-          return renderFieldBadge(attrKey, attrVal, false, () => handleRemoveField(attrKey));
+          return renderFieldBadge(
+            attrKey,
+            attrVal,
+            false,
+            readOnly ? undefined : () => handleRemoveField(attrKey)
+          );
         })}
 
         {/* Inline Add Field Trigger */}
-        {!isOpen && (
+        {!readOnly && !isOpen && (
           <button
             type="button"
             onClick={() => setIsOpen(true)}

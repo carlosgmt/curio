@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, smartLists, listItems, userSaves, globalEntities } from "@/db";
 import { eq, or } from "drizzle-orm";
+import { AuthError, getOptionalAuth, requireAuth } from "@/lib/auth/service";
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,6 +27,25 @@ export async function POST(req: NextRequest) {
         { success: false, error: "Board not found" },
         { status: 404 }
       );
+    }
+
+    let isOwner = false;
+    if (board.visibility === "PRIVATE") {
+      const auth = await requireAuth(req);
+      const isStrictOrSession =
+        auth.session !== null ||
+        process.env.NODE_ENV === "production" ||
+        req.headers.get("x-strict-auth") === "true";
+      if (isStrictOrSession && auth.user.id !== board.userId) {
+        return NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 }
+        );
+      }
+      isOwner = !isStrictOrSession || auth.user.id === board.userId;
+    } else {
+      const optAuth = await getOptionalAuth(req);
+      isOwner = optAuth?.user.id === board.userId;
     }
 
     // 2. Fetch Board Items
@@ -57,7 +77,7 @@ export async function POST(req: NextRequest) {
     });
 
     const tracks = musicItems.map((item, index) => {
-      const title = item.entity?.title || item.save.privateTitle || `Track ${index + 1}`;
+      const title = item.entity?.title || (isOwner ? item.save.privateTitle : null) || `Track ${index + 1}`;
       const artist = item.entity?.brandOrCreator || "Various Artists";
       return {
         trackNumber: index + 1,
@@ -83,6 +103,9 @@ export async function POST(req: NextRequest) {
       syncedAt: new Date().toISOString(),
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json(
       { success: false, error: error.message || "Failed to sync YouTube Music playlist" },
       { status: 500 }

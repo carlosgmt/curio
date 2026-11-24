@@ -369,40 +369,158 @@ export async function routeKnownDomainUrl(
   if (
     (host.includes("google.") && path.startsWith("/maps")) ||
     host.startsWith("maps.google.") ||
-    host === "maps.app.goo.gl"
+    host === "maps.app.goo.gl" ||
+    host === "goo.gl"
   ) {
-    const placeMatch = path.match(/\/maps\/place\/([^/]+)/i);
-    const coordMatch = path.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-    const queryParam = parsed.searchParams.get("q") || parsed.searchParams.get("query");
-    const rawPlaceName = placeMatch
-      ? decodeURIComponent(placeMatch[1].replace(/\+/g, " "))
-      : queryParam || "Saved Place";
+    let effectiveUrl = rawUrl;
+    let effectiveParsed = parsed;
+    let effectivePath = path;
 
-    const placeRes = await resolvePlace(rawPlaceName, { fetchFn });
-    const lat = coordMatch ? parseFloat(coordMatch[1]) : placeRes?.coreStructuredData?.latitude;
-    const lon = coordMatch ? parseFloat(coordMatch[2]) : placeRes?.coreStructuredData?.longitude;
+    // Expand Google Maps shortlinks (maps.app.goo.gl / goo.gl/maps) via HTTP redirect resolution
+    if (host === "maps.app.goo.gl" || (host === "goo.gl" && path.startsWith("/maps"))) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3500);
+        const res = await fetchFn(rawUrl, {
+          method: "GET",
+          redirect: "follow",
+          signal: controller.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; CurioBot/1.0)",
+            Accept: "text/html,application/xhtml+xml",
+          },
+        });
+        clearTimeout(timer);
+
+        const locationHdr = res.headers?.get?.("location");
+        let candidateExpanded =
+          res.url && res.url !== rawUrl
+            ? res.url
+            : locationHdr
+            ? new URL(locationHdr, rawUrl).toString()
+            : null;
+
+        if (candidateExpanded) {
+          try {
+            const candidateParsed = new URL(candidateExpanded);
+            const continueParam = candidateParsed.searchParams.get("continue");
+            if (candidateParsed.hostname.includes("consent.google.") && continueParam) {
+              candidateExpanded = continueParam;
+            }
+          } catch {
+            // Keep candidateExpanded as-is
+          }
+        }
+
+        const needsHtmlFallback =
+          !candidateExpanded ||
+          (() => {
+            try {
+              const h = new URL(candidateExpanded).hostname.toLowerCase();
+              return h === "maps.app.goo.gl" || h === "goo.gl" || h.includes("consent.google.");
+            } catch {
+              return false;
+            }
+          })();
+
+        if (needsHtmlFallback && res.ok) {
+          try {
+            const html = (await res.text()).slice(0, 65536);
+            const decodedHtml = html
+              .replace(/&amp;/gi, "&")
+              .replace(/\\u003d/gi, "=")
+              .replace(/\\u0026/gi, "&");
+            const embeddedMapsMatch = decodedHtml.match(
+              /https:\/\/(?:www\.|maps\.)?google\.[a-z.]+\/maps\/[^\s"'<>\\]+/i
+            );
+            if (embeddedMapsMatch?.[0]) {
+              candidateExpanded = embeddedMapsMatch[0];
+            }
+          } catch {
+            // Ignore HTML body read failure
+          }
+        }
+
+        if (candidateExpanded) {
+          effectiveUrl = candidateExpanded;
+          effectiveParsed = new URL(candidateExpanded);
+          effectivePath = effectiveParsed.pathname;
+        }
+      } catch {
+        // Fall through with original URL if offline
+      }
+    }
+
+    const placeMatch = effectivePath.match(/\/maps\/place\/([^/]+)/i);
+    const searchMatch = effectivePath.match(/\/maps\/search\/([^/]+)/i);
+    const coordMatch =
+      effectivePath.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+      effectiveUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    const queryParam =
+      effectiveParsed.searchParams.get("q") ||
+      effectiveParsed.searchParams.get("query") ||
+      effectiveParsed.searchParams.get(" destination");
+
+    const decodedFromPath = placeMatch
+      ? decodeURIComponent(placeMatch[1].replace(/\+/g, " "))
+      : searchMatch
+      ? decodeURIComponent(searchMatch[1].replace(/\+/g, " "))
+      : null;
+
+    const queryIsPureCoords = Boolean(queryParam && /^-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?$/.test(queryParam.trim()));
+    const rawPlaceName =
+      decodedFromPath ||
+      (!queryIsPureCoords && queryParam ? queryParam : null) ||
+      "Saved Place";
+
+    const coordsFromQuery =
+      queryIsPureCoords && queryParam
+        ? queryParam.split(",").map((n) => parseFloat(n.trim()))
+        : null;
+
+    const resolvedCoordsUrl =
+      coordMatch
+        ? `https://www.google.com/maps/search/?api=1&query=${coordMatch[1]},${coordMatch[2]}`
+        : coordsFromQuery && coordsFromQuery.length === 2
+        ? `https://www.google.com/maps/search/?api=1&query=${coordsFromQuery[0]},${coordsFromQuery[1]}`
+        : effectiveUrl;
+
+    const placeRes =
+      rawPlaceName !== "Saved Place"
+        ? await resolvePlace(rawPlaceName, {
+            fetchFn,
+            canonicalUrlHint: resolvedCoordsUrl,
+          })
+        : null;
+
+    const lat = coordMatch
+      ? parseFloat(coordMatch[1])
+      : coordsFromQuery?.[0] ?? placeRes?.coreStructuredData?.latitude;
+    const lon = coordMatch
+      ? parseFloat(coordMatch[2])
+      : coordsFromQuery?.[1] ?? placeRes?.coreStructuredData?.longitude;
 
     return {
       title: placeRes?.title || rawPlaceName,
       summary:
         placeRes?.summary ||
-        `Location on Google Maps${lat && lon ? ` (${lat.toFixed(4)}, ${lon.toFixed(4)})` : ""}`,
+        `Location on Google Maps${lat != null && lon != null ? ` (${lat.toFixed(4)}, ${lon.toFixed(4)})` : ""}`,
       heroImageUrl: placeRes?.heroImageUrl || null,
       coreType: "PLACE",
       typePath: "/place",
       canonicalExternalId:
         placeRes?.canonicalExternalId ||
-        (lat && lon ? `geo:${lat.toFixed(4)},${lon.toFixed(4)}` : null),
-      canonicalUrl: rawUrl,
+        (lat != null && lon != null ? `geo:${lat.toFixed(4)},${lon.toFixed(4)}` : null),
+      canonicalUrl: effectiveUrl,
       brandOrCreator: placeRes?.city
         ? `${placeRes.city}${placeRes.country ? `, ${placeRes.country}` : ""}`
         : "Google Maps",
       priceCents: null,
       coreStructuredData: {
         ...(placeRes?.coreStructuredData || {}),
-        ...(lat ? { latitude: lat } : {}),
-        ...(lon ? { longitude: lon } : {}),
-        googleMapsUrl: rawUrl,
+        ...(lat != null ? { latitude: lat } : {}),
+        ...(lon != null ? { longitude: lon } : {}),
+        googleMapsUrl: effectiveUrl,
       },
       primarySource: {
         sellerName: "Google Maps",

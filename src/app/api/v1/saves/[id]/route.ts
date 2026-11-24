@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSaveDetails, updateSaveDetails, deleteSave } from "@/lib/saves/service";
 import { requireAuth, AuthError } from "@/lib/auth/service";
+import { syncCurioSaveEditToCloset } from "@/lib/sync/closet";
 
 const updateSaveSchema = z.object({
   privateTitle: z.string().optional().nullable(),
@@ -69,6 +70,28 @@ export async function PATCH(
     const updated = await updateSaveDetails(saveId, parsed.data);
     if (!updated) {
       return NextResponse.json({ error: "Save not found" }, { status: 404 });
+    }
+
+    // Best-effort write-through to closet-ui if this save maps to a Closet garment or outfit
+    const entityKey = updated.entity?.entityKey ?? details.entity?.entityKey;
+    if (entityKey && /^(?:closet:)?(?:garment|outfit):\d+$/.test(entityKey)) {
+      const customVals = parsed.data.userCustomValues;
+      await syncCurioSaveEditToCloset(entityKey, {
+        title: parsed.data.title ?? parsed.data.privateTitle,
+        brandOrCreator: parsed.data.brandOrCreator,
+        personalNotes:
+          parsed.data.personalNotes !== undefined
+            ? parsed.data.personalNotes ?? ""
+            : undefined,
+        size:
+          customVals && typeof customVals.size === "string"
+            ? customVals.size
+            : undefined,
+        inLaundry:
+          customVals && typeof customVals.inLaundry === "boolean"
+            ? customVals.inLaundry
+            : undefined,
+      }).catch(() => {});
     }
 
     return NextResponse.json({ success: true, ...updated });

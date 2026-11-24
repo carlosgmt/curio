@@ -1,12 +1,16 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Link2, FolderPlus, Heart } from "lucide-react";
+import { Link2, FolderPlus, Heart, Loader2 } from "lucide-react";
 import { wishLabel } from "@/lib/wishlist";
 import { VinylDiscCard } from "./silhouettes/VinylDiscCard";
 import { MoviePosterCard } from "./silhouettes/MoviePosterCard";
 import { VideoGameCard } from "./silhouettes/VideoGameCard";
 import { ProductCard } from "./silhouettes/ProductCard";
+import { GarmentCard } from "./silhouettes/GarmentCard";
+import { OutfitCard } from "./silhouettes/OutfitCard";
+import { CosmeticsCard } from "./silhouettes/CosmeticsCard";
+import { ElectronicsCard } from "./silhouettes/ElectronicsCard";
 import { BookJacketCard } from "./silhouettes/BookJacketCard";
 import { WineLabelCard } from "./silhouettes/WineLabelCard";
 import { ArtFrameCard } from "./silhouettes/ArtFrameCard";
@@ -20,6 +24,7 @@ import { TravelPassCard } from "./silhouettes/TravelPassCard";
 import { CreatorProfileCard } from "./silhouettes/CreatorProfileCard";
 import { PhotoCard } from "./silhouettes/PhotoCard";
 import { WebLinkCard } from "./silhouettes/WebLinkCard";
+import { silhouetteRegistry, type SilhouetteDensity } from "./registry";
 import { SynapsePill } from "../connections/SynapsePill";
 import { AddToListPopover } from "../lists/AddToListPopover";
 import type { CandidateFallback } from "./DisambiguationBar";
@@ -38,6 +43,7 @@ export interface CardData {
     candidateFallbacks?: CandidateFallback[] | null;
     typePath?: string | null;
     autoTags?: string[] | null;
+    enrichmentStatus?: string | null;
     createdAt: string | Date;
   };
   entity?: {
@@ -62,6 +68,8 @@ export interface CardData {
 
 export interface PolymorphicCardProps {
   item: CardData;
+  density?: SilhouetteDensity;
+  readOnly?: boolean;
   connections?: ConnectedItem[];
   creatorAffiliateTags?: UserAffiliateTags | null;
   onConnect?: (item: CardData) => void;
@@ -75,6 +83,8 @@ export interface PolymorphicCardProps {
 
 export function PolymorphicCard({
   item,
+  density = "standard",
+  readOnly = false,
   connections: propConnections,
   creatorAffiliateTags: propCreatorTags,
   onConnect,
@@ -109,6 +119,8 @@ export function PolymorphicCard({
     }
   };
 
+  const isOptimistic = save.enrichmentStatus === "OPTIMISTIC" || save.id.startsWith("optimistic-");
+
   useEffect(() => {
     if (propConnections !== undefined) {
       setInternalConnections(propConnections);
@@ -118,8 +130,8 @@ export function PolymorphicCard({
       setInternalConnections(item.connections);
       return;
     }
-    // Lazy fetch connections if not provided and not private memo
-    if (save.isPrivateMemo) return;
+    // Lazy fetch connections if not provided and not private memo / optimistic temp card
+    if (save.isPrivateMemo || isOptimistic) return;
 
     let isMounted = true;
     apiFetch(`/api/v1/connections?saveId=${save.id}`)
@@ -134,7 +146,7 @@ export function PolymorphicCard({
     return () => {
       isMounted = false;
     };
-  }, [save.id, save.isPrivateMemo, item.connections, propConnections]);
+  }, [save.id, save.isPrivateMemo, isOptimistic, item.connections, propConnections]);
 
   const displayedConnections = propConnections !== undefined ? propConnections : internalConnections;
 
@@ -159,6 +171,31 @@ export function PolymorphicCard({
   const tags = (save.autoTags || []).map((t) => t.toLowerCase());
 
   const renderSilhouette = () => {
+    if (density && density !== "standard") {
+      const archetype = silhouetteRegistry.resolveArchetypeFromTypePath(
+        entity?.typePath || save.typePath,
+        save.isPrivateMemo
+      );
+      const DensityShell = silhouetteRegistry.resolve(archetype, density);
+      return (
+        <DensityShell
+          save={save}
+          entity={
+            entity ||
+            ({
+              id: save.id,
+              title: save.privateTitle || "Memo",
+              coreType: "NOTE",
+              canonicalUrl: "",
+            } as any)
+          }
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
     // 0. Dedicated Quote Silhouette (/quote, /culture/quote, tags: quote)
     if (
       typePath.includes("quote") ||
@@ -179,13 +216,11 @@ export function PolymorphicCard({
       );
     }
 
-    // 0a. Checklist / Interactive List (/memo/list)
+    // 0a. Checklist / Interactive List (/memo/list, /memo/checklist)
     if (
       typePath === "/memo/list" ||
-      typePath.includes("list") ||
-      tags.includes("checklist") ||
-      tags.includes("list") ||
-      (entity?.coreStructuredData && Array.isArray(entity.coreStructuredData.items))
+      typePath === "/memo/checklist" ||
+      tags.includes("checklist")
     ) {
       return (
         <ChecklistCard
@@ -284,6 +319,84 @@ export function PolymorphicCard({
     // 1. Private Memo Vault Silhouette (PRD v3.2 FR-1.2 Privacy Gating)
     if (save.isPrivateMemo || !entity) {
       return <PrivateMemoCard save={save} />;
+    }
+
+    // 1b. Outfit Ensemble Silhouette (/style/outfit)
+    if (
+      typePath.startsWith("/style/outfit") ||
+      typePath.includes("outfit") ||
+      tags.includes("outfit")
+    ) {
+      return (
+        <OutfitCard
+          save={save}
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 1c. Garment / Wardrobe Silhouette (/product/garment)
+    if (
+      typePath.startsWith("/product/garment") ||
+      typePath.includes("garment") ||
+      typePath.includes("apparel") ||
+      typePath.includes("clothing") ||
+      tags.includes("garment") ||
+      tags.includes("apparel") ||
+      tags.includes("clothing")
+    ) {
+      return (
+        <GarmentCard
+          save={save}
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 1d. Cosmetics & Skincare Silhouette (/product/cosmetics)
+    if (
+      typePath.startsWith("/product/cosmetics") ||
+      typePath.includes("cosmetics") ||
+      typePath.includes("skincare") ||
+      tags.includes("cosmetics") ||
+      tags.includes("skincare")
+    ) {
+      return (
+        <CosmeticsCard
+          save={save}
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
+    }
+
+    // 1e. Electronics & Hardware Silhouette (/product/electronics)
+    if (
+      typePath.startsWith("/product/electronics") ||
+      typePath.includes("electronics") ||
+      typePath.includes("hardware") ||
+      typePath.includes("gadget") ||
+      tags.includes("electronics") ||
+      tags.includes("hardware") ||
+      tags.includes("gadget")
+    ) {
+      return (
+        <ElectronicsCard
+          save={save}
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={effectiveTags}
+          onSwapped={onSwapped}
+        />
+      );
     }
 
     // 2. Music Album / Song / Vinyl Silhouette (/media/music/*)
@@ -458,21 +571,13 @@ export function PolymorphicCard({
       );
     }
 
-    // 9. Physical Product Silhouette (/product, /product/watch, /product/garment, /product/cosmetics, /product/electronics, custom /product/*)
+    // 9. Physical Product Silhouette (/product, /product/watch, custom /product/*)
     if (
       typePath === "/product" ||
       (typePath.startsWith("/product/") && !typePath.startsWith("/product/book")) ||
       coreType === "PRODUCT" ||
       tags.includes("product") ||
-      tags.includes("watch") ||
-      tags.includes("garment") ||
-      tags.includes("apparel") ||
-      tags.includes("clothing") ||
-      tags.includes("cosmetics") ||
-      tags.includes("skincare") ||
-      tags.includes("electronics") ||
-      tags.includes("hardware") ||
-      tags.includes("gadget")
+      tags.includes("watch")
     ) {
       return (
         <ProductCard
@@ -500,44 +605,56 @@ export function PolymorphicCard({
   return (
     <div
       id={`save-${save.id}`}
-      className="group/curio-card relative flex flex-col h-full transition-all duration-200"
+      className={`group/curio-card relative flex flex-col h-full transition-all duration-200 ${
+        isOptimistic ? "opacity-85 animate-pulse" : ""
+      }`}
     >
-      {/* Quick Action Toolbar (Wish + Board) */}
-      <div className={`absolute top-3 right-3 z-30 flex items-center gap-1.5 transition ${wished ? "opacity-100" : "sm:opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90"}`}>
-        <button
-          type="button"
-          data-testid="wish-toggle"
-          aria-pressed={wished}
-          onClick={toggleWish}
-          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium backdrop-blur-md shadow-md border transition cursor-pointer ${
-            wished
-              ? "bg-rose-500 text-white border-rose-400"
-              : "bg-neutral-900/80 text-white border-white/20 dark:bg-neutral-100/90 dark:text-neutral-950"
-          }`}
-          title={wished ? "On your wishlist (click to remove)" : wishLabel(entity?.typePath || save.typePath, entity?.coreType)}
+      {/* Optimistic Enrichment Indicator */}
+      {isOptimistic && (
+        <div
+          data-testid="optimistic-enriching-badge"
+          className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold bg-amber-500/95 text-white shadow-md backdrop-blur-md"
         >
-          <Heart className={`w-3 h-3 ${wished ? "fill-current" : ""}`} />
-          <span>{wished ? "Wished" : "Wish"}</span>
-        </button>
-        {!save.isPrivateMemo && (
+          <Loader2 className="w-3 h-3 animate-spin" />
+          <span>Enriching...</span>
+        </div>
+      )}
+
+      {/* Quick Action Toolbar (Wish + Board) */}
+      {!isOptimistic && !readOnly && (
+        <div className={`absolute top-3 right-3 z-30 flex items-center gap-1.5 transition ${wished ? "opacity-100" : "sm:opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90"}`}>
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onAddToList) {
-                onAddToList(save.id);
-              } else {
-                setIsAddToListOpen(true);
-              }
-            }}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-900/80 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-md border border-white/20 dark:border-neutral-800 transition cursor-pointer"
-            title="Add to Curated Board"
+            data-testid="wish-toggle"
+            aria-pressed={wished}
+            onClick={toggleWish}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium backdrop-blur-md shadow-md border transition cursor-pointer ${
+              wished
+                ? "bg-rose-500 text-white border-rose-400"
+                : "bg-neutral-900/80 text-white border-white/20 dark:bg-neutral-100/90 dark:text-neutral-950"
+            }`}
+            title={wished ? "On your wishlist (click to remove)" : wishLabel(entity?.typePath || save.typePath, entity?.coreType)}
           >
-            <FolderPlus className="w-3 h-3 text-neutral-300 dark:text-neutral-700" />
-            <span>Board</span>
+            <Heart className={`w-3 h-3 ${wished ? "fill-current" : ""}`} aria-hidden="true" />
+            <span>{wished ? "Wished" : "Wish"}</span>
           </button>
-        )}
-      </div>
+          {!save.isPrivateMemo && (
+            <button
+              type="button"
+              data-testid="add-to-board-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsAddToListOpen(true);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-900/80 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-md border border-white/20 dark:border-neutral-800 transition cursor-pointer"
+              title="Add to Curated Board"
+            >
+              <FolderPlus className="w-3 h-3 text-neutral-300 dark:text-neutral-700" aria-hidden="true" />
+              <span>Board</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Silhouette Card Body */}
       <div
@@ -549,13 +666,13 @@ export function PolymorphicCard({
       </div>
 
       {/* Synaptic Memory Edge Connections */}
-      {displayedConnections.length > 0 && (
+      {!isOptimistic && (displayedConnections.length > 0 || (!readOnly && !save.isPrivateMemo && Boolean(onConnect))) && (
         <div className="mt-2.5 flex flex-wrap gap-1.5 items-center px-1">
           {displayedConnections.map((conn) => (
             <SynapsePill
               key={conn.connectionId}
               connection={conn}
-              onUnlink={handleUnlink}
+              onUnlink={!readOnly && (onConnect || onUnlink) ? handleUnlink : undefined}
               onClick={(targetSaveId) => {
                 const el = document.getElementById(`save-${targetSaveId}`);
                 if (el) {
@@ -568,14 +685,18 @@ export function PolymorphicCard({
               }}
             />
           ))}
-          {!save.isPrivateMemo && onConnect && (
+          {!readOnly && !save.isPrivateMemo && onConnect && (
             <button
               type="button"
-              onClick={() => onConnect(item)}
+              data-testid="pair-card-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConnect(item);
+              }}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200 border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 transition cursor-pointer"
-              title="Add another synaptic connection"
+              title={displayedConnections.length > 0 ? "Add another synaptic connection" : "Pair with another save"}
             >
-              <Link2 className="w-2.5 h-2.5" />
+              <Link2 className="w-2.5 h-2.5" aria-hidden="true" />
               <span>+ Pair</span>
             </button>
           )}
@@ -583,12 +704,14 @@ export function PolymorphicCard({
       )}
 
       {/* Add To List / Curated Board Popover */}
-      <AddToListPopover
-        saveId={save.id}
-        isOpen={isAddToListOpen}
-        onClose={() => setIsAddToListOpen(false)}
-        onListUpdated={() => onAddToList?.(save.id)}
-      />
+      {!readOnly && (
+        <AddToListPopover
+          saveId={save.id}
+          isOpen={isAddToListOpen}
+          onClose={() => setIsAddToListOpen(false)}
+          onListUpdated={() => onAddToList?.(save.id)}
+        />
+      )}
     </div>
   );
 }

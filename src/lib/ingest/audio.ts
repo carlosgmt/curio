@@ -4,10 +4,24 @@ export interface AudioTranscriptionResult {
   durationSeconds?: number;
 }
 
+export class AudioTranscriptionUnavailableError extends Error {
+  statusCode: number;
+  constructor(message = "Speech transcription service is offline. Use browser voice dictation instead.") {
+    super(message);
+    this.name = "AudioTranscriptionUnavailableError";
+    this.statusCode = 503;
+  }
+}
+
 export async function transcribeAudio(
   audioBuffer: Buffer | Uint8Array,
-  mimeType: string = "audio/wav"
+  mimeType: string = "audio/wav",
+  options?: { fetchFn?: typeof fetch }
 ): Promise<AudioTranscriptionResult> {
+  if (!audioBuffer || audioBuffer.byteLength === 0) {
+    throw new Error("Empty audio payload");
+  }
+  const fetchFn = options?.fetchFn ?? fetch;
   const whisperUrl = process.env.WHISPER_URL || "http://127.0.0.1:8080/inference";
 
   try {
@@ -20,7 +34,7 @@ export async function transcribeAudio(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
-    const res = await fetch(whisperUrl, {
+    const res = await fetchFn(whisperUrl, {
       method: "POST",
       body: formData,
       signal: controller.signal,
@@ -29,17 +43,21 @@ export async function transcribeAudio(
 
     if (res.ok) {
       const data = await res.json();
+      const text = (data.text || data.transcription || "").trim();
+      if (!text) {
+        throw new AudioTranscriptionUnavailableError("No speech detected in audio recording.");
+      }
       return {
-        text: (data.text || data.transcription || "").trim(),
+        text,
         language: data.language,
         durationSeconds: data.duration,
       };
     }
-  } catch {
-    // Whisper offline or unreachable; fall back gracefully
+  } catch (err) {
+    if (err instanceof AudioTranscriptionUnavailableError) {
+      throw err;
+    }
   }
 
-  return {
-    text: "Voice memo captured: acoustic playback and listening notes",
-  };
+  throw new AudioTranscriptionUnavailableError();
 }

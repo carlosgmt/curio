@@ -7,7 +7,7 @@
  */
 
 import { db, userSaves, globalEntities, entitySources, smartLists } from "@/db";
-import { eq, or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { classifyWithHeuristics } from "./privacy";
 
 export type OmniboxIntentType =
@@ -294,9 +294,15 @@ export async function classifyOmniboxIntent(
     };
   }
 
-  // 2. Valid URL check
-  if (URL_PATTERN.test(trimmed)) {
-    // Check if user already saved this entity/URL
+  // 2. Valid URL check (including URL + optional trailing commentary like "https://... — notes")
+  const leadingUrlMatch = trimmed.match(/^(https?:\/\/[^\s]+)(?:\s+(.*))?$/i);
+  if (URL_PATTERN.test(trimmed) || leadingUrlMatch) {
+    const urlToken = leadingUrlMatch ? leadingUrlMatch[1] : trimmed;
+    const trailingCommentary = leadingUrlMatch?.[2]
+      ? leadingUrlMatch[2].replace(/^(?:—|--|-|\|)\s*/, "").trim()
+      : "";
+
+    // Check if user already saved this exact entity/URL
     const matchingSources = await db
       .select({
         saveId: userSaves.id,
@@ -307,9 +313,17 @@ export async function classifyOmniboxIntent(
         heroImageUrl: globalEntities.heroImageUrl,
       })
       .from(userSaves)
-      .innerJoin(entitySources, eq(userSaves.entityId, entitySources.entityId))
+      .leftJoin(entitySources, eq(userSaves.entityId, entitySources.entityId))
       .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
-      .where(eq(userSaves.userId, userId))
+      .where(
+        and(
+          eq(userSaves.userId, userId),
+          or(
+            eq(entitySources.sourceUrl, urlToken),
+            eq(globalEntities.canonicalUrl, urlToken)
+          )
+        )
+      )
       .limit(1);
 
     const savedBySource = matchingSources.find((s) => s.saveId);
@@ -317,7 +331,7 @@ export async function classifyOmniboxIntent(
       const candidate: SaveCandidate = {
         saveId: savedBySource.saveId,
         entityId: savedBySource.entityId,
-        title: savedBySource.privateTitle || savedBySource.globalTitle || trimmed,
+        title: savedBySource.privateTitle || savedBySource.globalTitle || urlToken,
         typePath: savedBySource.typePath,
         similarity: 1.0,
         heroImageUrl: savedBySource.heroImageUrl,
@@ -326,8 +340,11 @@ export async function classifyOmniboxIntent(
         intent: "EDIT_SAVE",
         confidence: 1.0,
         tier: 0,
-        action: "VIEW",
+        action: trailingCommentary ? "NOTE" : "VIEW",
         targetSave: candidate,
+        ...(trailingCommentary
+          ? { editDetails: { action: "NOTE", note: trailingCommentary } }
+          : {}),
         suggestedTitle: candidate.title,
         reasoning: "URL already present in vault (Open/Edit Card)",
         latencyMs: performance.now() - startTime,
@@ -338,8 +355,11 @@ export async function classifyOmniboxIntent(
       intent: "ADD_ENTITY",
       confidence: 0.95,
       tier: 0,
-      extractedQuery: trimmed,
-      suggestedTitle: trimmed,
+      extractedQuery: urlToken,
+      suggestedTitle: urlToken,
+      ...(trailingCommentary
+        ? { editDetails: { action: "NOTE", note: trailingCommentary } }
+        : {}),
       reasoning: "Valid external URL detected (Ingest entity)",
       latencyMs: performance.now() - startTime,
     };

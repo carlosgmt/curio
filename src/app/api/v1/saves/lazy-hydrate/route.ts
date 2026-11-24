@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, userSaves, globalEntities } from "@/db";
 import { eq, inArray, and } from "drizzle-orm";
 import { executeBackgroundEnrichment } from "@/lib/ingest/cascade";
-import { extractOpenGraphHead } from "@/lib/enrichment/opengraph";
+import { AuthError, requireAuth } from "@/lib/auth/service";
 
 export async function POST(req: NextRequest) {
   try {
+    const { user } = await requireAuth(req);
     const body = await req.json().catch(() => ({}));
     const { saveIds, limit = 20 } = body;
 
@@ -16,6 +17,7 @@ export async function POST(req: NextRequest) {
         .from(userSaves)
         .where(
           and(
+            eq(userSaves.userId, user.id),
             inArray(userSaves.id, saveIds),
             eq(userSaves.enrichmentStatus, "LAZY_QUEUED")
           )
@@ -25,7 +27,12 @@ export async function POST(req: NextRequest) {
       targetSaves = await db
         .select()
         .from(userSaves)
-        .where(eq(userSaves.enrichmentStatus, "LAZY_QUEUED"))
+        .where(
+          and(
+            eq(userSaves.userId, user.id),
+            eq(userSaves.enrichmentStatus, "LAZY_QUEUED")
+          )
+        )
         .limit(limit);
     }
 
@@ -90,6 +97,9 @@ export async function POST(req: NextRequest) {
       results: hydratedResults,
     });
   } catch (err: any) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.statusCode });
+    }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

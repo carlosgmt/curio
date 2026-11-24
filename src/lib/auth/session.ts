@@ -36,6 +36,48 @@ export function clearSessionCookie(): string {
 }
 
 /**
+ * Extracts candidate session tokens (Bearer first, then session cookie) in priority order.
+ */
+export function extractTokensFromRequest(
+  req?: Request | Headers | string | null
+): string[] {
+  if (!req) return [];
+
+  if (typeof req === "string") {
+    const single = extractTokenFromRequest(req);
+    return single ? [single] : [];
+  }
+
+  let authHeader: string | null = null;
+  let cookieHeader: string | null = null;
+
+  if (req instanceof Headers) {
+    authHeader = req.get("authorization");
+    cookieHeader = req.get("cookie");
+  } else if ("headers" in req && req.headers) {
+    authHeader = req.headers.get("authorization");
+    cookieHeader = req.headers.get("cookie");
+  }
+
+  const tokens: string[] = [];
+  if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
+    const bearer = authHeader.slice(7).trim();
+    if (bearer) tokens.push(bearer);
+  }
+
+  if (cookieHeader) {
+    const match = cookieHeader.match(
+      new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]+)`)
+    );
+    if (match && match[1] && !tokens.includes(match[1])) {
+      tokens.push(match[1]);
+    }
+  }
+
+  return tokens;
+}
+
+/**
  * Extracts a session token from an HTTP Request, Headers object, or cookie/token string.
  */
 export function extractTokenFromRequest(

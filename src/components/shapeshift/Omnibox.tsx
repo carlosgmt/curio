@@ -31,9 +31,22 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
+import type { CardData } from "@/components/cards/PolymorphicCard";
+
+export interface ActiveBoardContext {
+  id: string;
+  slug: string;
+  title: string;
+  coreType?: string;
+  typePathPrefix?: string;
+}
 
 interface OmniboxProps {
   onCaptured?: (item: any) => void;
+  onOptimisticStart?: (tempCard: CardData) => void;
+  onOptimisticSettle?: (tempId: string, result: any | null, errorMessage?: string) => void;
+  onSelectExistingSave?: (saveId: string) => void;
+  activeBoardContext?: ActiveBoardContext | null;
   isCapturing?: boolean;
   onOpenTypeBuilder?: () => void;
 }
@@ -108,18 +121,24 @@ export interface OmniboxSuggestion {
 
 export function Omnibox({
   onCaptured,
+  onOptimisticStart,
+  onOptimisticSettle,
+  onSelectExistingSave,
+  activeBoardContext = null,
   isCapturing: externalIsCapturing,
   onOpenTypeBuilder,
 }: OmniboxProps) {
   const router = useRouter();
   const [input, setInput] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingPaste, setIsUploadingPaste] = useState(false);
+  const [inFlightCount, setInFlightCount] = useState(0);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
 
-  // Typeahead Entity Suggestions state
+  // Typeahead Entity Suggestions state (Q3: never pre-select top suggestion)
   const [suggestions, setSuggestions] = useState<OmniboxSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
@@ -133,14 +152,51 @@ export function Omnibox({
   const [undoState, setUndoState] = useState<UndoState | null>(null);
   const [undoSuccess, setUndoSuccess] = useState(false);
 
-  // Audio recording & image paste states
+  // Q4: Web Speech API browser dictation (zero host RAM; hidden if unsupported)
+  const [speechSupported, setSpeechSupported] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const speechRecognitionRef = useRef<any>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      setSpeechSupported(Boolean(Ctor));
+    }
+    return () => {
+      if (speechRecognitionRef.current) {
+        try {
+          speechRecognitionRef.current.stop();
+        } catch {}
+      }
+    };
+  }, []);
+
+  const openExistingSave = useCallback(
+    (saveId: string) => {
+      if (onSelectExistingSave) {
+        onSelectExistingSave(saveId);
+      } else {
+        router.push(`/card/${saveId}`);
+      }
+    },
+    [onSelectExistingSave, router]
+  );
+
+  const buildBoardPayload = useCallback(() => {
+    if (!activeBoardContext) return {};
+    return {
+      listId: activeBoardContext.id,
+      boardContext: {
+        slug: activeBoardContext.slug,
+        title: activeBoardContext.title,
+        coreType: activeBoardContext.coreType,
+        typePathPrefix: activeBoardContext.typePathPrefix,
+      },
+    };
+  }, [activeBoardContext]);
 
   const handlePaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -151,7 +207,7 @@ export function Omnibox({
         const file = items[i].getAsFile();
         if (file) {
           e.preventDefault();
-          setIsSubmitting(true);
+          setIsUploadingPaste(true);
           try {
             const formData = new FormData();
             formData.append("title", "Pasted Image");
@@ -168,7 +224,7 @@ export function Omnibox({
           } catch (err) {
             console.error("Paste upload failed:", err);
           } finally {
-            setIsSubmitting(false);
+            setIsUploadingPaste(false);
           }
           break;
         }
@@ -176,57 +232,55 @@ export function Omnibox({
     }
   };
 
-  const toggleRecording = async () => {
+  const toggleRecording = () => {
     if (isRecording) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.stop();
+      if (speechRecognitionRef.current) {
+        try {
+          speechRecognitionRef.current.stop();
+        } catch {}
       }
       setIsRecording(false);
       return;
     }
 
+    if (typeof window === "undefined") return;
+    const SpeechRecognitionCtor =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
+      const recognition = new SpeechRecognitionCtor();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = navigator.language || "en-US";
+      const prefixText = input.trim();
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0]?.transcript || "";
         }
+        const combined = prefixText
+          ? `${prefixText} ${transcript.trim()}`.trim()
+          : transcript.trim();
+        setInput(combined);
       };
 
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop());
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        if (audioBlob.size > 0) {
-          setIsSubmitting(true);
-          try {
-            const formData = new FormData();
-            formData.append("audio", audioBlob, "recording.webm");
-            const res = await apiFetch("/api/v1/capture/audio", {
-              method: "POST",
-              body: formData,
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.text) {
-                setInput(data.text);
-              }
-            }
-          } catch (err) {
-            console.error("Audio transcription failed:", err);
-          } finally {
-            setIsSubmitting(false);
-          }
-        }
+      recognition.onerror = () => {
+        setIsRecording(false);
       };
 
-      recorder.start();
+      recognition.onend = () => {
+        setIsRecording(false);
+        inputRef.current?.focus();
+      };
+
+      speechRecognitionRef.current = recognition;
+      recognition.start();
       setIsRecording(true);
     } catch (err) {
-      console.warn("Microphone access denied or unavailable:", err);
+      console.warn("Web Speech dictation unavailable:", err);
+      setIsRecording(false);
     }
   };
 
@@ -247,12 +301,13 @@ export function Omnibox({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Real-time Typeahead / Autocomplete Suggestions
+  // Real-time Typeahead / Autocomplete Suggestions (skip for raw URLs; never auto-select index 0)
   useEffect(() => {
     const trimmed = input.trim();
-    if (!trimmed || inSearch || trimmed.length < 2) {
+    if (!trimmed || inSearch || trimmed.length < 2 || /^https?:\/\//i.test(trimmed)) {
       setSuggestions([]);
       setShowSuggestions(false);
+      setSelectedSuggestionIndex(-1);
       return;
     }
 
@@ -264,7 +319,7 @@ export function Omnibox({
           const items: OmniboxSuggestion[] = data.suggestions || [];
           setSuggestions(items);
           setShowSuggestions(items.length > 0);
-          setSelectedSuggestionIndex(items.length > 0 ? 0 : -1);
+          setSelectedSuggestionIndex(-1);
         }
       } catch (err) {
         console.error("Suggestion fetch error:", err);
@@ -274,13 +329,55 @@ export function Omnibox({
     return () => clearTimeout(timer);
   }, [input, inSearch]);
 
+  const makeOptimisticCard = (
+    tempId: string,
+    title: string,
+    opts: {
+      isPrivateMemo?: boolean;
+      typePath?: string;
+      heroImageUrl?: string | null;
+      creator?: string | null;
+      canonicalUrl?: string;
+    } = {}
+  ): CardData => ({
+    save: {
+      id: tempId,
+      isPrivateMemo: Boolean(opts.isPrivateMemo),
+      privateTitle: opts.isPrivateMemo ? title : null,
+      typePath: opts.typePath || (opts.isPrivateMemo ? "/memo/personal" : "/product"),
+      enrichmentStatus: "OPTIMISTIC",
+      createdAt: new Date().toISOString(),
+    },
+    entity: opts.isPrivateMemo
+      ? null
+      : {
+          id: `${tempId}-entity`,
+          title,
+          heroImageUrl: opts.heroImageUrl || null,
+          brandOrCreator: opts.creator || null,
+          coreType: "PRODUCT",
+          typePath: opts.typePath || "/product",
+          canonicalUrl: opts.canonicalUrl || "",
+        },
+    connections: [],
+  });
+
   const executeCaptureAsTextNote = async () => {
     const trimmed = input.trim();
-    if (!trimmed || isSubmitting) return;
+    if (!trimmed) return;
 
+    const tempId = `optimistic-${crypto.randomUUID()}`;
+    setCaptureError(null);
     setShowSuggestions(false);
     setSuggestions([]);
-    setIsSubmitting(true);
+    setSelectedSuggestionIndex(-1);
+    setIntentPreview(null);
+    setShowDisambiguation(false);
+    setInput("");
+
+    onOptimisticStart?.(makeOptimisticCard(tempId, trimmed, { isPrivateMemo: true, typePath: "/memo/personal" }));
+    setInFlightCount((c) => c + 1);
+
     try {
       const res = await apiFetch("/api/v1/capture", {
         method: "POST",
@@ -290,6 +387,7 @@ export function Omnibox({
           isPrivateMemo: true,
           forcedTypePath: "/memo/personal",
           forceNew: true,
+          ...buildBoardPayload(),
         }),
       });
 
@@ -298,40 +396,57 @@ export function Omnibox({
       }
 
       const data = await res.json();
-      setInput("");
-      setIntentPreview(null);
-      setShowDisambiguation(false);
-
-      if (onCaptured) {
-        onCaptured(data);
-      }
-    } catch (err) {
+      onOptimisticSettle?.(tempId, data);
+      onCaptured?.(data);
+    } catch (err: any) {
       console.error("Text note capture error:", err);
+      onOptimisticSettle?.(tempId, null, err.message || "Capture failed");
+      setCaptureError("Failed to save note. Restored input.");
+      setInput((curr) => curr || trimmed);
     } finally {
-      setIsSubmitting(false);
+      setInFlightCount((c) => Math.max(0, c - 1));
     }
   };
 
   const handleSelectSuggestion = async (sug: OmniboxSuggestion) => {
+    const fullTypedQuery = input.trim();
+    setCaptureError(null);
     setShowSuggestions(false);
     setSuggestions([]);
+    setSelectedSuggestionIndex(-1);
+
     if (sug.isExistingSave && sug.saveId) {
-      router.push(`/card/${sug.saveId}`);
       setInput("");
+      openExistingSave(sug.saveId);
       return;
     }
 
-    setIsSubmitting(true);
+    const tempId = `optimistic-${crypto.randomUUID()}`;
+    setIntentPreview(null);
+    setInput("");
+
+    onOptimisticStart?.(
+      makeOptimisticCard(tempId, sug.title, {
+        typePath: sug.typePath,
+        heroImageUrl: sug.heroImageUrl,
+        creator: sug.creator,
+        canonicalUrl: sug.canonicalUrl,
+      })
+    );
+    setInFlightCount((c) => c + 1);
+
     try {
       const res = await apiFetch("/api/v1/capture", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: sug.title,
+          queryContext: fullTypedQuery || sug.title,
           forcedTypePath: sug.typePath,
           curioTypeId: sug.curioTypeId,
           targetCandidate: sug,
           forceNew: true,
+          ...buildBoardPayload(),
         }),
       });
 
@@ -340,15 +455,15 @@ export function Omnibox({
       }
 
       const data = await res.json();
-      setInput("");
-      setIntentPreview(null);
-      if (onCaptured) {
-        onCaptured(data);
-      }
-    } catch (err) {
+      onOptimisticSettle?.(tempId, data);
+      onCaptured?.(data);
+    } catch (err: any) {
       console.error("Failed to capture suggestion:", err);
+      onOptimisticSettle?.(tempId, null, err.message || "Capture failed");
+      setCaptureError("Failed to capture suggestion. Restored input.");
+      setInput((curr) => curr || fullTypedQuery || sug.title);
     } finally {
-      setIsSubmitting(false);
+      setInFlightCount((c) => Math.max(0, c - 1));
     }
   };
 
@@ -431,25 +546,53 @@ export function Omnibox({
 
   const executeCapture = async (forceNew: boolean = false, targetSaveId?: string) => {
     const trimmed = input.trim();
-    if (!trimmed || isSubmitting) return;
+    if (!trimmed) return;
 
     if (inSearch) {
       if (searchResults.length > 0) {
-        router.push(`/card/${searchResults[0].saveId}`);
+        const topSaveId = searchResults[0].saveId;
         setShowSearchDropdown(false);
         setInput("");
+        openExistingSave(topSaveId);
       }
       return;
     }
 
-    setIsSubmitting(true);
+    const isLikelyInlineEdit =
+      !forceNew && (Boolean(targetSaveId) || intentPreview?.intent === "EDIT_SAVE");
+    const tempId = isLikelyInlineEdit ? null : `optimistic-${crypto.randomUUID()}`;
+
+    setCaptureError(null);
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setSelectedSuggestionIndex(-1);
+    setIntentPreview(null);
+    setShowDisambiguation(false);
+    setInput("");
+
+    if (tempId) {
+      const isUrl = /^https?:\/\//i.test(trimmed);
+      onOptimisticStart?.(
+        makeOptimisticCard(tempId, trimmed, {
+          typePath:
+            activeBoardContext?.typePathPrefix ||
+            (isUrl ? "/link" : "/product"),
+          canonicalUrl: isUrl ? trimmed : "",
+        })
+      );
+    }
+
+    setInFlightCount((c) => c + 1);
     try {
       const res = await apiFetch("/api/v1/capture", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: trimmed,
+          queryContext: trimmed,
           forceNew,
+          ...(targetSaveId ? { targetSaveId } : {}),
+          ...buildBoardPayload(),
         }),
       });
 
@@ -458,41 +601,45 @@ export function Omnibox({
       }
 
       const data = await res.json();
-      setInput("");
-      setIntentPreview(null);
-      setShowDisambiguation(false);
 
-      // If inline card edit, activate 5-second Undo Toast
+      // If inline card edit, activate 5-second Undo Toast with pre-edit state
       if (data.status === "edited") {
         setUndoState({
           saveId: data.save.id,
           title: data.save.privateTitle || data.entity?.title || "Card",
-          previousNotes: data.save.personalNotes,
-          previousValues: data.save.userCustomValues,
+          previousNotes:
+            data.previousSave !== undefined ? data.previousSave.personalNotes : null,
+          previousValues:
+            data.previousSave?.userCustomValues ?? {},
           countdown: 5,
         });
       }
 
-      if (onCaptured) {
-        onCaptured(data);
+      if (tempId) {
+        onOptimisticSettle?.(tempId, data);
       }
-    } catch (err) {
+      onCaptured?.(data);
+    } catch (err: any) {
       console.error("Omnibox capture error:", err);
+      if (tempId) {
+        onOptimisticSettle?.(tempId, null, err.message || "Capture failed");
+      }
+      setCaptureError("Capture failed. Restored your input.");
+      setInput((curr) => curr || trimmed);
     } finally {
-      setIsSubmitting(false);
+      setInFlightCount((c) => Math.max(0, c - 1));
     }
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (showSuggestions && suggestions.length > 0) {
+    if (showSuggestions && suggestions.length > 0 && selectedSuggestionIndex >= 0) {
       if (selectedSuggestionIndex === suggestions.length) {
         executeCaptureAsTextNote();
         return;
       }
-      const targetIndex = selectedSuggestionIndex >= 0 ? selectedSuggestionIndex : 0;
-      if (suggestions[targetIndex]) {
-        handleSelectSuggestion(suggestions[targetIndex]);
+      if (suggestions[selectedSuggestionIndex]) {
+        handleSelectSuggestion(suggestions[selectedSuggestionIndex]);
         return;
       }
     }
@@ -504,6 +651,7 @@ export function Omnibox({
       setShowSearchDropdown(false);
       setShowDisambiguation(false);
       setShowSuggestions(false);
+      setSelectedSuggestionIndex(-1);
       setIsSearchMode(false);
       if (input.startsWith("/")) {
         setInput("");
@@ -511,10 +659,17 @@ export function Omnibox({
       return;
     }
 
-    // Shift + Enter immediately captures as a Text Note
-    if (e.key === "Enter" && e.shiftKey) {
+    // Q3: Cmd+Enter or Alt+Enter saves private memo
+    if (e.key === "Enter" && (e.metaKey || e.altKey)) {
       e.preventDefault();
       executeCaptureAsTextNote();
+      return;
+    }
+
+    // Q3: Shift+Enter forces new card creation (bypassing edit/duplicate hijack)
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault();
+      executeCapture(true);
       return;
     }
 
@@ -523,25 +678,28 @@ export function Omnibox({
       const totalItems = suggestions.length + 1; // includes dedicated text note row
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedSuggestionIndex((prev) => (prev + 1) % totalItems);
+        setSelectedSuggestionIndex((prev) => (prev < 0 ? 0 : (prev + 1) % totalItems));
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedSuggestionIndex((prev) => (prev <= 0 ? totalItems - 1 : prev - 1));
+        setSelectedSuggestionIndex((prev) => {
+          if (prev < 0) return totalItems - 1;
+          if (prev === 0) return -1;
+          return prev - 1;
+        });
         return;
       }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        if (selectedSuggestionIndex === suggestions.length) {
-          executeCaptureAsTextNote();
-        } else {
-          const targetIndex = selectedSuggestionIndex >= 0 ? selectedSuggestionIndex : 0;
-          if (suggestions[targetIndex]) {
-            handleSelectSuggestion(suggestions[targetIndex]);
+      if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.altKey) {
+        if (selectedSuggestionIndex >= 0) {
+          e.preventDefault();
+          if (selectedSuggestionIndex === suggestions.length) {
+            executeCaptureAsTextNote();
+          } else if (suggestions[selectedSuggestionIndex]) {
+            handleSelectSuggestion(suggestions[selectedSuggestionIndex]);
           }
+          return;
         }
-        return;
       }
     }
   };
@@ -550,14 +708,20 @@ export function Omnibox({
     if (!undoState) return;
     try {
       // Revert previous notes / rating
-      await apiFetch(`/api/v1/saves/${undoState.saveId}`, {
+      const res = await apiFetch(`/api/v1/saves/${undoState.saveId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          personalNotes: undoState.previousNotes || null,
-          userCustomValues: undoState.previousValues || {},
+          personalNotes: undoState.previousNotes ?? null,
+          userCustomValues: undoState.previousValues ?? {},
         }),
       });
+      if (res.ok) {
+        const reverted = await res.json().catch(() => null);
+        if (reverted) {
+          onCaptured?.(reverted);
+        }
+      }
       setUndoSuccess(true);
       setTimeout(() => {
         setUndoSuccess(false);
@@ -568,7 +732,7 @@ export function Omnibox({
     }
   };
 
-  const isBusy = isSubmitting || externalIsCapturing;
+  const isBusy = isUploadingPaste || Boolean(externalIsCapturing);
 
   const renderIntentBadge = () => {
     if (inSearch) {
@@ -703,6 +867,7 @@ export function Omnibox({
         <input
           ref={inputRef}
           type="text"
+          aria-label={inSearch ? "Search library" : "Capture or command"}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -733,34 +898,47 @@ export function Omnibox({
                 setInput("");
                 setShowSearchDropdown(false);
               }}
+              aria-label="Close search"
               className="p-1.5 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition"
-              title="Close search"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         ) : (
           <div className="flex items-center gap-1 shrink-0">
+            {inFlightCount > 0 && (
+              <span
+                data-testid="optimistic-inflight-indicator"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40"
+              >
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span className="hidden sm:inline">{inFlightCount}</span>
+              </span>
+            )}
+            {speechSupported && (
+              <button
+                type="button"
+                data-testid="omnibox-mic-btn"
+                aria-label="Voice dictation"
+                aria-pressed={isRecording}
+                onClick={toggleRecording}
+                className={`p-2 rounded-2xl transition text-xs flex items-center gap-1 cursor-pointer ${
+                  isRecording
+                    ? "bg-red-500 text-white animate-pulse"
+                    : "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                }`}
+              >
+                {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+            )}
             <button
               type="button"
-              onClick={toggleRecording}
-              className={`p-2 rounded-2xl transition text-xs flex items-center gap-1 cursor-pointer ${
-                isRecording
-                  ? "bg-red-500 text-white animate-pulse"
-                  : "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-              }`}
-              title={isRecording ? "Stop recording voice memo" : "Record voice memo"}
-            >
-              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            </button>
-            <button
-              type="button"
+              aria-label="Search saves"
               onClick={() => {
                 setIsSearchMode(true);
                 inputRef.current?.focus();
               }}
               className="p-2 rounded-2xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition text-xs flex items-center gap-1 cursor-pointer"
-              title="Search saves (/)"
             >
               <Search className="w-4 h-4" />
               <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-400 border border-neutral-200 dark:border-neutral-700 hidden sm:inline">
@@ -789,6 +967,23 @@ export function Omnibox({
         )}
       </form>
 
+      {captureError && (
+        <div
+          role="alert"
+          className="mt-2 px-3.5 py-2 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between gap-2"
+        >
+          <span>{captureError}</span>
+          <button
+            type="button"
+            aria-label="Dismiss error"
+            onClick={() => setCaptureError(null)}
+            className="text-rose-500 hover:text-rose-700 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Live Omnibox Typeahead / Autocomplete Suggestions Dropdown */}
       {!inSearch && !showDisambiguation && showSuggestions && suggestions.length > 0 && (
         <div className="absolute left-0 right-0 sm:left-4 sm:right-4 top-full mt-2 z-50 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden backdrop-blur-md">
@@ -797,10 +992,10 @@ export function Omnibox({
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <span>Entity Suggestions</span>
             </span>
-            <span className="text-[10px]">Top result selected by default</span>
+            <span className="text-[10px]">↑↓ to pick • Enter captures typed query</span>
           </div>
 
-          <div className="max-h-[min(20rem,50dvh)] overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/60">
+          <div className="max-h-[min(20rem,50dvh)] overflow-y-auto overscroll-contain divide-y divide-neutral-100 dark:divide-neutral-800/60">
             {suggestions.map((sug, idx) => {
               const isSelected = selectedSuggestionIndex === idx;
               return (
@@ -849,9 +1044,9 @@ export function Omnibox({
                       <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/60">
                         In saves
                       </span>
-                    ) : idx === 0 && isSelected ? (
+                    ) : isSelected ? (
                       <span className="text-[10px] font-mono font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-300/60 dark:border-amber-700/60">
-                        ↵ Top Result
+                        ↵ Capture this
                       </span>
                     ) : (
                       <span className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 hidden sm:inline">
@@ -880,16 +1075,16 @@ export function Omnibox({
                 </div>
                 <div className="min-w-0">
                   <span className="text-sm font-medium truncate block">
-                    Save as text note: &ldquo;{input}&rdquo;
+                    Save as private memo: &ldquo;{input}&rdquo;
                   </span>
                   <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Bypasses catalog lookup • Saved as personal memo
+                    Bypasses catalog lookup • Encrypted vault note
                   </span>
                 </div>
               </div>
               <div className="shrink-0 flex items-center gap-1.5">
                 <kbd className="px-2 py-0.5 text-[10px] font-mono font-medium rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700 shadow-2xs">
-                  Shift+Enter
+                  ⌘/⌥+Enter
                 </kbd>
               </div>
             </button>
@@ -898,11 +1093,13 @@ export function Omnibox({
           {/* Dropdown footer bar */}
           <div className="px-4 py-2 border-t border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-950/60 flex items-center justify-between text-[11px] font-mono text-neutral-500 dark:text-neutral-400">
             <div className="flex items-center gap-2 flex-wrap">
-              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">↵</kbd> Add top result</span>
+              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">↵</kbd> Smart capture</span>
               <span>•</span>
-              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">⇧↵</kbd> Save as text note</span>
+              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">↑↓</kbd> Pick suggestion</span>
               <span>•</span>
-              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">↑↓</kbd> Navigate</span>
+              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">⇧↵</kbd> Force new card</span>
+              <span>•</span>
+              <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">⌘/⌥↵</kbd> Private memo</span>
               <span>•</span>
               <span><kbd className="font-semibold text-neutral-700 dark:text-neutral-300">Esc</kbd> Dismiss</span>
             </div>
@@ -923,7 +1120,7 @@ export function Omnibox({
             </span>
           </div>
 
-          <div className="max-h-[min(16rem,45dvh)] overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/50">
+          <div className="max-h-[min(16rem,45dvh)] overflow-y-auto overscroll-contain divide-y divide-neutral-100 dark:divide-neutral-800/50">
             {intentPreview.ambiguousCandidates.map((c) => (
               <button
                 key={c.saveId}
@@ -980,7 +1177,7 @@ export function Omnibox({
             </span>
           </div>
 
-          <div className="max-h-[min(20rem,50dvh)] overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/50">
+          <div className="max-h-[min(20rem,50dvh)] overflow-y-auto overscroll-contain divide-y divide-neutral-100 dark:divide-neutral-800/50">
             {isSearching && searchResults.length === 0 ? (
               <div className="p-6 text-center text-xs text-neutral-400 flex flex-col items-center gap-2">
                 <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
@@ -996,9 +1193,10 @@ export function Omnibox({
                   key={item.saveId}
                   type="button"
                   onClick={() => {
-                    router.push(`/card/${item.saveId}`);
                     setShowSearchDropdown(false);
+                    setIsSearchMode(false);
                     setInput("");
+                    openExistingSave(item.saveId);
                   }}
                   className="w-full text-left p-3 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition flex items-start gap-3 cursor-pointer group"
                 >

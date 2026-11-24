@@ -40,6 +40,10 @@ export interface IngestionResult {
   candidate_fallbacks?: CandidateFallback[];
   action?: string;
   editDetails?: any;
+  previousSave?: {
+    personalNotes: string | null;
+    userCustomValues: Record<string, unknown>;
+  };
 }
 
 export function generateEntityKey(canonicalUrl: string, slug?: string): { urlHash: string; entityKey: string } {
@@ -117,14 +121,14 @@ async function discoverCandidates(
     }
   }
 
-  const isUrl = /^https?:\/\//i.test(trimmed);
-
-  if (isUrl) {
-    const domain = new URL(trimmed).hostname.replace("www.", "");
+  const urlMatch = trimmed.match(/^(https?:\/\/[^\s]+)/i);
+  if (urlMatch) {
+    const cleanUrl = urlMatch[1];
+    const domain = new URL(cleanUrl).hostname.replace("www.", "");
     return {
       primary: {
-        title: trimmed,
-        url: trimmed,
+        title: cleanUrl,
+        url: cleanUrl,
         snippet: `Captured resource from ${domain}`,
         coreType: detectedType || "PRODUCT",
       },
@@ -242,6 +246,31 @@ export interface CandidateTargetPayload {
   curioTypeId?: string | null;
 }
 
+const GENERIC_BOARD_TITLES = new Set([
+  "all",
+  "all my stuff",
+  "wishlist",
+  "favorites",
+  "films",
+  "movies",
+  "cinema",
+  "music",
+  "vinyl",
+  "books",
+  "reading",
+  "wardrobe",
+  "closet",
+  "outfits",
+  "recipes",
+  "places",
+  "spots",
+  "products",
+  "shopping",
+  "notes",
+  "memos",
+  "links",
+]);
+
 export async function executeIngestionCascade(params: {
   input: string;
   userId?: string;
@@ -249,9 +278,18 @@ export async function executeIngestionCascade(params: {
   curioTypeId?: string;
   forcedTypePath?: string;
   targetCandidate?: CandidateTargetPayload;
+  listId?: string;
+  queryContext?: string;
+  boardContext?: {
+    title?: string;
+    slug?: string;
+    coreType?: string;
+    typePathPrefix?: string;
+  };
   isPrivateMemo?: boolean;
   skipLocalLlm?: boolean;
   forceNew?: boolean;
+  targetSaveId?: string;
   fetchFn?: typeof fetch;
 }): Promise<IngestionResult> {
   const { input } = params;
@@ -263,7 +301,24 @@ export async function executeIngestionCascade(params: {
     throw new Error("Unable to identify or create user profile");
   }
 
-  // Explicit text note capture (Shift+Enter or isPrivateMemo)
+  // Resolve optional board context (verifying ownership)
+  let verifiedBoard: typeof smartLists.$inferSelect | null = null;
+  if (params.listId) {
+    const [board] = await db
+      .select()
+      .from(smartLists)
+      .where(and(eq(smartLists.id, params.listId), eq(smartLists.userId, user.id)))
+      .limit(1);
+    verifiedBoard = board || null;
+  }
+
+  const attachToActiveBoardIfAny = async (saveId: string) => {
+    if (verifiedBoard) {
+      await addItemToList(verifiedBoard.id, saveId);
+    }
+  };
+
+  // Explicit text note capture (Cmd/Alt+Enter or isPrivateMemo)
   if (params.isPrivateMemo) {
     const title = input.length > 60 ? input.slice(0, 57) + "..." : input;
     const [save] = await db
@@ -282,6 +337,8 @@ export async function executeIngestionCascade(params: {
       })
       .returning();
 
+    await attachToActiveBoardIfAny(save.id);
+
     return {
       status: "created",
       is_private_memo: true,
@@ -298,14 +355,24 @@ export async function executeIngestionCascade(params: {
       skipLocalLlm: params.skipLocalLlm,
     });
 
-    if (intentResult.intent === "EDIT_SAVE" && intentResult.targetSave) {
+    const resolvedTargetSaveId =
+      params.targetSaveId ||
+      (intentResult.intent === "EDIT_SAVE" ? intentResult.targetSave?.saveId : undefined);
+
+    if ((intentResult.intent === "EDIT_SAVE" || Boolean(params.targetSaveId)) && resolvedTargetSaveId) {
       const [existingSave] = await db
         .select()
         .from(userSaves)
-        .where(eq(userSaves.id, intentResult.targetSave.saveId))
+        .where(and(eq(userSaves.id, resolvedTargetSaveId), eq(userSaves.userId, user.id)))
         .limit(1);
 
       if (existingSave) {
+        const previousSave = {
+          personalNotes: existingSave.personalNotes ?? null,
+          userCustomValues: {
+            ...(((existingSave.userCustomValues as Record<string, unknown>) || {})),
+          },
+        };
         let linkedEntity: GlobalEntity | null = null;
         if (existingSave.entityId) {
           const [ent] = await db
@@ -317,8 +384,9 @@ export async function executeIngestionCascade(params: {
         }
 
         let updatedSaveRecord = existingSave;
+        const effectiveAction = intentResult.action || "NOTE";
 
-        if (intentResult.action === "RATING" && intentResult.editDetails?.rating !== undefined) {
+        if (effectiveAction === "RATING" && intentResult.editDetails?.rating !== undefined) {
           const currentVals = (existingSave.userCustomValues as Record<string, unknown>) || {};
           const details = await updateSaveDetails(existingSave.id, {
             userCustomValues: {
@@ -327,7 +395,7 @@ export async function executeIngestionCascade(params: {
             },
           });
           if (details?.save) updatedSaveRecord = details.save;
-        } else if (intentResult.action === "NOTE") {
+        } else if (effectiveAction === "NOTE") {
           const noteToAdd = intentResult.editDetails?.note || input;
           const currentNotes = existingSave.personalNotes;
           const mergedNotes = currentNotes ? `${currentNotes}\n${noteToAdd}` : noteToAdd;
@@ -335,7 +403,7 @@ export async function executeIngestionCascade(params: {
             personalNotes: mergedNotes,
           });
           if (details?.save) updatedSaveRecord = details.save;
-        } else if (intentResult.action === "STATUS") {
+        } else if (effectiveAction === "STATUS") {
           const currentVals = (existingSave.userCustomValues as Record<string, unknown>) || {};
           const statusVal = intentResult.editDetails?.status || "finished";
           const details = await updateSaveDetails(existingSave.id, {
@@ -348,7 +416,7 @@ export async function executeIngestionCascade(params: {
               : input,
           });
           if (details?.save) updatedSaveRecord = details.save;
-        } else if (intentResult.action === "LIST_MOVE" && intentResult.editDetails?.targetList) {
+        } else if (effectiveAction === "LIST_MOVE" && intentResult.editDetails?.targetList) {
           const listName = intentResult.editDetails.targetList;
           const [matchedList] = await db
             .select()
@@ -369,6 +437,8 @@ export async function executeIngestionCascade(params: {
           }
         }
 
+        await attachToActiveBoardIfAny(updatedSaveRecord.id);
+
         return {
           status: "edited",
           action: "edited",
@@ -377,22 +447,43 @@ export async function executeIngestionCascade(params: {
           save: updatedSaveRecord,
           entity: linkedEntity,
           editDetails: intentResult.editDetails,
+          previousSave,
         };
       }
     }
   }
 
-  const effectiveTitle = params.targetCandidate?.title?.trim() || input.trim();
+  // Extract clean leading URL + optional trailing commentary (e.g., Chrome extension "${url} — ${notes}")
+  const leadingUrlWithNotes = !params.targetCandidate
+    ? input.trim().match(/^(https?:\/\/[^\s]+)(?:\s+(.*))?$/i)
+    : null;
+  const trailingUrlNote = leadingUrlWithNotes?.[2]
+    ? leadingUrlWithNotes[2].replace(/^(?:—|--|-|\|)\s*/, "").trim()
+    : "";
+
+  const effectiveTitle =
+    params.targetCandidate?.title?.trim() ||
+    (leadingUrlWithNotes ? leadingUrlWithNotes[1] : input.trim());
   let effectiveForcedType = params.forcedTypePath || params.targetCandidate?.typePath;
   let effectiveCurioTypeId = params.curioTypeId || params.targetCandidate?.curioTypeId || params.customSchemaId;
 
+  const rawBoardTitle = (params.boardContext?.title || verifiedBoard?.title || "").trim();
+  const boardLocationHint =
+    rawBoardTitle && !GENERIC_BOARD_TITLES.has(rawBoardTitle.toLowerCase())
+      ? rawBoardTitle
+      : null;
+  const boardTypePathPrefix =
+    params.boardContext?.typePathPrefix || verifiedBoard?.autoRules?.typePathPrefix || undefined;
+  const boardCoreTypeHint =
+    params.boardContext?.coreType || verifiedBoard?.autoRules?.coreType || undefined;
+
   // STEP 0: Privacy & Modality Router
   let privacy: PrivacyClassificationResult;
-  if (params.targetCandidate || params.forcedTypePath) {
+  if (params.targetCandidate || params.forcedTypePath || leadingUrlWithNotes) {
     privacy = {
       intent: "PUBLIC_ENTITY",
       isPrivate: false,
-      reasoning: "Explicit entity candidate capture",
+      reasoning: leadingUrlWithNotes ? "Explicit external URL capture" : "Explicit entity candidate capture",
       suggestedTitle: effectiveTitle,
       extractedQuery: effectiveTitle,
       detectedType: effectiveForcedType?.includes("/book")
@@ -428,6 +519,8 @@ export async function executeIngestionCascade(params: {
       })
       .returning();
 
+    await attachToActiveBoardIfAny(save.id);
+
     return {
       status: "created",
       is_private_memo: true,
@@ -436,6 +529,19 @@ export async function executeIngestionCascade(params: {
       entity: null,
       candidate_fallbacks: [],
     };
+  }
+
+  // Apply board type context as default hint when user didn't pick an explicit type/candidate
+  if (!effectiveForcedType && !params.targetCandidate && !leadingUrlWithNotes && boardTypePathPrefix) {
+    if (boardTypePathPrefix.startsWith("/book") || boardTypePathPrefix.includes("/book")) {
+      privacy.detectedType = "BOOK";
+    } else if (boardTypePathPrefix.startsWith("/media")) {
+      privacy.detectedType = "MEDIA";
+    } else if (boardTypePathPrefix.startsWith("/place")) {
+      privacy.detectedType = "PLACE";
+    }
+  } else if (!effectiveForcedType && !params.targetCandidate && !leadingUrlWithNotes && boardCoreTypeHint) {
+    privacy.detectedType = boardCoreTypeHint.toUpperCase() as any;
   }
 
   const query = effectiveTitle;
@@ -540,6 +646,11 @@ export async function executeIngestionCascade(params: {
       hitFallbacks = localRunnerUps;
     }
 
+    const mergedHitNotes = [extractedCardData.personalNotes, trailingUrlNote]
+      .filter(Boolean)
+      .join("\n")
+      .trim() || null;
+
     const [insertedSave] = await db
       .insert(userSaves)
       .values({
@@ -552,11 +663,13 @@ export async function executeIngestionCascade(params: {
         candidateFallbacks: hitFallbacks,
         autoTags: [...new Set([hitEntity.coreType.toLowerCase(), ...extractedCardData.tags])],
         userCustomValues: extractedCardData.subjectiveValues || {},
-        personalNotes: extractedCardData.personalNotes || null,
+        personalNotes: mergedHitNotes,
         enrichmentStatus: "ENRICHED",
         visibility: "PRIVATE",
       })
       .returning();
+
+    await attachToActiveBoardIfAny(insertedSave.id);
 
     return {
       status: "created",
@@ -577,6 +690,8 @@ export async function executeIngestionCascade(params: {
       detectedType: privacy.detectedType,
       forcedTypePath: effectiveForcedType,
       targetCandidate: params.targetCandidate,
+      locationHint: boardLocationHint,
+      queryContext: params.queryContext,
       fetchFn: params.fetchFn,
     });
   } catch {
@@ -802,6 +917,11 @@ export async function executeIngestionCascade(params: {
         if (finalCreator) cachedEntity.brandOrCreator = finalCreator;
       }
 
+      const mergedCachedNotes = [extractedCardData.personalNotes, trailingUrlNote]
+        .filter(Boolean)
+        .join("\n")
+        .trim() || null;
+
       const [insertedSave] = tx
         .insert(userSaves)
         .values({
@@ -814,7 +934,7 @@ export async function executeIngestionCascade(params: {
           candidateFallbacks: runnerUps,
           autoTags: [...new Set([cachedEntity.coreType.toLowerCase(), ...extractedCardData.tags])],
           userCustomValues: extractedCardData.subjectiveValues || {},
-          personalNotes: extractedCardData.personalNotes || null,
+          personalNotes: mergedCachedNotes,
           enrichmentStatus: "ENRICHED",
           visibility: "PRIVATE",
         })
@@ -823,6 +943,8 @@ export async function executeIngestionCascade(params: {
 
       return insertedSave;
     });
+
+    await attachToActiveBoardIfAny(save.id);
 
     return {
       status: "created",
@@ -915,6 +1037,11 @@ export async function executeIngestionCascade(params: {
       );
     }
 
+    const mergedNewNotes = [extractedCardData.personalNotes, trailingUrlNote]
+      .filter(Boolean)
+      .join("\n")
+      .trim() || null;
+
     const [insertedSave] = tx
       .insert(userSaves)
       .values({
@@ -934,7 +1061,7 @@ export async function executeIngestionCascade(params: {
           ]),
         ],
         userCustomValues: extractedCardData.subjectiveValues || {},
-        personalNotes: extractedCardData.personalNotes || null,
+        personalNotes: mergedNewNotes,
         enrichmentStatus: "ENRICHED",
         visibility: "PRIVATE",
       })
@@ -943,6 +1070,8 @@ export async function executeIngestionCascade(params: {
 
     return { newEntity: insertedEntity, save: insertedSave };
   });
+
+  await attachToActiveBoardIfAny(save.id);
 
   return {
     status: "created",

@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getUserLists, createList, toggleSaveInLists } from "@/lib/lists/service";
+import { getUserLists, getBoardTree, createList, toggleSaveInLists } from "@/lib/lists/service";
 import { requireAuth, AuthError } from "@/lib/auth/service";
 
 const createListSchema = z.object({
   title: z.string().min(1, "List title cannot be empty"),
   slug: z.string().optional(),
   description: z.string().optional(),
+  parentId: z.string().nullable().optional(),
+  positionIndex: z.number().int().optional(),
   visibility: z.enum(["PRIVATE", "UNLISTED", "PUBLIC"]).optional(),
   autoRules: z
     .object({
       coreType: z.string().optional(),
+      typePathPrefix: z.string().optional(),
       tagsInclude: z.array(z.string()).optional(),
       maxPriceCents: z.number().optional(),
     })
@@ -25,7 +28,20 @@ const syncListsSchema = z.object({
 export async function GET(req: NextRequest) {
   try {
     const { user } = await requireAuth(req);
-    const lists = await getUserLists(user.id);
+    const { searchParams } = new URL(req.url);
+    const rootOnly = searchParams.get("rootOnly") === "true";
+    const parentIdParam = searchParams.get("parentId");
+    const asTree = searchParams.get("tree") === "true";
+
+    if (asTree) {
+      const tree = await getBoardTree(user.id);
+      return NextResponse.json({ tree });
+    }
+
+    const lists = await getUserLists(user.id, {
+      rootOnly,
+      parentId: parentIdParam !== null ? (parentIdParam === "null" ? null : parentIdParam) : undefined,
+    });
 
     return NextResponse.json({ lists });
   } catch (error: any) {
@@ -49,7 +65,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const list = await createList(user.id, parsed.data);
+    const list = await createList(user.id, {
+      ...parsed.data,
+      parentId: parsed.data.parentId ? parsed.data.parentId : null,
+    });
 
     return NextResponse.json({ success: true, list }, { status: 201 });
   } catch (error: any) {

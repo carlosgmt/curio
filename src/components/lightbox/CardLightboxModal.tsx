@@ -1,6 +1,25 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef, useId } from "react";
+import dynamic from "next/dynamic";
+import {
+  CURATED_CLOTH_PALETTES,
+  type PressPalette,
+  formatSpineMeta,
+  getArchetypeSpec,
+  getDeterministicClothPalette,
+  resolveSameOriginImageUrl,
+} from "@/lib/press/archetypes";
+import { extractPaletteFromImageUrl } from "@/lib/press/palette";
+
+const Hero3DInspector = dynamic(() => import("./Hero3DInspector"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full min-h-[300px] sm:min-h-[420px] items-center justify-center font-mono text-xs uppercase tracking-widest opacity-65">
+      Loading 3D Stage...
+    </div>
+  ),
+});
 import {
   X,
   Share2,
@@ -17,6 +36,7 @@ import {
   Music,
   Film,
   BookOpen,
+  Box,
   Wine,
   Frame,
   UtensilsCrossed,
@@ -33,6 +53,10 @@ import {
   User,
   Camera,
   Globe,
+  Gamepad2,
+  Layers,
+  Cpu,
+  Link2,
 } from "lucide-react";
 import { Heart } from "lucide-react";
 import { wishLabel } from "@/lib/wishlist";
@@ -41,12 +65,17 @@ import { CinemaCulturalMode } from "./modes/CinemaCulturalMode";
 import { BookCulturalMode } from "./modes/BookCulturalMode";
 import { VinylCulturalMode } from "./modes/VinylCulturalMode";
 import { RecipeCulturalMode } from "./modes/RecipeCulturalMode";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, getApiUrl } from "@/lib/apiClient";
 import { PlaceCulturalMode } from "./modes/PlaceCulturalMode";
 import { WineSommelierMode } from "./modes/WineSommelierMode";
 import { ArtFrameCard } from "../cards/silhouettes/ArtFrameCard";
 import { PrivateMemoCard } from "../cards/silhouettes/PrivateMemoCard";
 import { ProductCard } from "../cards/silhouettes/ProductCard";
+import { GarmentCard } from "../cards/silhouettes/GarmentCard";
+import { OutfitCard } from "../cards/silhouettes/OutfitCard";
+import { VideoGameCard } from "../cards/silhouettes/VideoGameCard";
+import { CosmeticsCard } from "../cards/silhouettes/CosmeticsCard";
+import { ElectronicsCard } from "../cards/silhouettes/ElectronicsCard";
 import { QuoteCard } from "../cards/silhouettes/QuoteCard";
 import { ChecklistCard } from "../cards/silhouettes/ChecklistCard";
 import { TravelPassCard } from "../cards/silhouettes/TravelPassCard";
@@ -63,8 +92,13 @@ import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 export interface CardLightboxModalProps {
   card: CardData | null;
   isOpen: boolean;
+  initialPresentation?: "standard" | "press";
   onClose: () => void;
   creatorAffiliateTags?: UserAffiliateTags | null;
+  readOnly?: boolean;
+  suppressEscape?: boolean;
+  onConnect?: (card: CardData) => void;
+  onUnlink?: (connectionId: string) => void;
   onCardUpdated?: (updatedSave: any) => void;
   onCardDeleted?: (saveId: string) => void;
   onListUpdated?: () => void;
@@ -82,9 +116,13 @@ const BUILTIN_ARCHETYPES: ArchetypeOption[] = [
   { id: "book", label: "Book", typePath: "/product/book", icon: <BookOpen className="w-3.5 h-3.5" /> },
   { id: "album", label: "Album", typePath: "/media/music/album", icon: <Disc3 className="w-3.5 h-3.5" /> },
   { id: "song", label: "Song", typePath: "/media/music/song", icon: <Music className="w-3.5 h-3.5" /> },
+  { id: "videogame", label: "Video Game", typePath: "/media/videogame", icon: <Gamepad2 className="w-3.5 h-3.5" /> },
   { id: "watch", label: "Watch", typePath: "/product/watch", icon: <Watch className="w-3.5 h-3.5" /> },
   { id: "product", label: "Product", typePath: "/product", icon: <ShoppingBag className="w-3.5 h-3.5" /> },
   { id: "garment", label: "Garment", typePath: "/product/garment", icon: <Shirt className="w-3.5 h-3.5" /> },
+  { id: "outfit", label: "Outfit", typePath: "/style/outfit", icon: <Layers className="w-3.5 h-3.5" /> },
+  { id: "cosmetics", label: "Cosmetics", typePath: "/product/cosmetics", icon: <Sparkles className="w-3.5 h-3.5" /> },
+  { id: "electronics", label: "Electronics", typePath: "/product/electronics", icon: <Cpu className="w-3.5 h-3.5" /> },
   { id: "wine", label: "Wine", typePath: "/product/beverage/wine", icon: <Wine className="w-3.5 h-3.5" /> },
   { id: "recipe", label: "Recipe", typePath: "/culinary/recipe", icon: <UtensilsCrossed className="w-3.5 h-3.5" /> },
   { id: "place", label: "Place", typePath: "/place", icon: <MapPin className="w-3.5 h-3.5" /> },
@@ -101,8 +139,9 @@ const BUILTIN_ARCHETYPES: ArchetypeOption[] = [
 function detectInitialArchetypeId(card: CardData): string {
   const typePath = (card.entity?.typePath || card.save.typePath || "").toLowerCase();
   const coreType = (card.entity?.coreType || "").toUpperCase();
+  const tags = (card.save.autoTags || []).map((t) => t.toLowerCase());
 
-  if (typePath === "/memo/list" || typePath.includes("list") || (card.entity?.coreStructuredData && Array.isArray(card.entity.coreStructuredData.items))) {
+  if (typePath === "/memo/list" || typePath === "/memo/checklist" || tags.includes("checklist")) {
     return "checklist";
   }
 
@@ -130,11 +169,17 @@ function detectInitialArchetypeId(card: CardData): string {
     return "memo";
   }
 
+  if (typePath.startsWith("/style/outfit") || typePath.includes("outfit") || tags.includes("outfit")) {
+    return "outfit";
+  }
   if (typePath.includes("/media/music/song") || typePath.includes("track")) {
     return "song";
   }
   if (typePath.includes("vinyl") || typePath.includes("music") || typePath.includes("album") || coreType === "VINYL" || coreType === "MUSIC") {
     return "album";
+  }
+  if (typePath.includes("videogame") || typePath.includes("game") || coreType === "VIDEOGAME") {
+    return "videogame";
   }
   if (typePath.includes("film") || typePath.includes("movie") || coreType === "MEDIA") {
     return "cinema";
@@ -142,8 +187,14 @@ function detectInitialArchetypeId(card: CardData): string {
   if (typePath.includes("watch")) {
     return "watch";
   }
-  if (typePath.includes("garment") || typePath.includes("apparel")) {
+  if (typePath.includes("garment") || typePath.includes("apparel") || typePath.includes("clothing") || tags.includes("garment")) {
     return "garment";
+  }
+  if (typePath.includes("cosmetics") || typePath.includes("skincare") || typePath.includes("beauty")) {
+    return "cosmetics";
+  }
+  if (typePath.includes("electronics") || typePath.includes("hardware") || typePath.includes("gadget")) {
+    return "electronics";
   }
   if (typePath.includes("wine") || typePath.includes("beverage")) {
     return "wine";
@@ -171,8 +222,13 @@ const QUOTE_HIDDEN_KEYS = ["text", "quote_text", "quotetext", "author", "speaker
 export function CardLightboxModal({
   card,
   isOpen,
+  initialPresentation = "standard",
   onClose,
   creatorAffiliateTags,
+  readOnly = false,
+  suppressEscape = false,
+  onConnect,
+  onUnlink,
   onCardUpdated,
   onCardDeleted,
   onListUpdated,
@@ -184,6 +240,9 @@ export function CardLightboxModal({
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [personalNotes, setPersonalNotes] = useState("");
   const [activeArchetype, setActiveArchetype] = useState<string>("book");
+  const [presentation, setPresentation] = useState<"standard" | "press">(initialPresentation);
+  const [pressPalette, setPressPalette] = useState<PressPalette>(CURATED_CLOTH_PALETTES[0]);
+  const [hasChangedArchetype, setHasChangedArchetype] = useState(false);
   const [isEditingType, setIsEditingType] = useState(false);
   const [customTypes, setCustomTypes] = useState<ArchetypeOption[]>([]);
   const [memberBoards, setMemberBoards] = useState<Array<{ id: string; title: string; slug: string }>>([]);
@@ -199,46 +258,30 @@ export function CardLightboxModal({
   }, [card?.save.id, card?.save.wishlist]);
   const [connections, setConnections] = useState<ConnectedItem[]>([]);
 
-  const loadBoardMemberships = useCallback((targetCard: CardData) => {
-    Promise.all([
-      apiFetch(`/api/v1/saves/${targetCard.save.id}`).then((r) => (r.ok ? r.json() : null)),
-      apiFetch("/api/v1/lists").then((r) => (r.ok ? r.json() : null)),
-    ])
-      .then(([saveData, listsData]) => {
-        const boardMap = new Map<string, { id: string; title: string; slug: string }>();
-        if (Array.isArray(saveData?.lists)) {
-          for (const l of saveData.lists) {
-            if (l?.id && l?.title) {
-              boardMap.set(l.id, { id: l.id, title: l.title, slug: l.slug });
-            }
+  const loadBoardMemberships = useCallback(
+    (targetCard: CardData) => {
+      if (readOnly) {
+        setMemberBoards([]);
+        return;
+      }
+      apiFetch(`/api/v1/lists/memberships?saveId=${encodeURIComponent(targetCard.save.id)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (Array.isArray(data?.boards)) {
+            const matched = data.boards
+              .filter((b: any) => b.isMember || b.isAutoMatched)
+              .map((b: any) => ({ id: b.id, title: b.title, slug: b.slug }));
+            setMemberBoards(matched);
           }
-        }
-        const effectiveTypePath = (targetCard.entity?.typePath || targetCard.save.typePath || "").toLowerCase();
-        const effectiveCoreType = (targetCard.entity?.coreType || "").toUpperCase();
-        if (Array.isArray(listsData?.lists)) {
-          for (const l of listsData.lists) {
-            const ruleType = l?.autoRules?.coreType;
-            if (ruleType && typeof ruleType === "string") {
-              const upperRule = ruleType.toUpperCase();
-              const lowerRule = ruleType.toLowerCase();
-              if (
-                effectiveCoreType === upperRule ||
-                (lowerRule.startsWith("/") && effectiveTypePath.startsWith(lowerRule)) ||
-                effectiveTypePath.includes(lowerRule)
-              ) {
-                boardMap.set(l.id, { id: l.id, title: l.title, slug: l.slug });
-              }
-            }
-          }
-        }
-        setMemberBoards(Array.from(boardMap.values()));
-      })
-      .catch(() => {});
-  }, []);
+        })
+        .catch(() => {});
+    },
+    [readOnly]
+  );
 
-  // Load custom types from ontology
+  // Load custom types from ontology (owner-only)
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || readOnly) return;
     apiFetch("/api/v1/types")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -256,11 +299,52 @@ export function CardLightboxModal({
         }
       })
       .catch(() => {});
-  }, [isOpen]);
+  }, [isOpen, readOnly]);
 
-  // Detect initial archetype from card
+  const headingId = useId();
+  const initializedKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!card) return;
+    if (isOpen) {
+      setPresentation(initialPresentation);
+    }
+  }, [isOpen, initialPresentation, card?.save.id]);
+
+  // Dynamic cover palette extraction when in Press Stage
+  useEffect(() => {
+    if (!isOpen || !card || presentation !== "press") return;
+    let cancelled = false;
+    const fallback = getDeterministicClothPalette(card, activeArchetype);
+    setPressPalette(fallback);
+    const imgUrl = resolveSameOriginImageUrl(heroImageUrl || card.entity?.heroImageUrl);
+    if (!imgUrl) return;
+    void extractPaletteFromImageUrl(imgUrl, fallback).then((pal) => {
+      if (!cancelled) setPressPalette(pal);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, card, presentation, activeArchetype, heroImageUrl]);
+
+  // Sync connections when parent refreshes card.connections (e.g. after PairingModal completes)
+  useEffect(() => {
+    if (!isOpen || !card) return;
+    if (card.connections !== undefined) {
+      setConnections(card.connections);
+    }
+  }, [isOpen, card?.save.id, card?.connections]);
+
+  // Detect initial archetype from card (only when opening, switching saveId, or upgrading readOnly -> owner)
+  useEffect(() => {
+    if (!isOpen || !card) {
+      initializedKeyRef.current = null;
+      return;
+    }
+    const initKey = `${card.save.id}:${readOnly ? "ro" : "rw"}`;
+    if (initializedKeyRef.current === initKey) {
+      return;
+    }
+    initializedKeyRef.current = initKey;
 
     setTitle(card.save.privateTitle || card.entity?.title || "");
     setBrandOrCreator(card.entity?.brandOrCreator || "");
@@ -269,30 +353,52 @@ export function CardLightboxModal({
     setIsEditingDetails(false);
     setPersonalNotes(card.save.personalNotes || "");
     setIsEditingType(false);
+    setHasChangedArchetype(false);
     setActiveArchetype(detectInitialArchetypeId(card));
+    setPresentation(initialPresentation);
     loadBoardMemberships(card);
 
-    // Load connections
-    apiFetch(`/api/v1/connections?saveId=${card.save.id}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.connections) {
-          setConnections(data.connections);
-        }
-      })
-      .catch(() => {});
-  }, [card, loadBoardMemberships]);
+    // Load connections if not already hydrated on card
+    if (card.connections !== undefined) {
+      setConnections(card.connections);
+    } else if (card.save.isPrivateMemo || readOnly) {
+      setConnections([]);
+    } else {
+      apiFetch(`/api/v1/connections?saveId=${card.save.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.connections) {
+            setConnections(data.connections);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [card, isOpen, readOnly, loadBoardMemberships]);
+
+  const handleUnlinkConnection = async (connectionId: string) => {
+    try {
+      const res = await apiFetch(`/api/v1/connections?connectionId=${connectionId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setConnections((prev) => prev.filter((c) => c.connectionId !== connectionId));
+        onUnlink?.(connectionId);
+      }
+    } catch (err) {
+      console.error("Failed to delete connection:", err);
+    }
+  };
 
   // ESC key listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
+      if (e.key === "Escape" && isOpen && !suppressEscape && !isAddToListOpen) {
         onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, suppressEscape, isAddToListOpen]);
 
   if (!isOpen || !card) return null;
 
@@ -305,20 +411,22 @@ export function CardLightboxModal({
   const handleSaveChanges = async () => {
     setIsSaving(true);
     try {
-      const selectedTypePath = currentArchetypeOption?.typePath || "/product/book";
+      const payload: Record<string, unknown> = {
+        privateTitle: title.trim() || null,
+        title: title.trim() || null,
+        brandOrCreator: brandOrCreator.trim() || null,
+        summary: summary.trim() || null,
+        heroImageUrl: heroImageUrl.trim() || null,
+        personalNotes: personalNotes.trim() || null,
+      };
+      if (hasChangedArchetype && currentArchetypeOption?.typePath) {
+        payload.typePath = currentArchetypeOption.typePath;
+      }
 
       const res = await apiFetch(`/api/v1/saves/${card.save.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          privateTitle: title.trim() || null,
-          title: title.trim() || null,
-          brandOrCreator: brandOrCreator.trim() || null,
-          summary: summary.trim() || null,
-          heroImageUrl: heroImageUrl.trim() || null,
-          personalNotes: personalNotes.trim() || null,
-          typePath: selectedTypePath,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -358,7 +466,7 @@ export function CardLightboxModal({
 
   const handleCopyShareLink = () => {
     if (typeof window !== "undefined") {
-      const url = `${window.location.origin}/card/${card.save.id}`;
+      const url = `${window.location.origin}${getApiUrl(`/card/${card.save.id}`)}`;
       navigator.clipboard.writeText(url);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
@@ -384,7 +492,9 @@ export function CardLightboxModal({
   const previewEntity = card.entity
     ? {
         ...card.entity,
-        typePath: currentArchetypeOption.typePath,
+        typePath: hasChangedArchetype
+          ? currentArchetypeOption.typePath
+          : card.entity.typePath || currentArchetypeOption.typePath,
       }
     : null;
 
@@ -398,9 +508,63 @@ export function CardLightboxModal({
       case "song":
       case "vinyl":
         return <VinylCulturalMode save={card.save} entity={previewEntity} primarySource={card.primarySource} creatorAffiliateTags={creatorAffiliateTags} />;
+      case "videogame":
+        return previewEntity ? (
+          <VideoGameCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        ) : (
+          <PrivateMemoCard save={card.save} />
+        );
+      case "outfit":
+        return previewEntity ? (
+          <OutfitCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        ) : (
+          <PrivateMemoCard save={card.save} />
+        );
+      case "garment":
+        return previewEntity ? (
+          <GarmentCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        ) : (
+          <PrivateMemoCard save={card.save} />
+        );
+      case "cosmetics":
+        return previewEntity ? (
+          <CosmeticsCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        ) : (
+          <PrivateMemoCard save={card.save} />
+        );
+      case "electronics":
+        return previewEntity ? (
+          <ElectronicsCard
+            save={card.save}
+            entity={previewEntity as any}
+            primarySource={card.primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+          />
+        ) : (
+          <PrivateMemoCard save={card.save} />
+        );
       case "watch":
       case "product":
-      case "garment":
         return previewEntity ? (
           <ProductCard
             save={card.save}
@@ -503,28 +667,33 @@ export function CardLightboxModal({
     }
   };
 
+  const titleInputId = `${headingId}-title`;
+  const notesInputId = `${headingId}-notes`;
+
   const typeSwitcher = (
     <>
       {/* Prominent Active Type Badge + Edit Type Toggle */}
       <div className="mb-4 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs">
-            {currentArchetypeOption.icon}
+            <span aria-hidden="true">{currentArchetypeOption.icon}</span>
             <span>{currentArchetypeOption.label}</span>
           </div>
 
-          <button
-            type="button"
-            data-testid="edit-type-toggle"
-            onClick={() => setIsEditingType((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 bg-white/80 dark:bg-neutral-900/80 border border-neutral-200 dark:border-neutral-800 transition cursor-pointer"
-          >
-            <Pencil className="w-3 h-3" />
-            <span>{isEditingType ? "Done" : "Edit Type"}</span>
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              data-testid="edit-type-toggle"
+              onClick={() => setIsEditingType((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 bg-white/80 dark:bg-neutral-900/80 border border-neutral-200 dark:border-neutral-800 transition cursor-pointer"
+            >
+              <Pencil className="w-3 h-3" aria-hidden="true" />
+              <span>{isEditingType ? "Done" : "Edit Type"}</span>
+            </button>
+          )}
         </div>
 
-        {isEditingType && (
+        {!readOnly && isEditingType && (
           <div className="mt-2.5 p-2.5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex flex-wrap gap-1.5 animate-in fade-in duration-150">
             {allArchetypes.map((arch) => (
               <button
@@ -533,6 +702,7 @@ export function CardLightboxModal({
                 type="button"
                 onClick={() => {
                   setActiveArchetype(arch.id);
+                  setHasChangedArchetype(true);
                   setIsEditingType(false);
                 }}
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition cursor-pointer ${
@@ -541,7 +711,7 @@ export function CardLightboxModal({
                     : "bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900"
                 }`}
               >
-                {arch.icon}
+                <span aria-hidden="true">{arch.icon}</span>
                 <span>{arch.label}</span>
               </button>
             ))}
@@ -553,33 +723,61 @@ export function CardLightboxModal({
   );
 
   const rightPane = (
-    <div className="md:col-span-6 flex flex-col p-4 sm:p-6 md:overflow-y-auto space-y-6">
+    <div className="md:col-span-6 flex flex-col p-4 sm:p-6 md:overflow-y-auto overscroll-contain space-y-6">
       {/* Editable Title & Inline Entity Metadata Editor */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold">
-            Curator Title
-          </label>
-          {!card.save.isPrivateMemo && (
+          {readOnly ? (
+            <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold">
+              Curated Item
+            </span>
+          ) : (
+            <label
+              htmlFor={titleInputId}
+              className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold"
+            >
+              Curator Title
+            </label>
+          )}
+          {!readOnly && !card.save.isPrivateMemo && (
             <button
               type="button"
               data-testid="edit-card-details-toggle"
               onClick={() => setIsEditingDetails((prev) => !prev)}
               className="inline-flex items-center gap-1 text-[11px] font-mono text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 transition cursor-pointer"
             >
-              <Pencil className="w-3 h-3" />
+              <Pencil className="w-3 h-3" aria-hidden="true" />
               <span>{isEditingDetails ? "Hide Details" : "Edit Card Details"}</span>
             </button>
           )}
         </div>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Give this curation a personal title..."
-          className="w-full text-xl sm:text-2xl font-serif font-bold text-neutral-900 dark:text-neutral-50 bg-transparent border-b border-neutral-200 dark:border-neutral-800 focus:border-neutral-400 focus:outline-none pb-1"
-        />
-        {isEditingDetails && (
+        {readOnly ? (
+          <div className="space-y-1.5">
+            <h2 className="text-xl sm:text-2xl font-serif font-bold text-neutral-900 dark:text-neutral-50 pb-1 border-b border-neutral-200 dark:border-neutral-800">
+              {title || card.entity?.title || "Untitled Curio"}
+            </h2>
+            {brandOrCreator && (
+              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                {brandOrCreator}
+              </p>
+            )}
+            {summary && (
+              <p className="text-xs font-serif leading-relaxed text-neutral-700 dark:text-neutral-300 pt-1">
+                {summary}
+              </p>
+            )}
+          </div>
+        ) : (
+          <input
+            id={titleInputId}
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Give this curation a personal title..."
+            className="w-full text-xl sm:text-2xl font-serif font-bold text-neutral-900 dark:text-neutral-50 bg-transparent border-b border-neutral-200 dark:border-neutral-800 focus:border-neutral-400 focus:outline-none pb-1"
+          />
+        )}
+        {!readOnly && isEditingDetails && (
           <div className="grid grid-cols-1 gap-2.5 p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 text-xs">
             <div>
               <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
@@ -621,58 +819,82 @@ export function CardLightboxModal({
         )}
       </div>
 
-      {/* Editable Personal Notes */}
-      <div>
-        <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
-          Personal Reflections & Tasting Notes
-        </label>
-        <textarea
-          rows={4}
-          value={personalNotes}
-          onChange={(e) => setPersonalNotes(e.target.value)}
-          placeholder="Where were you? What did it evoke? Unfiltered personal memory..."
-          className="w-full text-xs font-serif leading-relaxed p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400"
-        />
-      </div>
+      {/* Editable Personal Notes (owner-only unless explicitly populated) */}
+      {(!readOnly || Boolean(personalNotes)) && (
+        <div>
+          {readOnly ? (
+            <>
+              <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
+                Curator Notes
+              </span>
+              <p className="text-xs font-serif leading-relaxed p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200">
+                {personalNotes}
+              </p>
+            </>
+          ) : (
+            <>
+              <label
+                htmlFor={notesInputId}
+                className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1"
+              >
+                Personal Reflections & Tasting Notes
+              </label>
+              <textarea
+                id={notesInputId}
+                rows={4}
+                value={personalNotes}
+                onChange={(e) => setPersonalNotes(e.target.value)}
+                placeholder="Where were you? What did it evoke? Unfiltered personal memory..."
+                className="w-full text-xs font-serif leading-relaxed p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+              />
+            </>
+          )}
+        </div>
+      )}
 
       {/* Curated Board Memberships */}
-      <div>
-        <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
-          Curated Board Memberships
-        </span>
+      {(!readOnly || memberBoards.length > 0) && (
+        <div>
+          <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
+            Curated Board Memberships
+          </span>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          {memberBoards.map((board) => (
-            <span
-              key={board.id}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 shadow-2xs"
-            >
-              <BookmarkCheck className="w-3 h-3" />
-              <span>{board.title}</span>
-            </span>
-          ))}
-          <button
-            type="button"
-            onClick={() => setIsAddToListOpen(true)}
-            className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 border border-dashed border-neutral-300 dark:border-neutral-700 transition cursor-pointer"
-          >
-            <FolderPlus className="w-3.5 h-3.5 text-neutral-500" />
-            <span>+ Manage Boards</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {memberBoards.map((board) => (
+              <span
+                key={board.id}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 shadow-2xs"
+              >
+                <BookmarkCheck className="w-3 h-3" aria-hidden="true" />
+                <span>{board.title}</span>
+              </span>
+            ))}
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => setIsAddToListOpen(true)}
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 border border-dashed border-neutral-300 dark:border-neutral-700 transition cursor-pointer"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-neutral-500" aria-hidden="true" />
+                <span>+ Manage Boards</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Synaptic Pairs */}
-      {connections.length > 0 && (
+      {(connections.length > 0 || (!readOnly && !card.save.isPrivateMemo && Boolean(onConnect))) && (
         <div>
           <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
             Synaptic Memory Pairs ({connections.length})
           </span>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {connections.map((conn) => (
               <SynapsePill
                 key={conn.connectionId}
                 connection={conn}
+                onUnlink={!readOnly && (onConnect || onUnlink) ? handleUnlinkConnection : undefined}
                 onClick={() => {
                   // Close lightbox and jump to connected save
                   onClose();
@@ -685,6 +907,17 @@ export function CardLightboxModal({
                 }}
               />
             ))}
+            {!readOnly && !card.save.isPrivateMemo && onConnect && (
+              <button
+                type="button"
+                data-testid="lightbox-pair-btn"
+                onClick={() => onConnect(card)}
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 border border-dashed border-neutral-300 dark:border-neutral-700 transition cursor-pointer"
+              >
+                <Link2 className="w-3.5 h-3.5 text-neutral-500" aria-hidden="true" />
+                <span>+ Pair</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -696,6 +929,7 @@ export function CardLightboxModal({
         </span>
         <CustomFieldsSection
           saveId={card.save.id}
+          readOnly={readOnly}
           userCustomValues={card.save.userCustomValues}
           extendedAttributes={card.entity?.extendedAttributes}
         />
@@ -709,10 +943,14 @@ export function CardLightboxModal({
           className="flex items-center justify-between w-full text-xs font-mono text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 transition cursor-pointer"
         >
           <div className="flex items-center gap-1.5">
-            <Code2 className="w-3.5 h-3.5" />
+            <Code2 className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Agent JSON-LD / Schema.org</span>
           </div>
-          {isJsonDrawerOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          {isJsonDrawerOpen ? (
+            <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+          )}
         </button>
 
         {isJsonDrawerOpen && (
@@ -746,76 +984,122 @@ export function CardLightboxModal({
 
       {/* Bottom Actions */}
       <div className="pt-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between mt-auto">
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={isDeleting}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          <span>Delete</span>
-        </button>
+        {readOnly ? (
+          <div className="ml-auto">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Delete</span>
+            </button>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveChanges}
-            disabled={isSaving}
-            className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 shadow-md transition cursor-pointer"
-          >
-            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            <span>Save Changes</span>
-          </button>
-        </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveChanges}
+                disabled={isSaving}
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 shadow-md transition cursor-pointer"
+              >
+                {isSaving ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" aria-hidden="true" />
+                )}
+                <span>Save Changes</span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 
   const isQuote = activeArchetype === "quote";
+  const isPressStage = presentation === "press";
+  const pressSpec = getArchetypeSpec(card, activeArchetype);
+  const basePressMeta = formatSpineMeta(card);
+  const pressMeta = {
+    title: title.trim() || basePressMeta.title,
+    creator: brandOrCreator.trim() || basePressMeta.creator,
+    yearOrPrice: basePressMeta.yearOrPrice,
+    subtitle: summary.trim() || basePressMeta.subtitle,
+  };
+  const pressImageUrl = resolveSameOriginImageUrl(
+    heroImageUrl.trim() || card.entity?.heroImageUrl
+  );
   const quoteLayout = (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-[#f9f8f6] dark:bg-neutral-950/80">
+    <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-8 bg-[#f9f8f6] dark:bg-neutral-950/80">
       <div className="max-w-2xl mx-auto space-y-5">
         <QuoteCard
           save={card.save}
           entity={previewEntity as any}
           primarySource={card.primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
-          onQuoteSaved={(id, cv, privateTitle) => {
-            setTitle(privateTitle);
-            onCardUpdated?.({ ...card.save, id, userCustomValues: cv, privateTitle });
-          }}
+          onQuoteSaved={
+            readOnly
+              ? undefined
+              : (id, cv, privateTitle) => {
+                  setTitle(privateTitle);
+                  onCardUpdated?.({ ...card.save, id, userCustomValues: cv, privateTitle });
+                }
+          }
         />
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {memberBoards.map((board) => (
-              <span key={board.id} className="px-2.5 py-0.5 rounded-full text-[11px] bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900">
-                {board.title}
-              </span>
-            ))}
+        {!readOnly && (
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {memberBoards.map((board) => (
+                <span key={board.id} className="px-2.5 py-0.5 rounded-full text-[11px] bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900">
+                  {board.title}
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => setIsAddToListOpen(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 cursor-pointer"
+              >
+                <FolderPlus className="w-3 h-3" aria-hidden="true" /> Boards
+              </button>
+              {!card.save.isPrivateMemo && onConnect && (
+                <button
+                  type="button"
+                  data-testid="lightbox-quote-pair-btn"
+                  onClick={() => onConnect(card)}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 cursor-pointer"
+                >
+                  <Link2 className="w-3 h-3" aria-hidden="true" /> Pair
+                </button>
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => setIsAddToListOpen(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 cursor-pointer"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
             >
-              <FolderPlus className="w-3 h-3" /> Boards
+              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Delete
             </button>
           </div>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Delete
-          </button>
-        </div>
+        )}
         <details className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
           <summary className="px-4 py-2.5 text-xs font-mono text-neutral-500 cursor-pointer select-none">More</summary>
           <div className="border-t border-neutral-200 dark:border-neutral-800">
@@ -828,78 +1112,204 @@ export function CardLightboxModal({
   );
 
   return (
-    <div data-lightbox-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-neutral-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-5xl h-[100dvh] sm:h-[92vh] rounded-none sm:rounded-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:pt-0 sm:pb-0 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
+    <div
+      data-lightbox-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-neutral-950/80 backdrop-blur-md animate-in fade-in duration-200 overscroll-contain"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        style={
+          isPressStage
+            ? {
+                borderColor: pressPalette.rule,
+              }
+            : undefined
+        }
+        className="relative w-full max-w-5xl h-[100dvh] sm:h-[92vh] rounded-none sm:rounded-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:pt-0 sm:pb-0 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden"
+      >
         {/* Top Lightbox Navigation Bar */}
-        <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-3.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50/50 dark:bg-neutral-950/40">
-          <div className="flex items-center gap-2">
-            <span className="hidden sm:inline font-mono text-xs uppercase tracking-wider text-neutral-400 font-bold">
-              Card Lightbox Inspector
+        <div
+          style={
+            isPressStage
+              ? {
+                  backgroundColor: pressPalette.surfaceSecondary,
+                  color: pressPalette.ink,
+                  borderColor: pressPalette.rule,
+                }
+              : undefined
+          }
+          className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-3.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50/50 dark:bg-neutral-950/40 transition-colors duration-300"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            {isPressStage && (
+              <span
+                className="font-mono text-[10px] uppercase tracking-[0.14em] px-2 py-0.5 rounded border shrink-0"
+                style={{
+                  borderColor: pressPalette.rule,
+                  color: pressPalette.accent,
+                }}
+              >
+                {pressSpec.label}
+              </span>
+            )}
+            <span
+              id={headingId}
+              style={isPressStage ? { color: pressPalette.ink } : undefined}
+              className={`truncate ${
+                isPressStage
+                  ? "font-serif-editorial text-lg sm:text-xl font-normal tracking-tight"
+                  : "font-mono text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400 font-bold"
+              }`}
+            >
+              {title || card.entity?.title || card.save.privateTitle || "Card Lightbox Inspector"}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
-              data-testid="lightbox-wish-toggle"
-              aria-pressed={wished}
-              onClick={async () => {
-                const next = !wished;
-                setWished(next);
-                try {
-                  const res = await apiFetch(`/api/v1/saves/${card.save.id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ wishlist: next }),
-                  });
-                  if (!res.ok) throw new Error("fail");
-                  const updated = await res.json();
-                  onCardUpdated?.({ ...card.save, ...updated.save, wishlist: next });
-                } catch {
-                  setWished(!next);
-                }
-              }}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition cursor-pointer ${
-                wished
-                  ? "bg-rose-500 text-white"
-                  : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              data-testid="toggle-press-stage"
+              aria-pressed={isPressStage}
+              onClick={() =>
+                setPresentation((prev) => (prev === "press" ? "standard" : "press"))
+              }
+              style={
+                isPressStage
+                  ? {
+                      backgroundColor: pressPalette.accent,
+                      color: pressPalette.surfaceSecondary,
+                    }
+                  : undefined
+              }
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[11px] uppercase tracking-wider font-medium transition cursor-pointer ${
+                isPressStage
+                  ? "hover:opacity-90"
+                  : "text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700"
               }`}
+              title={isPressStage ? "Return to Standard Card View" : "Inspect in 3D Press Stage"}
             >
-              <Heart className={`w-3.5 h-3.5 ${wished ? "fill-current" : ""}`} />
-              <span className="whitespace-nowrap"><span className="sm:hidden">{wished ? "Wished" : "Wish"}</span><span className="hidden sm:inline">{wished ? "On wishlist" : wishLabel(card.entity?.typePath || card.save.typePath, card.entity?.coreType)}</span></span>
+              <Box className="w-3.5 h-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">
+                {isPressStage ? "Standard View" : "Press Stage"}
+              </span>
+              <span className="sm:hidden">{isPressStage ? "Card" : "3D"}</span>
             </button>
+
+            {!readOnly && (
+              <button
+                type="button"
+                data-testid="lightbox-wish-toggle"
+                aria-pressed={wished}
+                onClick={async () => {
+                  const next = !wished;
+                  setWished(next);
+                  try {
+                    const res = await apiFetch(`/api/v1/saves/${card.save.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ wishlist: next }),
+                    });
+                    if (!res.ok) throw new Error("fail");
+                    const updated = await res.json();
+                    onCardUpdated?.({ ...card.save, ...updated.save, wishlist: next });
+                  } catch {
+                    setWished(!next);
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition cursor-pointer ${
+                  wished
+                    ? "bg-rose-500 text-white"
+                    : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                }`}
+              >
+                <Heart className={`w-3.5 h-3.5 ${wished ? "fill-current" : ""}`} aria-hidden="true" />
+                <span className="whitespace-nowrap"><span className="sm:hidden">{wished ? "Wished" : "Wish"}</span><span className="hidden sm:inline">{wished ? "On wishlist" : wishLabel(card.entity?.typePath || card.save.typePath, card.entity?.coreType)}</span></span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleCopyShareLink}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
               title="Copy shareable link"
             >
-              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Share2 className="w-3.5 h-3.5" />}
+              {copiedLink ? (
+                <Check className="w-3.5 h-3.5 text-emerald-500" aria-hidden="true" />
+              ) : (
+                <Share2 className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
               <span>{copiedLink ? "Copied" : "Share"}</span>
             </button>
 
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close card inspector"
               className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
         </div>
 
         {/* Two-Stage Split Stage View */}
-        {isQuote ? quoteLayout : (
-        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 md:grid-rows-[minmax(0,1fr)] overflow-y-auto md:overflow-hidden">
-          {/* Left Stage: Cultural Mode Preview & Collapsible Type Switcher */}
-          <div className="md:col-span-6 flex flex-col p-4 sm:p-6 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-[#f9f8f6] dark:bg-neutral-950/80 md:overflow-y-auto">
-            {typeSwitcher}
+        {isQuote && !isPressStage ? quoteLayout : (
+        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 md:grid-rows-[minmax(0,1fr)] overflow-y-auto overscroll-contain md:overflow-hidden">
+          {/* Left Stage: Press Stage 3D Hero or Cultural Mode Preview */}
+          {isPressStage ? (
+            <div
+              data-testid="press-stage-pane"
+              style={{
+                backgroundColor: pressPalette.surface,
+                color: pressPalette.ink,
+                borderColor: pressPalette.rule,
+              }}
+              className="md:col-span-6 flex flex-col border-b md:border-b-0 md:border-r transition-colors duration-300 overflow-hidden"
+            >
+              <div
+                className="px-4 sm:px-6 pt-4 pb-3 border-b shrink-0 space-y-1"
+                style={{ borderColor: pressPalette.rule }}
+              >
+                <div className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.14em]">
+                  <span style={{ color: pressPalette.accent }}>
+                    {pressMeta.creator}
+                  </span>
+                  {pressMeta.yearOrPrice && (
+                    <span className="tabular-nums" style={{ color: pressPalette.muted }}>
+                      {pressMeta.yearOrPrice}
+                    </span>
+                  )}
+                </div>
+                <h2 className="font-serif-editorial text-2xl sm:text-3xl leading-[1.12] font-normal">
+                  {pressMeta.title}
+                </h2>
+              </div>
 
-            {/* Cultural Mode Stage Display */}
-            <div className="flex-1 flex flex-col justify-center">
-              {renderLeftStage()}
+              <div className="flex-1 min-h-[300px] flex flex-col">
+                <Hero3DInspector
+                  spec={pressSpec}
+                  meta={pressMeta}
+                  palette={pressPalette}
+                  imageUrl={pressImageUrl}
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="md:col-span-6 flex flex-col p-4 sm:p-6 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-[#f9f8f6] dark:bg-neutral-950/80 md:overflow-y-auto overscroll-contain">
+              {typeSwitcher}
+
+              {/* Cultural Mode Stage Display */}
+              <div className="flex-1 flex flex-col justify-center">
+                {renderLeftStage()}
+              </div>
+            </div>
+          )}
 
           {/* Right Stage: Curator's Voice, Synapses, Board Memberships & Metadata */}
           {rightPane}
@@ -907,15 +1317,17 @@ export function CardLightboxModal({
         )}
 
         {/* Add To List Popover */}
-        <AddToListPopover
-          saveId={card.save.id}
-          isOpen={isAddToListOpen}
-          onClose={() => setIsAddToListOpen(false)}
-          onListUpdated={() => {
-            loadBoardMemberships(card);
-            onListUpdated?.();
-          }}
-        />
+        {!readOnly && (
+          <AddToListPopover
+            saveId={card.save.id}
+            isOpen={isAddToListOpen}
+            onClose={() => setIsAddToListOpen(false)}
+            onListUpdated={() => {
+              loadBoardMemberships(card);
+              onListUpdated?.();
+            }}
+          />
+        )}
       </div>
     </div>
   );

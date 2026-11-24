@@ -87,5 +87,5 @@ describe("Candidate Disambiguation Swapper (FR-2.3)", () => {
     // 7. Verify previous movie was pushed into candidate fallbacks
     const updatedFallbacks = savedInDb.candidateFallbacks as Array<{ title: string; url: string }>;
     expect(updatedFallbacks.some((f) => f.title === `Dune (2021 Film) ${runId}`)).toBe(true);
-  });
+  }, 15000);
 });

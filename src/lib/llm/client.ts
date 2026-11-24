@@ -12,11 +12,29 @@ export interface ChatMessage {
 const DEFAULT_BASE_URL = "http://localhost:11434/v1";
 const DEFAULT_MODEL = "gemma4:12b-it-qat";
 const DEFAULT_TIMEOUT_MS = 120000;
+const INITIAL_GLOBAL_FETCH = globalThis.fetch;
 
 export function getLocalLlmConfig() {
   const baseUrl = process.env.OLLAMA_BASE_URL || DEFAULT_BASE_URL;
   const model = process.env.LOCAL_LLM_MODEL || DEFAULT_MODEL;
   return { baseUrl: baseUrl.replace(/\/+$/, ""), model };
+}
+
+export function isLocalLlmDisabled(customFetch?: typeof fetch): boolean {
+  if (process.env.DISABLE_LOCAL_LLM === "true" || process.env.OLLAMA_BASE_URL === "disabled") {
+    return true;
+  }
+  const activeFetch = customFetch ?? globalThis.fetch;
+  const isMockedFetch = activeFetch !== INITIAL_GLOBAL_FETCH;
+  if (
+    process.env.NODE_ENV === "test" &&
+    !isMockedFetch &&
+    !process.env.OLLAMA_BASE_URL &&
+    process.env.ENABLE_TEST_OLLAMA !== "true"
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -28,6 +46,9 @@ export async function generateChatCompletion(
   systemPrompt?: string,
   options: CompletionOptions = {}
 ): Promise<string | null> {
+  if (isLocalLlmDisabled()) {
+    return null;
+  }
   const { baseUrl, model } = getLocalLlmConfig();
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 

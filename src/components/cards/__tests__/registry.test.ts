@@ -86,4 +86,68 @@ describe("SilhouetteRegistry & Dynamic Component Resolver (FR-2.0 / FR-2.1)", ()
       }
     }
   });
+
+  it("Regression U3 & C4: routes /style/outfit and /place/wishlist accurately (never misrouting items[] to ChecklistCard) and renders optimistic badge", async () => {
+    expect(silhouetteRegistry.resolveArchetypeFromTypePath("/style/outfit", false)).toBe("outfit");
+    expect(silhouetteRegistry.resolveArchetypeFromTypePath("/place/wishlist", false)).toBe("place");
+    expect(silhouetteRegistry.resolveArchetypeFromTypePath("/memo/checklist", false)).toBe("checklist");
+
+    const { PolymorphicCard } = await import("../PolymorphicCard");
+
+    // Outfit save with coreStructuredData.items array MUST render OutfitCard, NOT ChecklistCard
+    const outfitHtml = renderToStaticMarkup(
+      React.createElement(PolymorphicCard, {
+        item: {
+          save: {
+            id: "outfit-save-1",
+            typePath: "/style/outfit",
+            isPrivateMemo: false,
+            enrichmentStatus: "ENRICHED",
+            createdAt: "2026-10-14T12:00:00Z",
+          },
+          entity: {
+            id: "outfit-ent-1",
+            title: "Autumn Linen Look",
+            coreType: "PRODUCT",
+            typePath: "/style/outfit",
+            canonicalUrl: "https://mini.orca-banjo.ts.net/closet/#outfit-1",
+            heroImageUrl: "/curio/api/v1/media/closet/covers/outfit_1.png",
+            coreStructuredData: {
+              occasion: "Weekend",
+              season: "Autumn",
+              items: [
+                { name: "Olive Linen Overshirt", category: "Outerwear" },
+                { name: "Ecru Selvedge Denim", category: "Trousers" },
+              ],
+            },
+          },
+        },
+      })
+    );
+    expect(outfitHtml).toContain('data-testid="outfit-card"');
+    expect(outfitHtml).not.toContain('data-testid="checklist-card"');
+
+    // Optimistic card renders enriching badge
+    const optimisticHtml = renderToStaticMarkup(
+      React.createElement(PolymorphicCard, {
+        item: {
+          save: {
+            id: "optimistic-1",
+            typePath: "/product",
+            isPrivateMemo: false,
+            enrichmentStatus: "OPTIMISTIC",
+            createdAt: "2026-10-14T12:00:00Z",
+          },
+          entity: {
+            id: "optimistic-ent-1",
+            title: "Capturing Mimar Granada",
+            coreType: "PLACE",
+            typePath: "/place/spot",
+            canonicalUrl: "https://maps.google.com/?q=Mimar+Granada",
+          },
+        },
+      })
+    );
+    expect(optimisticHtml).toContain('data-testid="optimistic-enriching-badge"');
+  });
 });

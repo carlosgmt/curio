@@ -60,13 +60,19 @@ export interface CurioTelemetry {
 }
 
 export async function getDatabaseTelemetry(): Promise<CurioTelemetry> {
-  const dbPath = path.resolve(process.env.DATABASE_PATH ?? "./data/curio.db");
+  const dbPath = path.resolve(/*turbopackIgnore: true*/ (process.env.DATABASE_PATH ?? "./data/curio.db"));
   const walPath = `${dbPath}-wal`;
   const shmPath = `${dbPath}-shm`;
 
-  const dbSizeBytes = existsSync(dbPath) ? statSync(dbPath).size : 0;
-  const walSizeBytes = existsSync(walPath) ? statSync(walPath).size : 0;
-  const shmSizeBytes = existsSync(shmPath) ? statSync(shmPath).size : 0;
+  const dbSizeBytes = existsSync(/*turbopackIgnore: true*/ dbPath)
+    ? statSync(/*turbopackIgnore: true*/ dbPath).size
+    : 0;
+  const walSizeBytes = existsSync(/*turbopackIgnore: true*/ walPath)
+    ? statSync(/*turbopackIgnore: true*/ walPath).size
+    : 0;
+  const shmSizeBytes = existsSync(/*turbopackIgnore: true*/ shmPath)
+    ? statSync(/*turbopackIgnore: true*/ shmPath).size
+    : 0;
 
   const journalMode = (sqlite.pragma("journal_mode", { simple: true }) as string) || "unknown";
   const pageCount = (sqlite.pragma("page_count", { simple: true }) as number) || 0;

@@ -6,8 +6,15 @@ import { Sparkles, Share2, Check, Layers, User, ArrowLeft, BookmarkPlus, Shoppin
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
 import { SplitBagCheckoutDrawer } from "@/components/commerce/SplitBagCheckoutDrawer";
 import type { ListWithSections } from "@/lib/lists/service";
+import { apiFetch } from "@/lib/apiClient";
 
-export function PublicBoardView({ data }: { data: ListWithSections }) {
+export function PublicBoardView({
+  data,
+  isOwner = false,
+}: {
+  data: ListWithSections;
+  isOwner?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const [cloning, setCloning] = useState(false);
   const [cloned, setCloned] = useState(false);
@@ -25,7 +32,7 @@ export function PublicBoardView({ data }: { data: ListWithSections }) {
   const handleCloneBoard = async () => {
     setCloning(true);
     try {
-      const res = await fetch(`/curio/api/v1/lists/${list.slug}/clone`, {
+      const res = await apiFetch(`/api/v1/lists/${list.slug}/clone`, {
         method: "POST",
       });
       if (res.ok) {
@@ -147,7 +154,11 @@ export function PublicBoardView({ data }: { data: ListWithSections }) {
 
       {/* Sections and Cards Grid */}
       <div className="max-w-6xl mx-auto">
-        <SectionGroupView sections={sections} creatorAffiliateTags={owner?.affiliateTags} />
+        <SectionGroupView
+          sections={sections}
+          creatorAffiliateTags={owner?.affiliateTags}
+          readOnly={!isOwner}
+        />
       </div>
 
       {/* Footer */}

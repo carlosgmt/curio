@@ -270,4 +270,66 @@ describe("Omnibox Intent Routing & Active Save Disambiguation Engine", () => {
     const avgLatency = times.reduce((a, b) => a + b, 0) / times.length;
     expect(avgLatency).toBeLessThan(15); // Must be strictly < 15 ms
   });
+
+  it("Regression C1 & U2: classifies new external URLs as ADD_ENTITY even when user has existing saved URLs, and matches exact saved URLs + trailing notes", async () => {
+    const timestamp = Date.now();
+    const savedCanonicalUrl = `https://example.com/saved-essay-${timestamp}`;
+    const savedSourceUrl = `https://merchant.example.com/sku-${timestamp}`;
+
+    const [ent] = await db
+      .insert(globalEntities)
+      .values({
+        canonicalUrl: savedCanonicalUrl,
+        urlHash: `hash-essay-${timestamp}`,
+        entityKey: `key-essay-${timestamp}`,
+        coreType: "PRODUCT",
+        typePath: "/product/book",
+        title: "Saved Architecture Essay",
+        coreStructuredData: {},
+      })
+      .returning();
+
+    await db.insert(entitySources).values({
+      entityId: ent.id,
+      sellerName: "Example Merchant",
+      sourceUrl: savedSourceUrl,
+      urlHash: `hash-src-${timestamp}`,
+    });
+
+    const [savedRecord] = await db
+      .insert(userSaves)
+      .values({
+        userId: testUserId,
+        entityId: ent.id,
+        typePath: "/product/book",
+      })
+      .returning();
+
+    // 1. Brand-new URL MUST return ADD_ENTITY (never falsely match existing saves)
+    const newUrlRes = await classifyOmniboxIntent(
+      `https://brandnew.example.org/unseen-article-${timestamp}`,
+      testUserId
+    );
+    expect(newUrlRes.intent).toBe("ADD_ENTITY");
+
+    // 2. Exact saved canonicalUrl returns EDIT_SAVE (VIEW)
+    const exactCanonicalRes = await classifyOmniboxIntent(savedCanonicalUrl, testUserId);
+    expect(exactCanonicalRes.intent).toBe("EDIT_SAVE");
+    expect(exactCanonicalRes.action).toBe("VIEW");
+    expect(exactCanonicalRes.targetSave?.saveId).toBe(savedRecord.id);
+
+    // 3. Exact saved entity_sources URL with trailing commentary returns EDIT_SAVE (NOTE)
+    const urlWithNoteRes = await classifyOmniboxIntent(
+      `${savedSourceUrl} — brilliant brutalist photography`,
+      testUserId
+    );
+    expect(urlWithNoteRes.intent).toBe("EDIT_SAVE");
+    expect(urlWithNoteRes.action).toBe("NOTE");
+    expect(urlWithNoteRes.targetSave?.saveId).toBe(savedRecord.id);
+    expect(urlWithNoteRes.editDetails?.note).toBe("brilliant brutalist photography");
+
+    // 4. Empty / whitespace edge case does not crash
+    const emptyRes = await classifyOmniboxIntent("   ", testUserId);
+    expect(emptyRes).toBeDefined();
+  });
 });

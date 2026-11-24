@@ -1,6 +1,9 @@
 import React from "react";
 import { notFound } from "next/navigation";
+import { cookies, headers } from "next/headers";
 import { getListBySlugWithItems } from "@/lib/lists/service";
+import { getOptionalAuth } from "@/lib/auth/service";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { generateListJsonLd } from "@/lib/federation/jsonld";
 import { PublicBoardView } from "./PublicBoardView";
 import Link from "next/link";
@@ -13,9 +16,25 @@ export default async function ListPage({
 }) {
   const { slug } = await params;
 
+  let viewerUserId: string | undefined;
+  try {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    if (sessionToken) {
+      const auth = await getOptionalAuth(sessionToken);
+      if (auth) viewerUserId = auth.user.id;
+    } else {
+      const hdrs = await headers();
+      const auth = await getOptionalAuth(hdrs);
+      if (auth) viewerUserId = auth.user.id;
+    }
+  } catch {
+    // Non-request context fallback
+  }
+
   let data;
   try {
-    data = await getListBySlugWithItems(slug);
+    data = await getListBySlugWithItems(slug, viewerUserId);
   } catch (err: any) {
     if (err.message?.includes("FORBIDDEN")) {
       return (
@@ -48,6 +67,7 @@ export default async function ListPage({
 
   const allItems = data.sections.flatMap((s) => s.items);
   const jsonLd = generateListJsonLd(data.list, allItems, data.owner);
+  const isOwner = Boolean(viewerUserId && viewerUserId === data.list.userId);
 
   return (
     <>
@@ -57,7 +77,7 @@ export default async function ListPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       )}
-      <PublicBoardView data={data} />
+      <PublicBoardView data={data} isOwner={isOwner} />
     </>
   );
 }

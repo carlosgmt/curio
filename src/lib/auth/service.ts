@@ -7,6 +7,7 @@ import {
   revokeSession,
   clearSessionCookie,
   extractTokenFromRequest,
+  extractTokensFromRequest,
 } from "./session";
 import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
 
@@ -226,16 +227,20 @@ export async function logoutUser(
 export async function getOptionalAuth(
   req?: Request | Headers | string | null
 ): Promise<{ user: SafeUser; session: UserSession } | null> {
-  const token = extractTokenFromRequest(req);
-  if (!token) return null;
+  const tokens = extractTokensFromRequest(req);
+  if (tokens.length === 0) return null;
 
-  const auth = await validateSession(token);
-  if (!auth) return null;
+  for (const token of tokens) {
+    const auth = await validateSession(token);
+    if (auth) {
+      return {
+        user: toSafeUser(auth.user),
+        session: auth.session,
+      };
+    }
+  }
 
-  return {
-    user: toSafeUser(auth.user),
-    session: auth.session,
-  };
+  return null;
 }
 
 /**
@@ -248,17 +253,19 @@ export async function requireAuth(
   req?: Request | Headers | string | null,
   options?: { allowFallback?: boolean }
 ): Promise<{ user: SafeUser; session: UserSession | null }> {
-  const token = extractTokenFromRequest(req);
+  const tokens = extractTokensFromRequest(req);
 
-  if (token) {
-    const auth = await validateSession(token);
-    if (!auth) {
-      throw new AuthError("Invalid or expired session token", 401);
+  if (tokens.length > 0) {
+    for (const token of tokens) {
+      const auth = await validateSession(token);
+      if (auth) {
+        return {
+          user: toSafeUser(auth.user),
+          session: auth.session,
+        };
+      }
     }
-    return {
-      user: toSafeUser(auth.user),
-      session: auth.session,
-    };
+    throw new AuthError("Invalid or expired session token", 401);
   }
 
   // No token provided. Check fallback allowance.

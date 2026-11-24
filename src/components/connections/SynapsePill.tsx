@@ -68,8 +68,9 @@ export function SynapsePill({ connection, onUnlink, onClick }: SynapsePillProps)
           }}
           className="opacity-0 group-hover/pill:opacity-100 text-neutral-400 hover:text-rose-500 rounded-full p-0.5 transition cursor-pointer"
           title="Unlink connection"
+          aria-label={`Unlink ${connection.title}`}
         >
-          <X className="w-2.5 h-2.5" />
+          <X className="w-2.5 h-2.5" aria-hidden="true" />
         </button>
       )}
     </div>

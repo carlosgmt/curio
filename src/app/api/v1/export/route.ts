@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZipArchive } from "archiver";
 import { db, users, userSaves, globalEntities, smartLists, listItems } from "@/db";
 import { eq } from "drizzle-orm";
-import { getOptionalAuth } from "@/lib/auth/service";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { AuthError, requireAuth } from "@/lib/auth/service";
 import { generateListJsonLd } from "@/lib/federation/jsonld";
 
 async function createArchiveBuffer(
@@ -37,14 +36,29 @@ export async function GET(req: NextRequest) {
     const format = searchParams.get("format") || "zip";
     const boardId = searchParams.get("boardId") || searchParams.get("listId");
 
-    // 1. Resolve User
-    const auth = await getOptionalAuth(req);
-    let user = auth?.user;
-    if (!user) {
-      try {
-        user = await getOrCreateDefaultUser();
-      } catch {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // 1. Enforce Authentication & Resolve User
+    const auth = await requireAuth(req);
+    const requestedUserId = searchParams.get("userId");
+    const isStrictOrSession =
+      auth.session !== null ||
+      process.env.NODE_ENV === "production" ||
+      req.headers.get("x-strict-auth") === "true";
+
+    if (isStrictOrSession && requestedUserId && requestedUserId !== auth.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    let targetUserId = auth.user.id;
+    let user = auth.user;
+    if (!isStrictOrSession && requestedUserId && requestedUserId !== auth.user.id) {
+      const [foundUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, requestedUserId))
+        .limit(1);
+      if (foundUser) {
+        targetUserId = foundUser.id;
+        user = foundUser;
       }
     }
 
@@ -56,13 +70,13 @@ export async function GET(req: NextRequest) {
       })
       .from(userSaves)
       .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
-      .where(eq(userSaves.userId, user.id));
+      .where(eq(userSaves.userId, targetUserId));
 
     // Fetch Lists
     const lists = await db
       .select()
       .from(smartLists)
-      .where(eq(smartLists.userId, user.id));
+      .where(eq(smartLists.userId, targetUserId));
 
     // --- FORMAT: JSON-LD ---
     if (format === "jsonld") {
@@ -77,7 +91,7 @@ export async function GET(req: NextRequest) {
             save: s.save,
             entity: s.entity,
           })),
-          user,
+          user as any,
           "https://curio.app"
         );
         return new NextResponse(JSON.stringify(jsonLd, null, 2), {
@@ -206,6 +220,9 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json(
       { error: error.message || "Failed to process data export" },
       { status: 500 }

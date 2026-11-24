@@ -24,10 +24,87 @@ export interface ResolvedFilm {
   };
 }
 
+function extractDirectorFromProse(text: string): string | undefined {
+  if (!text) return undefined;
+  const match = text.match(
+    /(?:directed by|dirigida por)\s+([\p{Lu}][\p{L}'’.-]+(?:\s+(?:(?:de|del|la|las|los|van|von|der|den|da|di|du|le|mc|mac|st\.?)\s+)?[\p{Lu}][\p{L}'’.-]+){0,3})/u
+  );
+  if (!match) return undefined;
+  return match[1]
+    .replace(/\s+\b(?:and\s+(?:written|produced|edited|starring)|written|produced|starring|based|with)\b.*$/iu, "")
+    .replace(/\.\s+(?:The|It|In|A|An|His|Her|El|La|Una|Un)\b.*$/iu, "")
+    .replace(/[.,;]+$/, "")
+    .trim() || undefined;
+}
+
+async function fetchWikidataDirectorP57(
+  qid: string | undefined,
+  fetchFn: typeof fetch,
+  timeoutMs: number
+): Promise<string | undefined> {
+  if (!qid || !/^Q\d+$/i.test(qid.trim())) return undefined;
+  try {
+    const cleanQid = qid.trim().toUpperCase();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, 2500));
+    const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(
+      cleanQid
+    )}&props=claims&format=json&origin=*`;
+    const claimsRes = await fetchFn(claimsUrl, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Curio/1.0 (https://curio.local; hello@curio.local)" },
+    });
+    if (!claimsRes.ok) {
+      clearTimeout(timer);
+      return undefined;
+    }
+    const claimsJson = await claimsRes.json();
+    const p57Claims: any[] = claimsJson?.entities?.[cleanQid]?.claims?.P57 || [];
+    const directorQids = p57Claims
+      .map((c: any) => c?.mainsnak?.datavalue?.value?.id)
+      .filter((id: any): id is string => typeof id === "string" && /^Q\d+$/i.test(id))
+      .slice(0, 2);
+
+    if (directorQids.length === 0) {
+      clearTimeout(timer);
+      return undefined;
+    }
+
+    const labelsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(
+      directorQids.join("|")
+    )}&props=labels&languages=en|es|fr|it|de&format=json&origin=*`;
+    const labelsRes = await fetchFn(labelsUrl, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Curio/1.0 (https://curio.local; hello@curio.local)" },
+    });
+    clearTimeout(timer);
+    if (!labelsRes.ok) return undefined;
+
+    const labelsJson = await labelsRes.json();
+    const names = directorQids
+      .map((id) => {
+        const labels = labelsJson?.entities?.[id]?.labels || {};
+        return (
+          labels.en?.value ||
+          labels.es?.value ||
+          labels.fr?.value ||
+          labels.it?.value ||
+          labels.de?.value
+        );
+      })
+      .filter(Boolean);
+
+    return names.length > 0 ? names.join(", ") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface ResolveFilmOptions {
   yearHint?: number | null;
   creatorHint?: string | null;
   wikiUrlHint?: string | null;
+  wikidataId?: string | null;
   tmdbId?: number | string | null;
   imdbId?: string | null;
   fetchFn?: typeof fetch;
@@ -185,7 +262,7 @@ export async function resolveFilm(
         searchTerm
       )}&entity=movie&limit=6`;
 
-      let res = await fetchFn(itunesUrl, { signal: controller.signal });
+      const res = await fetchFn(itunesUrl, { signal: controller.signal });
       let results: any[] = [];
       if (res.ok) {
         const data = await res.json();
@@ -369,16 +446,15 @@ export async function resolveFilm(
             const yearMatch = (data.description || summary).match(/\b(19\d\d|20[0-2]\d)\b/);
             const releaseYear = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
 
-            const directorMatch =
-              summary.match(
-                /(?:directed by|dirigida por)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+(?:[A-ZÁÉÍÓÚÑ]\.|[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)){1,3})/
-              ) ||
-              (data.description || "").match(
-                /(?:directed by|dirigida por)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+(?:[A-ZÁÉÍÓÚÑ]\.|[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)){1,3})/
-              );
-            const director = directorMatch
-              ? directorMatch[1].replace(/\.\s+(?:The|It|In|A|An|His|Her)\b.*$/i, "").replace(/\.$/, "").trim()
-              : undefined;
+            const wikidataDirector = await fetchWikidataDirectorP57(
+              data.wikibase_item,
+              fetchFn,
+              timeoutMs
+            );
+            const director =
+              wikidataDirector ||
+              extractDirectorFromProse(summary) ||
+              extractDirectorFromProse(data.description || "");
 
             return {
               title: displayTitle,
@@ -404,8 +480,11 @@ export async function resolveFilm(
 
   if (itunesFilm || wikiFilm) {
     const title = wikiFilm?.title || itunesFilm?.title || cleanTitle;
-    const director =
+    let director =
       itunesFilm?.director || wikiFilm?.director || options?.creatorHint || undefined;
+    if (!director && options?.wikidataId) {
+      director = await fetchWikidataDirectorP57(options.wikidataId, fetchFn, timeoutMs);
+    }
     const releaseYear =
       itunesFilm?.releaseYear ||
       wikiFilm?.releaseYear ||

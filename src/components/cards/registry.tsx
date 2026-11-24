@@ -13,6 +13,7 @@ import { PlaceSpotCard } from "./silhouettes/PlaceSpotCard";
 import { PrivateMemoCard } from "./silhouettes/PrivateMemoCard";
 import { ProductCard } from "./silhouettes/ProductCard";
 import { GarmentCard } from "./silhouettes/GarmentCard";
+import { OutfitCard } from "./silhouettes/OutfitCard";
 import { CosmeticsCard } from "./silhouettes/CosmeticsCard";
 import { ElectronicsCard } from "./silhouettes/ElectronicsCard";
 import { QuoteCard } from "./silhouettes/QuoteCard";
@@ -43,6 +44,7 @@ export type CanonicalArchetypeId =
   | "private_memo"
   | "product"
   | "garment"
+  | "outfit"
   | "cosmetics"
   | "electronics"
   | "quote"
@@ -177,6 +179,7 @@ export class SilhouetteRegistry {
     this.register("private_memo", "standard", PrivateMemoCard);
     this.register("product", "standard", ProductCard);
     this.register("garment", "standard", GarmentCard);
+    this.register("outfit", "standard", OutfitCard);
     this.register("cosmetics", "standard", CosmeticsCard);
     this.register("electronics", "standard", ElectronicsCard);
     this.register("quote", "standard", QuoteCard);
@@ -244,7 +247,7 @@ export class SilhouetteRegistry {
 
     const path = (typePath || "").toLowerCase().trim();
 
-    if (path === "/memo/list" || path.includes("list") || path.includes("checklist")) {
+    if (path === "/memo/list" || path === "/memo/checklist") {
       return "checklist";
     }
 
@@ -327,6 +330,12 @@ export class SilhouetteRegistry {
     }
     if (path.includes("place") || path.startsWith("/place")) {
       return "place";
+    }
+    if (
+      path.includes("outfit") ||
+      path.startsWith("/style/outfit")
+    ) {
+      return "outfit";
     }
     if (
       path.includes("garment") ||

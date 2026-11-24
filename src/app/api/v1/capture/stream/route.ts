@@ -1,14 +1,28 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { classifyWithHeuristics } from "@/lib/router/privacy";
 import { db, curioTypes, userSaves } from "@/db";
 import { eq } from "drizzle-orm";
 import { extractOpenGraphHead } from "@/lib/enrichment/opengraph";
-import { executeBackgroundEnrichment, getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { executeBackgroundEnrichment } from "@/lib/ingest/cascade";
+import { requireAuth, AuthError } from "@/lib/auth/service";
 
 export async function POST(req: NextRequest) {
+  let user: { id: string };
+  try {
+    const auth = await requireAuth(req);
+    user = auth.user;
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await req.json();
   const { input } = body;
-  const user = await getOrCreateDefaultUser();
+  if (!input || typeof input !== "string" || !input.trim()) {
+    return NextResponse.json({ error: "Input is required" }, { status: 400 });
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

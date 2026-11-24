@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { executeIngestionCascade } from "@/lib/ingest/cascade";
 import { db, userSaves, globalEntities } from "@/db";
-import { desc, eq, and, or, lt, count } from "drizzle-orm";
+import { desc, eq, and, or, lt, count, sql } from "drizzle-orm";
 import { requireAuth, AuthError } from "@/lib/auth/service";
 import { classifyOmniboxIntent } from "@/lib/router/intent";
+import { getConnectedSaves, getConnectedSavesMap } from "@/lib/connections/service";
 
 const captureSchema = z.object({
   input: z.string().min(1, "Capture input cannot be empty"),
@@ -13,6 +14,16 @@ const captureSchema = z.object({
   curioTypeId: z.string().optional(),
   forcedTypePath: z.string().optional(),
   isPrivateMemo: z.boolean().optional(),
+  listId: z.string().optional(),
+  queryContext: z.string().optional(),
+  boardContext: z
+    .object({
+      title: z.string().optional(),
+      slug: z.string().optional(),
+      coreType: z.string().optional(),
+      typePathPrefix: z.string().optional(),
+    })
+    .optional(),
   targetCandidate: z
     .object({
       title: z.string(),
@@ -30,6 +41,7 @@ const captureSchema = z.object({
   preview: z.boolean().optional(),
   skipLocalLlm: z.boolean().optional(),
   forceNew: z.boolean().optional(),
+  targetSaveId: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -69,10 +81,18 @@ export async function POST(req: NextRequest) {
       curioTypeId: parsed.data.curioTypeId,
       forcedTypePath: parsed.data.forcedTypePath,
       targetCandidate: parsed.data.targetCandidate,
+      listId: parsed.data.listId,
+      queryContext: parsed.data.queryContext,
+      boardContext: parsed.data.boardContext,
       isPrivateMemo: parsed.data.isPrivateMemo,
       skipLocalLlm: parsed.data.skipLocalLlm ?? true,
       forceNew: parsed.data.forceNew,
+      targetSaveId: parsed.data.targetSaveId,
     });
+
+    const createdOrEditedConnections = result.save.isPrivateMemo
+      ? []
+      : await getConnectedSaves(result.save.id);
 
     if (result.status === "edited") {
       return NextResponse.json(
@@ -83,8 +103,10 @@ export async function POST(req: NextRequest) {
           entity_id: result.entity_id,
           save: result.save,
           entity: result.entity,
+          connections: createdOrEditedConnections,
           candidate_fallbacks: result.candidate_fallbacks ?? [],
           editDetails: result.editDetails,
+          previousSave: result.previousSave,
         },
         { status: 200 }
       );
@@ -97,6 +119,7 @@ export async function POST(req: NextRequest) {
         entity_id: result.entity_id,
         save: result.save,
         entity: result.entity,
+        connections: createdOrEditedConnections,
         candidate_fallbacks: result.candidate_fallbacks ?? [],
       },
       { status: 201 }
@@ -128,17 +151,61 @@ export async function GET(req: NextRequest) {
     }
 
     const cursor = url.searchParams.get("cursor");
+    const wishlistOnly = url.searchParams.get("wishlist") === "true";
+    const includeWearLogs =
+      wishlistOnly ||
+      url.searchParams.get("includeWearLogs") === "true" ||
+      url.searchParams.get("excludeWearLogs") === "false";
     const rawLimit = parseInt(url.searchParams.get("limit") || "50", 10);
     const limit = Math.max(1, Math.min(isNaN(rawLimit) ? 50 : rawLimit, 100));
 
-    // Get total count of saves for the authenticated user
-    const [countResult] = await db
+    // SQL-NULL-safe predicate for daily /style/outfit wear-logs (preserves private memos & kind="idea" looks)
+    const isWearLogExpr = sql<boolean>`(
+      ${userSaves.isPrivateMemo} = 0
+      AND lower(coalesce(${userSaves.typePath}, ${globalEntities.typePath}, '')) LIKE '/style/outfit%'
+      AND lower(coalesce(
+        CASE
+          WHEN json_valid(${globalEntities.coreStructuredData})
+          THEN json_extract(${globalEntities.coreStructuredData}, '$.kind')
+          ELSE NULL
+        END,
+        'worn'
+      )) != 'idea'
+    )`;
+
+    // Get vault total count, wishlist count, and wear-log count for the authenticated user
+    const [vaultCountResult] = await db
       .select({ total: count() })
       .from(userSaves)
       .where(eq(userSaves.userId, user.id));
-    const totalCount = countResult?.total ?? 0;
+    const vaultTotalCount = vaultCountResult?.total ?? 0;
 
-    let cursorFilter = eq(userSaves.userId, user.id);
+    const [wishlistCountResult] = await db
+      .select({ total: count() })
+      .from(userSaves)
+      .where(and(eq(userSaves.userId, user.id), eq(userSaves.wishlist, true)));
+    const wishlistCount = wishlistCountResult?.total ?? 0;
+
+    const [wearLogCountResult] = await db
+      .select({ total: count() })
+      .from(userSaves)
+      .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
+      .where(and(eq(userSaves.userId, user.id), isWearLogExpr));
+    const wearLogCount = wearLogCountResult?.total ?? 0;
+
+    const totalCount = wishlistOnly
+      ? wishlistCount
+      : includeWearLogs
+      ? vaultTotalCount
+      : Math.max(0, vaultTotalCount - wearLogCount);
+
+    const baseUserFilter = wishlistOnly
+      ? and(eq(userSaves.userId, user.id), eq(userSaves.wishlist, true))!
+      : includeWearLogs
+      ? eq(userSaves.userId, user.id)
+      : and(eq(userSaves.userId, user.id), sql<boolean>`NOT (${isWearLogExpr})`)!;
+
+    let cursorFilter = baseUserFilter;
 
     if (cursor) {
       const [cursorSave] = await db
@@ -152,7 +219,7 @@ export async function GET(req: NextRequest) {
 
       if (cursorSave) {
         cursorFilter = and(
-          eq(userSaves.userId, user.id),
+          baseUserFilter,
           or(
             lt(userSaves.createdAt, cursorSave.createdAt),
             and(
@@ -181,10 +248,22 @@ export async function GET(req: NextRequest) {
       nextCursor = rows[rows.length - 1].save.id;
     }
 
+    const nonMemoIds = rows
+      .filter((r) => !r.save.isPrivateMemo)
+      .map((r) => r.save.id);
+    const connectionsMap = await getConnectedSavesMap(nonMemoIds);
+    const savesWithConnections = rows.map((r) => ({
+      ...r,
+      connections: r.save.isPrivateMemo ? [] : connectionsMap.get(r.save.id) ?? [],
+    }));
+
     return NextResponse.json({
-      saves: rows,
+      saves: savesWithConnections,
       nextCursor,
       totalCount,
+      vaultTotalCount,
+      wishlistCount,
+      wearLogCount,
     });
   } catch (error: any) {
     if (error instanceof AuthError) {

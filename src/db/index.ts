@@ -152,6 +152,8 @@ sqlite.exec(`
   CREATE TABLE IF NOT EXISTS smart_lists (
     id TEXT PRIMARY KEY NOT NULL,
     user_id TEXT NOT NULL REFERENCES users(id),
+    parent_id TEXT REFERENCES smart_lists(id) ON DELETE CASCADE,
+    position_index INTEGER NOT NULL DEFAULT 0,
     title TEXT NOT NULL,
     slug TEXT NOT NULL,
     description TEXT,
@@ -273,6 +275,26 @@ ensureColumn("entry_connections", "confidence", "REAL DEFAULT 1.0");
 ensureColumn("entry_connections", "is_bidirectional", "INTEGER DEFAULT 1");
 ensureColumn("entry_connections", "metadata", "TEXT DEFAULT '{}'");
 
+ensureColumn("smart_lists", "parent_id", "TEXT REFERENCES smart_lists(id) ON DELETE CASCADE");
+ensureColumn("smart_lists", "position_index", "INTEGER NOT NULL DEFAULT 0");
+
+// Normalize legacy 'films' and 'music' board auto_rules to strict /media/* prefixes
+try {
+  sqlite.exec(`
+    UPDATE smart_lists
+    SET auto_rules = '{"typePathPrefix":"/media/film"}'
+    WHERE slug = 'films'
+      AND (auto_rules IS NULL OR auto_rules = '' OR auto_rules = '{"coreType":"MEDIA"}');
+
+    UPDATE smart_lists
+    SET auto_rules = '{"typePathPrefix":"/media/music"}'
+    WHERE slug = 'music'
+      AND (auto_rules IS NULL OR auto_rules = '' OR auto_rules = '{"coreType":"MEDIA"}');
+  `);
+} catch {
+  // Non-fatal
+}
+
 // 3. Now create indexes safely on all tables/columns
 sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions (user_id);
@@ -298,6 +320,9 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_user_saves_entity_id ON user_saves (entity_id);
   CREATE INDEX IF NOT EXISTS idx_user_saves_type_path ON user_saves (type_path);
   CREATE INDEX IF NOT EXISTS idx_user_saves_private_title ON user_saves (private_title);
+
+  CREATE INDEX IF NOT EXISTS idx_smart_lists_parent ON smart_lists (parent_id, position_index);
+  CREATE INDEX IF NOT EXISTS idx_smart_lists_user ON smart_lists (user_id);
 
   CREATE INDEX IF NOT EXISTS idx_list_items_list_order ON list_items (list_id, position_index);
 

@@ -64,3 +64,150 @@ describe("dispatcher place namesake guard", () => {
     expect(String(r.canonicalUrl)).not.toContain("Syria");
   });
 });
+
+describe("Phase 2 Place, Maps Shortlink, Cinema P57 & Music Edition Precision", () => {
+  test("Mimar Granada ranks hospitality/bar POI over craft=carpenter and threads locationHint", async () => {
+    const seenQueries: string[] = [];
+    const fetchFn = (async (input: any) => {
+      const url = String(input);
+      if (url.includes("nominatim")) {
+        const q = decodeURIComponent(url.split("q=")[1].split("&")[0]);
+        seenQueries.push(q);
+        if (q.toLowerCase().includes("mimar granada")) {
+          return new Response(
+            JSON.stringify([
+              {
+                lat: "37.1611",
+                lon: "-3.6122",
+                name: "Carpintería Mimar",
+                display_name: "Carpintería Mimar, Zaidín, Granada, España",
+                class: "craft",
+                type: "carpenter",
+                osm_type: "node",
+                osm_id: 101,
+                address: { city: "Granada", country: "España" },
+              },
+              {
+                lat: "37.1773",
+                lon: "-3.5986",
+                name: "Mimar",
+                display_name: "Mimar, Calle San Matías, Centro, Granada, España",
+                class: "amenity",
+                type: "bar",
+                osm_type: "node",
+                osm_id: 202,
+                address: { road: "Calle San Matías", suburb: "Centro", city: "Granada", country: "España" },
+              },
+            ]),
+            { status: 200 }
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const res = await resolvePlace("Mimar", {
+      locationHint: "Mimar Granada",
+      fetchFn,
+    });
+    expect(seenQueries[0]).toBe("Mimar Granada");
+    expect(res?.title).toBe("Mimar");
+    expect(res?.category?.toLowerCase()).toBe("bar");
+    expect(res?.coordinates?.latitude).toBeCloseTo(37.1773, 4);
+    expect(res?.city).toBe("Granada");
+  });
+
+  test("expands maps.app.goo.gl shortlinks via HTTP redirect and extracts @lat,lng coordinates", async () => {
+    const { routeKnownDomainUrl } = await import("../../urlRouter");
+    const expandedMapsUrl =
+      "https://www.google.com/maps/place/Mimar+Granada/@37.1773,-3.5986,17z/data=!3m1!4b1";
+    const fetchFn = (async (input: any) => {
+      const u = String(input);
+      if (u.includes("maps.app.goo.gl")) {
+        const r = new Response("", { status: 200 });
+        Object.defineProperty(r, "url", { value: expandedMapsUrl });
+        return r;
+      }
+      if (u.includes("nominatim")) {
+        return new Response("[]", { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const routed = await routeKnownDomainUrl("https://maps.app.goo.gl/abcXYZ123", { fetchFn });
+    expect(routed).not.toBeNull();
+    expect(routed?.typePath).toBe("/place");
+    expect(routed?.title).toContain("Mimar Granada");
+    expect(routed?.canonicalUrl).toBe(expandedMapsUrl);
+    expect(routed?.coreStructuredData.latitude).toBeCloseTo(37.1773, 4);
+    expect(routed?.coreStructuredData.longitude).toBeCloseTo(-3.5986, 4);
+  });
+
+  test("resolves film director via Wikidata P57 and strips music edition noise cleanly", async () => {
+    const { resolveFilm } = await import("../cinema");
+    const { stripMusicEditionNoise } = await import("../music");
+
+    // Music edition stripping + boundary preservation
+    expect(stripMusicEditionNoise("Omega (Edición 20º Aniversario)", "Omega")).toBe("Omega");
+    expect(stripMusicEditionNoise("Omega (Edición 20.º Aniversario)", "Omega")).toBe("Omega");
+    expect(stripMusicEditionNoise("Blue Train [2024 Remaster]", "Blue Train")).toBe("Blue Train");
+    expect(
+      stripMusicEditionNoise("Omega (Edición 20º Aniversario)", "Omega Edición Aniversario")
+    ).toBe("Omega (Edición 20º Aniversario)");
+    expect(stripMusicEditionNoise("Stop Making Sense (Live)", "Stop Making Sense")).toBe(
+      "Stop Making Sense (Live)"
+    );
+
+    // Wikidata P57 structured director lookup
+    const filmFetch = (async (input: any) => {
+      const u = String(input);
+      if (u.includes("itunes.apple.com/search")) {
+        return new Response(JSON.stringify({ results: [] }), { status: 200 });
+      }
+      if (u.includes("en.wikipedia.org/api/rest_v1/page/summary/")) {
+        return new Response(
+          JSON.stringify({
+            type: "standard",
+            title: "Amores perros",
+            description: "2000 Mexican anthology drama film",
+            extract: "Amores perros is a 2000 anthology drama film set in Mexico City.",
+            wikibase_item: "Q220780",
+            content_urls: { desktop: { page: "https://en.wikipedia.org/wiki/Amores_perros" } },
+          }),
+          { status: 200 }
+        );
+      }
+      if (u.includes("wbgetentities") && u.includes("Q220780")) {
+        return new Response(
+          JSON.stringify({
+            entities: {
+              Q220780: {
+                claims: {
+                  P57: [{ mainsnak: { datavalue: { value: { id: "Q55215" } } } }],
+                },
+              },
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      if (u.includes("wbgetentities") && u.includes("Q55215")) {
+        return new Response(
+          JSON.stringify({
+            entities: {
+              Q55215: {
+                labels: { en: { value: "Alejandro González Iñárritu" } },
+              },
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const film = await resolveFilm("Amores perros", { yearHint: 2000, fetchFn: filmFetch });
+    expect(film?.director).toBe("Alejandro González Iñárritu");
+  });
+});

@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRecentAuditLogs } from "@/lib/system/audit";
-import { getOptionalAuth } from "@/lib/auth/service";
+import { AuthError, requireAuth } from "@/lib/auth/service";
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await getOptionalAuth(req);
-    // Allow admin or operator access
-    if (auth && !auth.user.isAdmin) {
+    const auth = await requireAuth(req);
+    if (!auth.user.isAdmin) {
       return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 });
     }
 
@@ -24,6 +23,9 @@ export async function GET(req: NextRequest) {
       logs,
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json(
       { success: false, error: error.message || "Failed to fetch audit logs" },
       { status: 500 }

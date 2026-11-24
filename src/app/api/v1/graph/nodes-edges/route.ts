@@ -1,21 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, userSaves, globalEntities, entryConnections } from "@/db";
-import { eq, or } from "drizzle-orm";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { eq } from "drizzle-orm";
+import { AuthError, requireAuth } from "@/lib/auth/service";
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth(req);
     const url = new URL(req.url);
-    const userId = url.searchParams.get("userId");
+    const requestedUserId = url.searchParams.get("userId");
+    const isStrictOrSession =
+      auth.session !== null ||
+      process.env.NODE_ENV === "production" ||
+      req.headers.get("x-strict-auth") === "true";
 
-    let user = null;
-    if (userId) {
-      const [u] = await db.select().from(userSaves).where(eq(userSaves.userId, userId)).limit(1);
-      if (u) user = { id: userId };
+    if (isStrictOrSession && requestedUserId && requestedUserId !== auth.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    if (!user) {
-      user = await getOrCreateDefaultUser();
-    }
+
+    const targetUserId = !isStrictOrSession && requestedUserId ? requestedUserId : auth.user.id;
 
     // 1. Fetch user saves
     const saves = await db
@@ -25,13 +27,13 @@ export async function GET(req: NextRequest) {
       })
       .from(userSaves)
       .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
-      .where(eq(userSaves.userId, user.id));
+      .where(eq(userSaves.userId, targetUserId));
 
     // 2. Fetch edges
     const edges = await db
       .select()
       .from(entryConnections)
-      .where(eq(entryConnections.userId, user.id));
+      .where(eq(entryConnections.userId, targetUserId));
 
     const nodes = saves.map((s, idx) => {
       // Deterministic layout angle for initial plinth positioning
@@ -66,6 +68,9 @@ export async function GET(req: NextRequest) {
       edgeCount: formattedEdges.length,
     });
   } catch (err: any) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.statusCode });
+    }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

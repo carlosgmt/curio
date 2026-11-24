@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, users, globalEntities } from "@/db";
+import { db, users } from "@/db";
 import { eq } from "drizzle-orm";
 import { generateDeterministicEmbedding } from "@/lib/search/vector";
-import { getOrCreateDefaultUser } from "@/lib/ingest/cascade";
+import { AuthError, requireAuth } from "@/lib/auth/service";
 
 export interface CalibratorCard {
   id: string;
@@ -207,22 +207,31 @@ export async function GET() {
     const cards = getCuratedDeckWithEmbeddings();
     return NextResponse.json({ cards, count: cards.length });
   } catch (err: any) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.statusCode });
+    }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth(req);
     const body = await req.json().catch(() => ({}));
     const { acceptedIds = [], acceptedCards = [], userId } = body;
+    const isStrictOrSession =
+      auth.session !== null ||
+      process.env.NODE_ENV === "production" ||
+      req.headers.get("x-strict-auth") === "true";
 
-    let targetUser = null;
-    if (userId) {
-      const [found] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-      targetUser = found;
+    if (isStrictOrSession && userId && userId !== auth.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    if (!targetUser) {
-      targetUser = await getOrCreateDefaultUser();
+
+    let targetUser = auth.user;
+    if (!isStrictOrSession && userId && userId !== auth.user.id) {
+      const [found] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (found) targetUser = found;
     }
 
     const deck = getCuratedDeckWithEmbeddings();
@@ -269,6 +278,9 @@ export async function POST(req: NextRequest) {
       userId: targetUser.id,
     });
   } catch (err: any) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.statusCode });
+    }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

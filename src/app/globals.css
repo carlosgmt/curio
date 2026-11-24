@@ -46,6 +46,7 @@
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui;
   --font-mono: var(--font-geist-mono), ui-monospace;
   --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui;
+  --font-serif-editorial: "Newsreader", Georgia, serif;
   --radius-shell: var(--radius-2xl);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -183,6 +184,7 @@
 }
 
 /* improve-animations: shadcn ships `transition-all`; name only what changes. */
+/* Wait — keep existing tail untouched; add Press Shelf CSS 3D utilities cleanly at bottom */
 [data-slot="badge"] {
   transition-property: color, background-color, border-color;
 }
@@ -338,4 +340,61 @@ body.demo-idle * {
   --primary: AccentColor;
   --primary-foreground: #ffffff;
   --ring: AccentColor;
+}
+
+/* Stripe Press-inspired Press Shelf CSS 3D stage utilities */
+.font-serif-editorial {
+  font-family: var(--font-serif-editorial), Georgia, serif;
+}
+
+.press-stage {
+  perspective: 1350px;
+}
+
+.press-slot {
+  transform-style: preserve-3d;
+  transition: width 380ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 380ms cubic-bezier(0.22, 1, 0.36, 1),
+              margin 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.press-slab {
+  transform-style: preserve-3d;
+  transition: transform 440ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 440ms ease;
+}
+
+.press-slab.is-front {
+  transform: rotateY(-8deg) translateZ(20px);
+}
+
+.press-slab.is-spine-left {
+  transform: rotateY(74deg) translateZ(-4px);
+}
+
+.press-slab.is-spine-right {
+  transform: rotateY(-74deg) translateZ(-4px);
+}
+
+.press-face {
+  backface-visibility: hidden;
+}
+
+.press-writing-v {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.press-linen-grain {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 0.75px, transparent 0),
+                    radial-gradient(rgba(0, 0, 0, 0.08) 0.75px, transparent 0);
+  background-size: 5px 5px;
+  background-position: 0 0, 2.5px 2.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press-slot,
+  .press-slab {
+    transition: none !important;
+  }
 }

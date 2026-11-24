@@ -58,6 +58,8 @@ export interface EnrichCaptureOptions {
   forcedTypePath?: string;
   targetCandidate?: TargetCandidateContext;
   universalCandidates?: DiscoveredCandidate[];
+  locationHint?: string | null;
+  queryContext?: string | null;
   fetchFn?: typeof fetch;
   skipCache?: boolean;
 }
@@ -91,15 +93,39 @@ export function extractCandidateHints(cand?: TargetCandidateContext | null): {
   return { creator, year };
 }
 
-/**
- * Hydrates full specialist metadata for the winning ontology typePath
- */
+function buildPlaceEnrichmentPayload(
+  placeRes: NonNullable<Awaited<ReturnType<typeof resolvePlace>>>,
+  targetTitle: string,
+  safeCandidate: DiscoveredCandidate | null,
+  runnerUpCandidates: CandidateFallback[]
+): EnrichmentPayload {
+  return {
+    title: placeRes.title || safeCandidate?.title || targetTitle,
+    summary: placeRes.summary || safeCandidate?.snippet || `Verified location for ${targetTitle}`,
+    heroImageUrl: placeRes.heroImageUrl || safeCandidate?.thumbnailUrl || null,
+    coreType: "PLACE",
+    typePath: "/place",
+    canonicalExternalId: placeRes.canonicalExternalId || safeCandidate?.conceptUri,
+    canonicalUrl: placeRes.canonicalUrl || safeCandidate?.url || placeRes.googleMapsUrl,
+    brandOrCreator: placeRes.city ? `${placeRes.city}${placeRes.country ? `, ${placeRes.country}` : ""}` : null,
+    priceCents: null,
+    coreStructuredData: {
+      ...placeRes.coreStructuredData,
+    },
+    primarySource: {
+      sellerName: "Google Maps",
+      sourceUrl: placeRes.googleMapsUrl,
+    },
+    runnerUpCandidates,
+  };
+}
 async function hydrateSpecialist(
   targetTitle: string,
   typePath: string,
   winningCandidate: DiscoveredCandidate | null,
   fetchFn: typeof fetch,
-  runnerUpCandidates: CandidateFallback[]
+  runnerUpCandidates: CandidateFallback[],
+  locationHint?: string | null
 ): Promise<EnrichmentPayload> {
   // Cinema & Film
   if (typePath === "/media/film") {
@@ -107,10 +133,12 @@ async function hydrateSpecialist(
       winningCandidate?.url && winningCandidate.url.includes("wikipedia.org")
         ? winningCandidate.url
         : null;
+    const wikidataId = winningCandidate?.conceptUri?.match(/Q\d+/i)?.[0] || null;
     const filmRes = await resolveFilm(targetTitle, {
       yearHint: winningCandidate?.year,
       creatorHint: winningCandidate?.creator,
       wikiUrlHint,
+      wikidataId,
       fetchFn,
     });
     if (filmRes) {
@@ -330,31 +358,17 @@ async function hydrateSpecialist(
 
   // Places & Venues — OSM-first; never trust a non-matching discovery candidate
   if (typePath === "/place" || typePath.startsWith("/place")) {
-    const placeRes = await resolvePlace(targetTitle, { fetchFn });
+    const placeRes = await resolvePlace(targetTitle, {
+      fetchFn,
+      locationHint: winningCandidate?.creator || locationHint,
+      canonicalUrlHint: winningCandidate?.url || null,
+    });
     const safeCandidate =
       winningCandidate && isAcceptableWikiPlace(targetTitle, { title: winningCandidate.title, description: winningCandidate.snippet })
         ? winningCandidate
         : null;
     if (placeRes) {
-      return {
-        title: placeRes.title || safeCandidate?.title || targetTitle,
-        summary: placeRes.summary || safeCandidate?.snippet || `Verified location for ${targetTitle}`,
-        heroImageUrl: placeRes.heroImageUrl || safeCandidate?.thumbnailUrl || null,
-        coreType: "PLACE",
-        typePath: "/place",
-        canonicalExternalId: placeRes.canonicalExternalId || safeCandidate?.conceptUri,
-        canonicalUrl: placeRes.canonicalUrl || safeCandidate?.url || placeRes.googleMapsUrl,
-        brandOrCreator: placeRes.city ? `${placeRes.city}${placeRes.country ? `, ${placeRes.country}` : ""}` : null,
-        priceCents: null,
-        coreStructuredData: {
-          ...placeRes.coreStructuredData,
-        },
-        primarySource: {
-          sellerName: "Google Maps",
-          sourceUrl: placeRes.googleMapsUrl,
-        },
-        runnerUpCandidates,
-      };
+      return buildPlaceEnrichmentPayload(placeRes, targetTitle, safeCandidate, runnerUpCandidates);
     }
 
     return {
@@ -587,13 +601,15 @@ export async function enrichCaptureInput(
   options?: EnrichCaptureOptions
 ): Promise<EnrichmentPayload> {
   const trimmed = input.trim();
-  const isUrl = /^https?:\/\//i.test(trimmed);
+  const urlPrefixMatch = trimmed.match(/^(https?:\/\/[^\s]+)/i);
+  const isUrl = Boolean(urlPrefixMatch);
   const fetchFn = options?.fetchFn ?? fetch;
 
   // 1. URL Path
-  if (isUrl) {
+  if (isUrl && urlPrefixMatch) {
+    const cleanUrl = urlPrefixMatch[1];
     // 1a. Domain-Aware URL Router (Spotify, Apple Music, Letterboxd, IMDb, Goodreads, YouTube, Google Maps, Wikipedia)
-    const domainRouted = await routeKnownDomainUrl(trimmed, {
+    const domainRouted = await routeKnownDomainUrl(cleanUrl, {
       fetchFn,
       forcedTypePath: options?.forcedTypePath,
     });
@@ -602,10 +618,10 @@ export async function enrichCaptureInput(
     }
 
     // 1b. General Webpage OpenGraph + JSON-LD Extraction
-    const og = await fetchAndExtractMetadata(trimmed, { fetchFn });
-    const parsedUrl = new URL(trimmed);
+    const og = await fetchAndExtractMetadata(cleanUrl, { fetchFn });
+    const parsedUrl = new URL(cleanUrl);
     const domain = parsedUrl.hostname.replace("www.", "");
-    const title = og.title || trimmed;
+    const title = og.title || cleanUrl;
     const coreType = og.structuredType || "LINK";
     const typePath = options?.forcedTypePath || og.typePath || (coreType === "BOOK" ? "/product/book" : "/link");
 
@@ -615,12 +631,12 @@ export async function enrichCaptureInput(
       heroImageUrl: og.image || null,
       coreType,
       typePath,
-      canonicalUrl: og.url || trimmed,
+      canonicalUrl: og.url || cleanUrl,
       brandOrCreator: og.authorOrCreator || og.siteName || domain,
       priceCents: og.price,
       currency: og.currency || "USD",
       coreStructuredData: {
-        rawUrl: trimmed,
+        rawUrl: cleanUrl,
         siteName: og.siteName,
         domain,
         jsonLd: og.jsonLd,
@@ -628,7 +644,7 @@ export async function enrichCaptureInput(
       },
       primarySource: {
         sellerName: og.siteName || domain,
-        sourceUrl: trimmed,
+        sourceUrl: cleanUrl,
         priceCents: og.price,
         currency: og.currency,
       },
@@ -773,7 +789,20 @@ export async function enrichCaptureInput(
         }
       : null;
 
-    return hydrateSpecialist(trimmed, effectivePath, candidateContext, fetchFn, []);
+    const effectiveLocationHint =
+      options?.locationHint ||
+      options?.targetCandidate?.creator ||
+      (options?.queryContext && options.queryContext.trim() !== trimmed
+        ? options.queryContext.trim()
+        : null);
+    return hydrateSpecialist(
+      trimmed,
+      effectivePath,
+      candidateContext,
+      fetchFn,
+      [],
+      effectiveLocationHint
+    );
   }
 
   // 4. LAYER 1A: Commercial SKU Detector (Garments, Watches/Luxury, Electronics, Cosmetics)
@@ -852,21 +881,46 @@ export async function enrichCaptureInput(
     }
 
     // LAYER 2: Deep Specialist Hydration (Only on True Cache Miss)
-    const queryLooksLikePlace = hasVenueWords(trimmed) || winning.typePath.startsWith("/place");
-    if (
-      queryLooksLikePlace &&
-      !isAcceptableWikiPlace(trimmed, { title: winning.title, description: winning.snippet })
-    ) {
-      const osmPlace = await resolvePlace(trimmed, { fetchFn });
+    const effectiveLocationHint = options?.locationHint || options?.queryContext || null;
+    const winningIsAcceptablePlace =
+      winning.typePath.startsWith("/place") &&
+      isAcceptableWikiPlace(trimmed, { title: winning.title, description: winning.snippet });
+    const hasBoardOrVenuePlaceSignal =
+      hasVenueWords(trimmed) || winning.typePath.startsWith("/place") || Boolean(options?.locationHint);
+
+    if (hasBoardOrVenuePlaceSignal && !winningIsAcceptablePlace) {
+      const osmPlace = await resolvePlace(trimmed, {
+        fetchFn,
+        locationHint: effectiveLocationHint,
+        requireHighConfidencePoi: !winning.typePath.startsWith("/place") && !hasVenueWords(trimmed),
+      });
       if (osmPlace) {
-        return hydrateSpecialist(trimmed, "/place", null, fetchFn, runnerUpCandidates);
+        return buildPlaceEnrichmentPayload(osmPlace, trimmed, null, runnerUpCandidates);
       }
     }
-    return hydrateSpecialist(winning.title, winning.typePath, winning, fetchFn, runnerUpCandidates);
+    return hydrateSpecialist(
+      winning.title,
+      winning.typePath,
+      winning,
+      fetchFn,
+      runnerUpCandidates,
+      effectiveLocationHint || (trimmed !== winning.title ? trimmed : null)
+    );
   }
 
   // 5. Secondary Keyword Heuristics (when universal discovery returned 0 candidates)
   const lower = trimmed.toLowerCase();
+  const fallbackLocationHint = options?.locationHint || options?.queryContext || null;
+
+  if (options?.detectedType === "PLACE" || hasVenueWords(trimmed)) {
+    const placeRes = await resolvePlace(trimmed, {
+      fetchFn,
+      locationHint: fallbackLocationHint,
+    });
+    if (placeRes) {
+      return buildPlaceEnrichmentPayload(placeRes, trimmed, null, []);
+    }
+  }
 
   // Books
   if (options?.detectedType === "BOOK" || /\b(?:book|novel|memoir|author)\b/i.test(lower)) {
@@ -965,6 +1019,18 @@ export async function enrichCaptureInput(
       },
       runnerUpCandidates: [],
     };
+  }
+
+  // High-confidence POI / City+Venue fallback (e.g. "Mimar Granada" when Wikidata has no entry)
+  if (!(options?.detectedType === "PLACE" || hasVenueWords(trimmed))) {
+    const placeFallback = await resolvePlace(trimmed, {
+      fetchFn,
+      locationHint: fallbackLocationHint,
+      requireHighConfidencePoi: true,
+    });
+    if (placeFallback) {
+      return buildPlaceEnrichmentPayload(placeFallback, trimmed, null, []);
+    }
   }
 
   // 6. General Fallback

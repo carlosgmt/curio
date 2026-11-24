@@ -229,27 +229,37 @@ export const userSaves = sqliteTable(
 );
 
 // 6. Smart Lists & Curated Boards
-export const smartLists = sqliteTable("smart_lists", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id").references(() => users.id).notNull(),
-  title: text("title").notNull(),
-  slug: text("slug").notNull(),
-  description: text("description"),
-  isPaywalled: integer("is_paywalled", { mode: "boolean" }).default(false).notNull(),
-  accessPriceCents: integer("access_price_cents"),
-  autoRules: text("auto_rules", { mode: "json" }).$type<{
-    coreType?: string;
-    tagsInclude?: string[];
-    maxPriceCents?: number;
-  }>(),
-  externalSyncTarget: text("external_sync_target").default("NONE"),
-  visibility: text("visibility").default("PRIVATE").notNull(),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-});
+export const smartLists = sqliteTable(
+  "smart_lists",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").references(() => users.id).notNull(),
+    parentId: text("parent_id").references((): any => smartLists.id, { onDelete: "cascade" }),
+    positionIndex: integer("position_index").notNull().default(0),
+    title: text("title").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description"),
+    isPaywalled: integer("is_paywalled", { mode: "boolean" }).default(false).notNull(),
+    accessPriceCents: integer("access_price_cents"),
+    autoRules: text("auto_rules", { mode: "json" }).$type<{
+      coreType?: string;
+      typePathPrefix?: string;
+      tagsInclude?: string[];
+      maxPriceCents?: number;
+    }>(),
+    externalSyncTarget: text("external_sync_target").default("NONE"),
+    visibility: text("visibility").default("PRIVATE").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    index("idx_smart_lists_parent").on(table.parentId, table.positionIndex),
+    index("idx_smart_lists_user").on(table.userId),
+  ]
+);
 
 // 7. List Items Join Table (Enables Manual Ordering, Pinning & Section Headers)
 export const listItems = sqliteTable(

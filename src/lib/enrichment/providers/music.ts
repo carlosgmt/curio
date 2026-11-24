@@ -31,6 +31,30 @@ export interface ResolvedMusic {
   };
 }
 
+const EDITION_KEYWORD_RE =
+  /(?<![\p{L}\p{N}])(?:edici[oó]n|edition|remaster(?:ed|izado)?|deluxe|anniversary|aniversario|expanded|bonus\s+tracks?|special\s+edition|collector'?s)(?![\p{L}\p{N}])/iu;
+
+/**
+ * Strips noisy streaming/reissue edition parentheticals like "(Edición 20º Aniversario)"
+ * or "[Remastered 2024]" unless the user explicitly queried for that edition.
+ */
+export function stripMusicEditionNoise(rawTitle: string, query: string = ""): string {
+  if (!rawTitle) return rawTitle;
+  if (EDITION_KEYWORD_RE.test(query)) {
+    return rawTitle.trim();
+  }
+  let current = rawTitle.trim();
+  while (true) {
+    const match = current.match(/^(.*?)\s*(?:\(([^()]+)\)|\[([^\[\]]+)\])\s*$/);
+    if (!match) break;
+    const base = match[1].trim();
+    const inner = (match[2] ?? match[3] ?? "").trim();
+    if (!base || !EDITION_KEYWORD_RE.test(inner)) break;
+    current = base;
+  }
+  return current || rawTitle.trim();
+}
+
 /**
  * Scores a candidate music item (from iTunes or MusicBrainz) against the query and artistHint.
  */
@@ -135,7 +159,7 @@ export async function fetchItunesMusicMetadata(
       return best ? { item: best, score: bestScore } : null;
     };
 
-    let res = await fetchFn(itunesUrl, { signal: controller.signal });
+    const res = await fetchFn(itunesUrl, { signal: controller.signal });
     let bestPick: { item: any; score: number } | null = null;
     let matchedCountry = "us";
 
@@ -215,10 +239,12 @@ export async function fetchItunesMusicMetadata(
       }
 
       clearTimeout(timer);
+      const rawTitle = entity === "song" ? item.trackName || item.collectionName : item.collectionName;
+      const cleanItunesTitle = rawTitle ? stripMusicEditionNoise(rawTitle, query) : rawTitle;
       return {
-        title: entity === "song" ? item.trackName || item.collectionName : item.collectionName,
+        title: cleanItunesTitle,
         artist: item.artistName,
-        album: item.collectionName,
+        album: cleanItunesTitle || item.collectionName,
         releaseYear,
         coverUrl,
         tracklist,
@@ -423,7 +449,7 @@ export async function resolveMusicBrainz(
   })();
 
   if (mbRelease && mbRelease.title && (mbScore >= itunesScore || canMergeItunesAndMb)) {
-    const title = mbRelease.title;
+    const title = stripMusicEditionNoise(mbRelease.title, cleanQuery);
     const artist =
       mbRelease["artist-credit"]?.[0]?.artist?.name ||
       (canMergeItunesAndMb ? itunesMeta?.artist : undefined) ||
@@ -471,7 +497,8 @@ export async function resolveMusicBrainz(
   }
 
   if (itunesMeta && (itunesMeta.title || itunesMeta.coverUrl)) {
-    const title = itunesMeta.title || cleanQuery;
+    const rawItunesTitle = itunesMeta.title || cleanQuery;
+    const title = stripMusicEditionNoise(rawItunesTitle, cleanQuery);
     const artist = itunesMeta.artist || options?.creatorHint || "Unknown Artist";
     const releaseYear = itunesMeta.releaseYear;
     return {

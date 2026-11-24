@@ -25,15 +25,36 @@ export function ListTabsBar({
   wishlistCount,
   onToggleWishlist,
 }: ListTabsBarProps) {
-  // Map child board count per parent board
-  const childCountMap = React.useMemo(() => {
-    const map = new Map<string, number>();
+  // Map child board count and rolled-up descendant item counts per parent board
+  const { childCountMap, rolledUpCountMap } = React.useMemo(() => {
+    const childMap = new Map<string, number>();
+    const childrenByParent = new Map<string, Array<SmartList & { itemCount: number }>>();
     for (const l of lists) {
       if (l.parentId) {
-        map.set(l.parentId, (map.get(l.parentId) || 0) + 1);
+        childMap.set(l.parentId, (childMap.get(l.parentId) || 0) + 1);
+        const arr = childrenByParent.get(l.parentId) || [];
+        arr.push(l);
+        childrenByParent.set(l.parentId, arr);
       }
     }
-    return map;
+    const memo = new Map<string, number>();
+    const computeTotal = (board: SmartList & { itemCount: number }, seen: Set<string>): number => {
+      if (memo.has(board.id)) return memo.get(board.id)!;
+      if (seen.has(board.id)) return board.itemCount || 0;
+      const nextSeen = new Set(seen);
+      nextSeen.add(board.id);
+      const kids = childrenByParent.get(board.id) || [];
+      let sum = board.itemCount || 0;
+      for (const k of kids) {
+        sum += computeTotal(k, nextSeen);
+      }
+      memo.set(board.id, sum);
+      return sum;
+    };
+    for (const l of lists) {
+      computeTotal(l, new Set());
+    }
+    return { childCountMap: childMap, rolledUpCountMap: memo };
   }, [lists]);
 
   // Display root boards by default, but always include the currently active board even if nested
@@ -139,7 +160,7 @@ export function ListTabsBar({
                   : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500"
               }`}
             >
-              {list.itemCount}
+              {rolledUpCountMap.get(list.id) ?? list.itemCount}
             </span>
           </button>
         );

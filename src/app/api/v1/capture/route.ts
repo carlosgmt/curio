@@ -156,6 +156,10 @@ export async function GET(req: NextRequest) {
       wishlistOnly ||
       url.searchParams.get("includeWearLogs") === "true" ||
       url.searchParams.get("excludeWearLogs") === "false";
+    const excludeCloset =
+      !wishlistOnly && url.searchParams.get("excludeCloset") === "true";
+    const excludeMyStuff =
+      !wishlistOnly && url.searchParams.get("excludeMyStuff") === "true";
     const rawLimit = parseInt(url.searchParams.get("limit") || "50", 10);
     const limit = Math.max(1, Math.min(isNaN(rawLimit) ? 50 : rawLimit, 100));
 
@@ -173,7 +177,19 @@ export async function GET(req: NextRequest) {
       )) != 'idea'
     )`;
 
-    // Get vault total count, wishlist count, and wear-log count for the authenticated user
+    const isClosetGarmentExpr = sql<boolean>`(
+      ${userSaves.isPrivateMemo} = 0
+      AND lower(coalesce(${userSaves.typePath}, ${globalEntities.typePath}, '')) LIKE '/product/garment%'
+    )`;
+
+    const isMyStuffDurableExpr = sql<boolean>`(
+      ${userSaves.isPrivateMemo} = 0
+      AND coalesce(${globalEntities.canonicalExternalId}, '') LIKE 'purchase-hub:%'
+      AND lower(coalesce(${userSaves.typePath}, ${globalEntities.typePath}, '')) NOT LIKE '/product/book%'
+      AND lower(coalesce(${userSaves.typePath}, ${globalEntities.typePath}, '')) NOT LIKE '/media/%'
+    )`;
+
+    // Get vault total count, wishlist count, wear-log count, closet garment count, and my-stuff count
     const [vaultCountResult] = await db
       .select({ total: count() })
       .from(userSaves)
@@ -193,17 +209,42 @@ export async function GET(req: NextRequest) {
       .where(and(eq(userSaves.userId, user.id), isWearLogExpr));
     const wearLogCount = wearLogCountResult?.total ?? 0;
 
-    const totalCount = wishlistOnly
-      ? wishlistCount
-      : includeWearLogs
-      ? vaultTotalCount
-      : Math.max(0, vaultTotalCount - wearLogCount);
+    const [closetCountResult] = await db
+      .select({ total: count() })
+      .from(userSaves)
+      .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
+      .where(and(eq(userSaves.userId, user.id), isClosetGarmentExpr));
+    const closetCount = closetCountResult?.total ?? 0;
 
-    const baseUserFilter = wishlistOnly
-      ? and(eq(userSaves.userId, user.id), eq(userSaves.wishlist, true))!
-      : includeWearLogs
-      ? eq(userSaves.userId, user.id)
-      : and(eq(userSaves.userId, user.id), sql<boolean>`NOT (${isWearLogExpr})`)!;
+    const [myStuffCountResult] = await db
+      .select({ total: count() })
+      .from(userSaves)
+      .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
+      .where(and(eq(userSaves.userId, user.id), isMyStuffDurableExpr));
+    const myStuffCount = myStuffCountResult?.total ?? 0;
+
+    const baseClauses: any[] = [eq(userSaves.userId, user.id)];
+    if (wishlistOnly) {
+      baseClauses.push(eq(userSaves.wishlist, true));
+    } else {
+      if (!includeWearLogs) {
+        baseClauses.push(sql<boolean>`NOT (${isWearLogExpr})`);
+      }
+      if (excludeCloset) {
+        baseClauses.push(sql<boolean>`NOT (${isClosetGarmentExpr})`);
+      }
+      if (excludeMyStuff) {
+        baseClauses.push(sql<boolean>`NOT (${isMyStuffDurableExpr})`);
+      }
+    }
+    const baseUserFilter = and(...baseClauses)!;
+
+    const [filteredTotalResult] = await db
+      .select({ total: count() })
+      .from(userSaves)
+      .leftJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
+      .where(baseUserFilter);
+    const totalCount = filteredTotalResult?.total ?? 0;
 
     let cursorFilter = baseUserFilter;
 
@@ -264,6 +305,8 @@ export async function GET(req: NextRequest) {
       vaultTotalCount,
       wishlistCount,
       wearLogCount,
+      closetCount,
+      myStuffCount,
     });
   } catch (error: any) {
     if (error instanceof AuthError) {

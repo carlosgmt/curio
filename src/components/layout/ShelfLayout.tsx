@@ -1,8 +1,19 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Box, Eye } from "lucide-react";
+import dynamic from "next/dynamic";
+import { ArrowLeft, ArrowRight, Box, Eye, RefreshCw, RotateCcw } from "lucide-react";
 import type { CardData } from "@/components/cards/PolymorphicCard";
+import type { VirtualBookshelfItem } from "./VirtualBookshelf3D";
+
+const VirtualBookshelf3D = dynamic(() => import("./VirtualBookshelf3D"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[320px] items-center justify-center font-mono text-xs uppercase tracking-widest opacity-60">
+      Loading 3D Bookshelf...
+    </div>
+  ),
+});
 import {
   type PressPalette,
   formatSpineMeta,
@@ -33,6 +44,9 @@ export function ShelfLayout({
   const [palettesBySaveId, setPalettesBySaveId] = useState<
     Record<string, PressPalette>
   >({});
+  const [inspectMode, setInspectMode] = useState<"front" | "spine">("front");
+  const [resetSignal, setResetSignal] = useState(0);
+  const [webglUnavailable, setWebglUnavailable] = useState(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const wheelLockRef = useRef<number>(0);
   const wheelAccumRef = useRef<number>(0);
@@ -135,6 +149,18 @@ export function ShelfLayout({
     () => (activeCard ? getArchetypeSpec(activeCard) : null),
     [activeCard]
   );
+  const shelfItems3D = useMemo<VirtualBookshelfItem[]>(
+    () =>
+      items.map((card) => ({
+        saveId: card.save.id,
+        spec: getArchetypeSpec(card),
+        meta: formatSpineMeta(card),
+        palette:
+          palettesBySaveId[card.save.id] || getDeterministicClothPalette(card),
+        imageUrl: resolveSameOriginImageUrl(card.entity?.heroImageUrl),
+      })),
+    [items, palettesBySaveId]
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -161,6 +187,7 @@ export function ShelfLayout({
 
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) && !e.shiftKey) return;
       const dominant =
         Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (Math.abs(dominant) < 6) return;
@@ -213,9 +240,9 @@ export function ShelfLayout({
       role="region"
       aria-label={`${shelfLabel} Press Shelf`}
       onKeyDown={handleKeyDown}
-      onWheel={handleWheel}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      onWheel={webglUnavailable ? handleWheel : undefined}
+      onTouchStart={webglUnavailable ? handleTouchStart : undefined}
+      onTouchEnd={webglUnavailable ? handleTouchEnd : undefined}
       className="relative w-full overflow-hidden rounded-2xl sm:rounded-3xl border outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       style={{
         backgroundColor: activePalette.surface,
@@ -296,7 +323,66 @@ export function ShelfLayout({
         </div>
       </div>
 
-      {/* Horizontal CSS 3D Spine-to-Cover Shelf Stage */}
+      {/* Interactive Continuous 3D Virtual Bookshelf (WebGL + CSS Fallback) */}
+      {!webglUnavailable ? (
+        <div className="relative z-10 w-full">
+          <VirtualBookshelf3D
+            items={shelfItems3D}
+            activeIndex={safeIdx}
+            inspectMode={inspectMode}
+            onSelectIndex={(idx) => {
+              setInspectMode("front");
+              setActiveByIndex(idx);
+            }}
+            onToggleInspectMode={() =>
+              setInspectMode((m) => (m === "spine" ? "front" : "spine"))
+            }
+            onWebglUnavailable={() => setWebglUnavailable(true)}
+            compact={compact}
+            resetSignal={resetSignal}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-7 pb-2 text-[10px] font-mono uppercase tracking-[0.12em]">
+            <span style={{ color: activePalette.muted }}>
+              Drag shelf or scroll sideways · Click focused object to turn spine
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="press-shelf-flip-spine"
+                onClick={() =>
+                  setInspectMode((m) => (m === "spine" ? "front" : "spine"))
+                }
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border transition-opacity hover:opacity-85 cursor-pointer"
+                style={{
+                  borderColor: activePalette.rule,
+                  backgroundColor: activePalette.surfaceSecondary,
+                  color: activePalette.ink,
+                }}
+              >
+                <RefreshCw className="h-2.5 w-2.5" />
+                <span>{inspectMode === "spine" ? "Cover" : "Spine"}</span>
+              </button>
+              <button
+                type="button"
+                aria-label="Reset 3D shelf angle"
+                onClick={() => {
+                  setInspectMode("front");
+                  setResetSignal((n) => n + 1);
+                }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border transition-opacity hover:opacity-85 cursor-pointer"
+                style={{
+                  borderColor: activePalette.rule,
+                  backgroundColor: activePalette.surfaceSecondary,
+                  color: activePalette.ink,
+                }}
+              >
+                <RotateCcw className="h-2.5 w-2.5" />
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div
         className={`relative z-10 w-full overflow-hidden flex flex-col justify-end ${
           compact ? "pt-6 pb-3" : "pt-8 sm:pt-10 pb-4"
@@ -603,6 +689,7 @@ export function ShelfLayout({
           style={{ backgroundColor: activePalette.rule }}
         />
       </div>
+      )}
 
       {/* Synchronized Display Serif Marquee & Quick Actions */}
       <div

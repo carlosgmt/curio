@@ -236,22 +236,14 @@ export async function syncClosetWithCurio(
     : [];
 
   const digest = computeUpstreamDigest(garments, outfits);
-  if (!options?.force && cached && cached.digest === digest) {
-    cached.syncedAtMs = nowMs;
-    return {
-      ...cached.lastResult,
-      synced: false,
-      skippedReason: "unchanged_digest",
-      syncedAt: new Date(nowMs).toISOString(),
-    };
-  }
 
-  // Ensure Wardrobe & Outfits smart boards exist with strict typePathPrefix autoRules
+  // Ensure root Closet board -> Garments & Outfits child boards with strict typePathPrefix autoRules
   const ensureClosetBoard = async (
     slug: string,
     title: string,
     description: string,
-    typePathPrefix: string
+    typePathPrefix?: string,
+    parentId: string | null = null
   ) => {
     const [existingBoard] = await db
       .select()
@@ -265,36 +257,61 @@ export async function syncClosetWithCurio(
         slug,
         description,
         visibility: "PRIVATE",
-        autoRules: { typePathPrefix },
+        parentId,
+        autoRules: typePathPrefix ? { typePathPrefix } : undefined,
       });
     }
 
-    if (!existingBoard.autoRules?.typePathPrefix) {
-      await db
-        .update(smartLists)
-        .set({
-          autoRules: {
-            ...(existingBoard.autoRules || {}),
-            typePathPrefix,
-          },
-        })
-        .where(eq(smartLists.id, existingBoard.id));
+    const patch: Partial<typeof smartLists.$inferInsert> = {};
+    if ((existingBoard.parentId ?? null) !== parentId) {
+      patch.parentId = parentId;
     }
-    return existingBoard;
+    if (existingBoard.title !== title) {
+      patch.title = title;
+    }
+    if (typePathPrefix && existingBoard.autoRules?.typePathPrefix !== typePathPrefix) {
+      patch.autoRules = {
+        ...(existingBoard.autoRules || {}),
+        typePathPrefix,
+      };
+    }
+    if (Object.keys(patch).length > 0) {
+      await db.update(smartLists).set(patch).where(eq(smartLists.id, existingBoard.id));
+    }
+    return { ...existingBoard, ...patch };
   };
 
+  const closetBoard = await ensureClosetBoard(
+    "closet",
+    "Closet",
+    "Personal garments & outfits synced live with Closet UI",
+    undefined,
+    null
+  );
   const wardrobeBoard = await ensureClosetBoard(
     "wardrobe",
-    "Wardrobe",
+    "Garments",
     "Personal garment archive synced live with Closet UI",
-    "/product/garment"
+    "/product/garment",
+    closetBoard.id
   );
   const outfitsBoard = await ensureClosetBoard(
     "outfits",
     "Outfits",
     "Styled looks & outfit logs synced live with Closet UI",
-    "/style/outfit"
+    "/style/outfit",
+    closetBoard.id
   );
+
+  if (!options?.force && cached && cached.digest === digest) {
+    cached.syncedAtMs = nowMs;
+    return {
+      ...cached.lastResult,
+      synced: false,
+      skippedReason: "unchanged_digest",
+      syncedAt: new Date(nowMs).toISOString(),
+    };
+  }
 
   // Run reconciliation inside a single fast SQLite transaction
   const txStats = db.transaction((tx) => {

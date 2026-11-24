@@ -436,5 +436,19 @@ describe("Capture API & Intent Execution (/api/v1/capture)", () => {
     expect(outfitsDetails?.itemCount).toBe(56); // 55 wear-logs + 1 idea
     const wardrobeDetails = await getListBySlugWithItems(wardrobeBoard.slug, user.id);
     expect(wardrobeDetails?.itemCount).toBe(1);
+
+    // 7. excludeCloset=true hides garments while preserving film, memo, and idea
+    const noClosetRes = await GET(
+      new NextRequest("http://localhost:3000/api/v1/capture?limit=50&excludeCloset=true", {
+        headers: authHeaders,
+      })
+    );
+    expect(noClosetRes.status).toBe(200);
+    const noClosetData = await noClosetRes.json();
+    expect(noClosetData.closetCount).toBe(1);
+    expect(noClosetData.myStuffCount).toBe(0);
+    expect(noClosetData.totalCount).toBe(3);
+    expect(noClosetData.saves.some((r: any) => r.save.id === garmentSave.id)).toBe(false);
+    expect(noClosetData.saves.some((r: any) => r.save.id === filmSave.id)).toBe(true);
   });
 });

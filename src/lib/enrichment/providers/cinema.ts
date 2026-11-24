@@ -562,3 +562,64 @@ export async function resolveFilm(
     },
   };
 }
+
+export interface ItunesMovieSuggestion {
+  title: string;
+  director?: string;
+  releaseYear?: number;
+  posterUrl?: string;
+  canonicalUrl: string;
+  summary?: string;
+}
+
+export async function searchItunesMovies(
+  query: string,
+  options?: {
+    limit?: number;
+    timeoutMs?: number;
+    fetchFn?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  }
+): Promise<ItunesMovieSuggestion[]> {
+  const fetchFn = options?.fetchFn ?? fetch;
+  const timeoutMs = options?.timeoutMs ?? 2000;
+  const limit = Math.max(1, Math.min(options?.limit ?? 3, 5));
+  const clean = query
+    .replace(/\b(?:movie|film|cinema|pelicula|película|director|directed by)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (clean.length < 2) return [];
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(clean)}&media=movie&limit=${limit}`;
+    const res = await fetchFn(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list = Array.isArray(data?.results) ? data.results : [];
+    return list
+      .filter((r: any) => typeof r?.trackName === "string" && r.trackName.trim().length > 0)
+      .map((r: any) => {
+        const rawArt = String(r.artworkUrl100 || r.artworkUrl60 || "").trim();
+        const posterUrl = rawArt
+          ? rawArt.replace(/\/\d+x\d+bb\./, "/600x600bb.")
+          : undefined;
+        const yearStr = typeof r.releaseDate === "string" ? r.releaseDate.slice(0, 4) : "";
+        return {
+          title: r.trackName.trim(),
+          director: typeof r.artistName === "string" ? r.artistName.trim() : undefined,
+          releaseYear: /^\d{4}$/.test(yearStr) ? parseInt(yearStr, 10) : undefined,
+          posterUrl,
+          canonicalUrl:
+            typeof r.trackViewUrl === "string" && r.trackViewUrl
+              ? r.trackViewUrl
+              : `https://letterboxd.com/search/${encodeURIComponent(r.trackName.trim())}/`,
+          summary: typeof r.shortDescription === "string" ? r.shortDescription : r.longDescription,
+        };
+      });
+  } catch {
+    clearTimeout(timer);
+    return [];
+  }
+}

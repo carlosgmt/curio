@@ -45,6 +45,7 @@ export function SectionGroupView({
   onAddCard,
 }: SectionGroupViewProps) {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [activeShelfBucket, setActiveShelfBucket] = useState<string>("ALL");
 
   const toggleSection = (key: string) => {
     setCollapsedSections((prev) => ({
@@ -52,6 +53,72 @@ export function SectionGroupView({
       [key]: !prev[key],
     }));
   };
+
+  const shelfBuckets = React.useMemo(() => {
+    const mapCard = (it: any): CardData => ({
+      save: it.save,
+      entity: it.entity,
+      connections: it.connections,
+    });
+    const buckets: Array<{
+      key: string;
+      label: string;
+      slug?: string;
+      items: CardData[];
+    }> = [];
+    sections.forEach((sec, idx) => {
+      if (sec.items.length > 0) {
+        buckets.push({
+          key: `sec:${sec.name || idx}`,
+          label: sec.name || (sections.length === 1 && !childrenBoards?.length ? "Collection" : "Board Picks"),
+          items: sec.items.map(mapCard),
+        });
+      }
+    });
+    (childrenBoards || []).forEach((child) => {
+      const childItems = (child.sections?.flatMap((s) => s.items) || []).map(mapCard);
+      if (childItems.length > 0 || (child.itemCount || 0) > 0) {
+        buckets.push({
+          key: `child:${child.id}`,
+          label: child.title,
+          slug: child.slug,
+          items: childItems,
+        });
+      }
+    });
+    return buckets;
+  }, [sections, childrenBoards]);
+
+  const effectiveShelfBucketKey = React.useMemo(() => {
+    if (activeShelfBucket === "ALL") return "ALL";
+    return shelfBuckets.some((b) => b.key === activeShelfBucket) ? activeShelfBucket : "ALL";
+  }, [activeShelfBucket, shelfBuckets]);
+
+  const allUniqueShelfItems = React.useMemo(() => {
+    const seen = new Set<string>();
+    const combined: CardData[] = [];
+    for (const bucket of shelfBuckets) {
+      for (const card of bucket.items) {
+        if (!seen.has(card.save.id)) {
+          seen.add(card.save.id);
+          combined.push(card);
+        }
+      }
+    }
+    return combined;
+  }, [shelfBuckets]);
+
+  const unifiedShelfItems = React.useMemo(() => {
+    if (effectiveShelfBucketKey !== "ALL") {
+      return shelfBuckets.find((b) => b.key === effectiveShelfBucketKey)?.items || [];
+    }
+    return allUniqueShelfItems;
+  }, [shelfBuckets, effectiveShelfBucketKey, allUniqueShelfItems]);
+
+  const activeShelfChildBucket =
+    effectiveShelfBucketKey.startsWith("child:")
+      ? shelfBuckets.find((b) => b.key === effectiveShelfBucketKey)
+      : undefined;
 
   const hasItems = sections.some((s) => s.items.length > 0);
   const hasChildren = Boolean(childrenBoards && childrenBoards.length > 0);
@@ -140,6 +207,90 @@ export function SectionGroupView({
     );
   };
 
+  if (layout === "shelf") {
+    return (
+      <div className="space-y-6">
+        {(shelfBuckets.length > 1 || onAddSubBoard) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {shelfBuckets.length > 1 && (
+                <button
+                  type="button"
+                  data-testid="shelf-bucket-all"
+                  onClick={() => setActiveShelfBucket("ALL")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                    effectiveShelfBucketKey === "ALL"
+                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                      : "bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+                  }`}
+                >
+                  <span>All</span>
+                  <span className="font-mono text-[10px] opacity-80">
+                    {allUniqueShelfItems.length}
+                  </span>
+                </button>
+              )}
+              {shelfBuckets.map((bucket) => {
+                const isActive = effectiveShelfBucketKey === bucket.key;
+                return (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    data-testid={`shelf-bucket-${bucket.slug || bucket.key}`}
+                    onClick={() => setActiveShelfBucket(bucket.key)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer ${
+                      isActive
+                        ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                        : "bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+                    }`}
+                  >
+                    <span>{bucket.label}</span>
+                    <span className="font-mono text-[10px] opacity-80">
+                      {bucket.items.length}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {activeShelfChildBucket?.slug && onSelectBoard && (
+                <button
+                  type="button"
+                  onClick={() => onSelectBoard(activeShelfChildBucket.slug!)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white transition cursor-pointer"
+                >
+                  <span>Open {activeShelfChildBucket.label}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
+              {onAddSubBoard && (
+                <button
+                  type="button"
+                  onClick={onAddSubBoard}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 border border-dashed border-neutral-300 dark:border-neutral-700 rounded-xl px-2.5 py-1 transition cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Sub-Board</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        <ShelfLayout
+          items={unifiedShelfItems}
+          shelfLabel={
+            effectiveShelfBucketKey === "ALL"
+              ? "CURIO PRESS ARCHIVE"
+              : shelfBuckets.find((b) => b.key === effectiveShelfBucketKey)?.label ||
+                "Board Shelf"
+          }
+          onOpenObject={(card, presentation) => onCardClick?.(card, presentation)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-12">
       {/* Editorial Card Sections */}
@@ -197,18 +348,6 @@ export function SectionGroupView({
                 )}
                 {layout === "timeline" && (
                   <TimelineLayout items={section.items} renderItem={renderSectionCard} />
-                )}
-                {layout === "shelf" && (
-                  <ShelfLayout
-                    items={section.items.map((it: any) => ({
-                      save: it.save,
-                      entity: it.entity,
-                      connections: it.connections,
-                    }))}
-                    shelfLabel={section.name || "Board Shelf"}
-                    compact
-                    onOpenObject={(card, presentation) => onCardClick?.(card, presentation)}
-                  />
                 )}
               </>
             )}
@@ -292,16 +431,6 @@ export function SectionGroupView({
                           <MasonryLayout items={childItems} renderItem={renderSectionCard} />
                         ) : layout === "grid" ? (
                           <GridLayout items={childItems} renderItem={renderSectionCard} />
-                        ) : layout === "shelf" ? (
-                          <ShelfLayout
-                            items={childItems.map((it: any) => ({
-                              save: it.save,
-                              entity: it.entity,
-                              connections: it.connections,
-                            }))}
-                            compact
-                            onOpenObject={(card, presentation) => onCardClick?.(card, presentation)}
-                          />
                         ) : (
                           <TimelineLayout items={childItems} renderItem={renderSectionCard} />
                         )

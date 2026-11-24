@@ -119,6 +119,54 @@ describe("Live External Enrichment Engine", () => {
       expect(book?.typePath).toBe("/product/book");
       expect(book?.canonicalExternalId).toBe("isbn:9780593318171");
     });
+
+    it("resolves multilingual book with title + author ('Plomo by Jose Luis Sastre') via Apple Books when OpenLibrary misses and Google Books returns 429", async () => {
+      const mockFetch: any = async (input: RequestInfo | URL) => {
+        const u = String(input);
+        if (u.includes("itunes.apple.com/search") && u.includes("media=ebook")) {
+          return new Response(
+            JSON.stringify({
+              resultCount: 1,
+              results: [
+                {
+                  trackId: 6758959746,
+                  trackName: "Plomo",
+                  artistName: "José Luis Sastre",
+                  releaseDate: "2026-03-12T07:00:00Z",
+                  artworkUrl100:
+                    "https://is1-ssl.mzstatic.com/image/thumb/Publication211/v4/46/64/97/9788401037115.jpg/100x100bb.jpg",
+                  description: "<b>Hay gente que, al escoger su deber, escoge también su destino.</b>",
+                  trackViewUrl: "https://books.apple.com/us/book/plomo/id6758959746?uo=4",
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (u.includes("openlibrary.org")) {
+          return new Response(JSON.stringify({ numFound: 0, docs: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (u.includes("googleapis.com/books")) {
+          return new Response("Rate limit exceeded", { status: 429 });
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const book = await resolveBook("Plomo by Jose Luis Sastre", {
+        fetchFn: mockFetch,
+        requireStrongMatch: true,
+      });
+      expect(book).not.toBeNull();
+      expect(book?.title).toBe("Plomo");
+      expect(book?.author).toBe("José Luis Sastre");
+      expect(book?.releaseYear).toBe(2026);
+      expect(book?.coverUrl).toContain("600x600bb.jpg");
+      expect(book?.isbn).toBe("9788401037115");
+      expect(book?.summary).not.toContain("<b>");
+    });
   });
 
   describe("Spotify oEmbed Resolver", () => {
@@ -167,6 +215,75 @@ describe("Live External Enrichment Engine", () => {
       expect(payload.title).toBe("Field Notes Pitch Black");
       expect(payload.brandOrCreator).toBe("Field Notes");
       expect(payload.primarySource?.sellerName).toBe("Field Notes");
+    });
+
+    it("overrides unrelated Wikipedia creator hits when 'Plomo by Jose Luis Sastre' matches Apple Books strongly", async () => {
+      const mockFetch: any = async (input: RequestInfo | URL) => {
+        const u = String(input);
+        if (u.includes("itunes.apple.com/search") && u.includes("media=ebook")) {
+          return new Response(
+            JSON.stringify({
+              resultCount: 1,
+              results: [
+                {
+                  trackId: 6758959746,
+                  trackName: "Plomo",
+                  artistName: "José Luis Sastre",
+                  releaseDate: "2026-03-12T07:00:00Z",
+                  artworkUrl100:
+                    "https://is1-ssl.mzstatic.com/image/thumb/Publication211/v4/9788401037115.jpg/100x100bb.jpg",
+                  description: "Una novela absorbente.",
+                  trackViewUrl: "https://books.apple.com/us/book/plomo/id6758959746",
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(JSON.stringify({ results: [], docs: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      };
+
+      const payload = await enrichCaptureInput("Plomo by Jose Luis Sastre", {
+        fetchFn: mockFetch,
+        skipCache: true,
+        universalCandidates: [
+          {
+            title: "Francisco Nieva",
+            snippet: "Spanish author",
+            url: "https://en.wikipedia.org/wiki/Francisco_Nieva",
+            coreType: "CREATOR",
+            typePath: "/person/author",
+            badgeLabel: "AUTHOR",
+          },
+        ],
+      });
+
+      expect(payload.title).toBe("Plomo");
+      expect(payload.brandOrCreator).toBe("José Luis Sastre");
+      expect(payload.typePath).toBe("/product/book");
+      expect(payload.coreType).toBe("BOOK");
+      expect(payload.heroImageUrl).toContain("600x600bb.jpg");
+
+      const barePayload = await enrichCaptureInput("Plomo Jose Luis Sastre", {
+        fetchFn: mockFetch,
+        skipCache: true,
+        universalCandidates: [
+          {
+            title: "José Luis Sastre",
+            snippet: "Spanish journalist",
+            url: "https://en.wikipedia.org/wiki/Jos%C3%A9_Luis_Sastre",
+            coreType: "PRODUCT",
+            typePath: "/product/generic",
+            badgeLabel: "ITEM",
+          },
+        ],
+      });
+      expect(barePayload.title).toBe("Plomo");
+      expect(barePayload.brandOrCreator).toBe("José Luis Sastre");
+      expect(barePayload.typePath).toBe("/product/book");
     });
   });
 });

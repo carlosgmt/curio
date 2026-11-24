@@ -197,4 +197,65 @@ describe("Live Omnibox Typeahead / Autocomplete API (/api/v1/capture/suggest)", 
     expect(placeSug.canonicalUrl).toContain("google.com/maps");
     expect(placeSug.title).toContain("Federal");
   });
+
+  it("suggests [BOOK] via Apple Books for 'Plomo by Jose Luis Sastre' when Wikipedia/OpenLibrary miss", async () => {
+    const timestamp = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `book-sug-${timestamp}@curio.local`,
+        username: `booksug_${timestamp}`,
+        displayName: "Book Reader",
+      })
+      .returning();
+
+    const { token } = await createSession(user.id);
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.includes("itunes.apple.com/search") && u.includes("media=ebook")) {
+        return new Response(
+          JSON.stringify({
+            resultCount: 1,
+            results: [
+              {
+                trackId: 6758959746,
+                trackName: "Plomo",
+                artistName: "José Luis Sastre",
+                releaseDate: "2026-03-12T07:00:00Z",
+                artworkUrl100:
+                  "https://is1-ssl.mzstatic.com/image/thumb/Publication211/v4/9788401037115.jpg/100x100bb.jpg",
+                description: "Novela de José Luis Sastre.",
+                trackViewUrl: "https://books.apple.com/us/book/plomo/id6758959746",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ results: [], docs: [], query: { search: [] } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const req = new NextRequest(
+        `http://localhost:3000/api/v1/capture/suggest?q=${encodeURIComponent("Plomo by Jose Luis Sastre")}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const res = await GET(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.suggestions.length).toBeGreaterThan(0);
+      const bookSug = data.suggestions.find((s: any) => s.title === "Plomo");
+      expect(bookSug).toBeDefined();
+      expect(bookSug.typePath).toBe("/product/book");
+      expect(bookSug.creator).toBe("José Luis Sastre");
+      expect(bookSug.year).toBe(2026);
+      expect(bookSug.heroImageUrl).toContain("600x600bb.jpg");
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
 });

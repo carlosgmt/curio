@@ -38,6 +38,7 @@ import {
   Pencil,
   Loader2,
   Shirt,
+  Package,
 } from "lucide-react";
 
 const VALID_LAYOUT_MODES = new Set<LayoutEngineType>(["masonry", "grid", "timeline", "shelf"]);
@@ -85,7 +86,12 @@ export default function Home() {
   const [vaultTotalCount, setVaultTotalCount] = useState<number | null>(null);
   const [wishlistCount, setWishlistCount] = useState<number | null>(null);
   const [wearLogCount, setWearLogCount] = useState<number | null>(null);
+  const [closetCount, setClosetCount] = useState<number | null>(null);
+  const [myStuffCount, setMyStuffCount] = useState<number | null>(null);
   const [showWearLogs, setShowWearLogs] = useState(false);
+  const [showCloset, setShowCloset] = useState(false);
+  const [showMyStuff, setShowMyStuff] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [prefsHydrated, setPrefsHydrated] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -134,13 +140,14 @@ export default function Home() {
     { id: "AUTUMN_WINTER", label: "Autumn / Winter" },
   ];
 
-  // Sync dismissal of "Bring in your collections" banner & wear-log stream preference
+  // Sync dismissal of "Bring in your collections" banner & stream inventory filter preferences
   useEffect(() => {
     if (typeof window !== "undefined") {
       const isDismissed = localStorage.getItem("curio_dismissed_bring_collections") === "true";
       setDismissedOnboarding(isDismissed);
-      const savedWearLogs = localStorage.getItem("curio_show_wear_logs") === "true";
-      setShowWearLogs(savedWearLogs);
+      setShowWearLogs(localStorage.getItem("curio_show_wear_logs") === "true");
+      setShowCloset(localStorage.getItem("curio_show_closet") === "true");
+      setShowMyStuff(localStorage.getItem("curio_show_my_stuff") === "true");
     }
     setPrefsHydrated(true);
   }, []);
@@ -150,6 +157,26 @@ export default function Home() {
       const next = !prev;
       if (typeof window !== "undefined") {
         localStorage.setItem("curio_show_wear_logs", next ? "true" : "false");
+      }
+      return next;
+    });
+  };
+
+  const handleToggleCloset = () => {
+    setShowCloset((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("curio_show_closet", next ? "true" : "false");
+      }
+      return next;
+    });
+  };
+
+  const handleToggleMyStuff = () => {
+    setShowMyStuff((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("curio_show_my_stuff", next ? "true" : "false");
       }
       return next;
     });
@@ -218,20 +245,26 @@ export default function Home() {
       reset?: boolean;
       wishlist?: boolean;
       includeWearLogs?: boolean;
+      showCloset?: boolean;
+      showMyStuff?: boolean;
       cursor?: string | null;
     }) => {
       const reset = opts?.reset ?? true;
       const seq = reset ? ++fetchSeqRef.current : fetchSeqRef.current;
       const wishlistFlag = opts?.wishlist ?? wishOnly;
       const includeWearFlag = opts?.includeWearLogs ?? showWearLogs;
+      const includeClosetFlag = opts?.showCloset ?? showCloset;
+      const includeMyStuffFlag = opts?.showMyStuff ?? showMyStuff;
       const cursorParam = !reset && opts?.cursor ? `&cursor=${encodeURIComponent(opts.cursor)}` : "";
       const wishParam = wishlistFlag ? "&wishlist=true" : "";
       const wearLogsParam = !wishlistFlag && includeWearFlag ? "&includeWearLogs=true" : "";
+      const closetParam = !wishlistFlag && !includeClosetFlag ? "&excludeCloset=true" : "";
+      const myStuffParam = !wishlistFlag && !includeMyStuffFlag ? "&excludeMyStuff=true" : "";
       if (!reset) setLoadingMore(true);
 
       try {
         const res = await apiFetch(
-          `/api/v1/capture?limit=50${wishParam}${wearLogsParam}${cursorParam}`
+          `/api/v1/capture?limit=50${wishParam}${wearLogsParam}${closetParam}${myStuffParam}${cursorParam}`
         );
         if (res.ok) {
           const data = await res.json();
@@ -250,6 +283,12 @@ export default function Home() {
           }
           if (typeof data.wearLogCount === "number") {
             setWearLogCount(data.wearLogCount);
+          }
+          if (typeof data.closetCount === "number") {
+            setClosetCount(data.closetCount);
+          }
+          if (typeof data.myStuffCount === "number") {
+            setMyStuffCount(data.myStuffCount);
           }
           setNextCursor(data.nextCursor ?? null);
 
@@ -277,7 +316,7 @@ export default function Home() {
         }
       }
     },
-    [wishOnly, showWearLogs]
+    [wishOnly, showWearLogs, showCloset, showMyStuff]
   );
 
   const fetchLists = useCallback(async () => {
@@ -307,6 +346,26 @@ export default function Home() {
       console.error("Failed to refresh board details:", err);
     }
   }, [activeListSlug]);
+
+  const triggerAllSourcesSync = useCallback(async () => {
+    setIsSyncingAll(true);
+    try {
+      await apiFetch("/api/v1/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true }),
+      });
+      await Promise.all([
+        fetchItems({ reset: true, wishlist: wishOnly }),
+        fetchLists(),
+        refreshActiveBoard(),
+      ]);
+    } catch {
+      // Non-fatal if background source is offline
+    } finally {
+      setIsSyncingAll(false);
+    }
+  }, [fetchItems, fetchLists, refreshActiveBoard, wishOnly]);
 
   const triggerClosetSync = useCallback(
     async (force: boolean = false) => {
@@ -885,6 +944,8 @@ export default function Home() {
   const displayedStreamTotal = streamTotalCount ?? displayedTotalSaves;
   const displayedWishlistCount = wishlistCount ?? items.filter((it) => it.save.wishlist).length;
   const hiddenWearLogCount = !wishOnly && !showWearLogs ? wearLogCount ?? 0 : 0;
+  const hiddenClosetCount = !wishOnly && !showCloset ? closetCount ?? 0 : 0;
+  const hiddenMyStuffCount = !wishOnly && !showMyStuff ? myStuffCount ?? 0 : 0;
 
   return (
     <PullToRefresh
@@ -990,14 +1051,58 @@ export default function Home() {
             <p className="text-xs text-neutral-500">
               {wishOnly
                 ? `Showing ${visibleItems.length} of ${displayedWishlistCount} wishlisted saves`
-                : hiddenWearLogCount > 0
+                : hiddenClosetCount === 0 &&
+                  hiddenMyStuffCount === 0 &&
+                  hiddenWearLogCount > 0
                 ? `Showing ${items.length} of ${displayedStreamTotal} saves · ${hiddenWearLogCount} ${
                     hiddenWearLogCount === 1 ? "wear log" : "wear logs"
                   } tucked in Outfits`
-                : `Showing ${items.length} of ${displayedStreamTotal} total saves`}
+                : (() => {
+                    const tucked: string[] = [];
+                    if (hiddenClosetCount > 0) tucked.push(`${hiddenClosetCount} Closet`);
+                    if (hiddenMyStuffCount > 0) tucked.push(`${hiddenMyStuffCount} My Stuff`);
+                    if (hiddenWearLogCount > 0) tucked.push(`${hiddenWearLogCount} wear logs`);
+                    return tucked.length > 0
+                      ? `Showing ${items.length} of ${displayedStreamTotal} saves · Tucked: ${tucked.join(" · ")}`
+                      : `Showing ${items.length} of ${displayedStreamTotal} total saves`;
+                  })()}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0 self-end sm:self-auto">
+            {activeListSlug === null && !wishOnly && ((closetCount ?? 0) > 0 || showCloset) && (
+              <button
+                type="button"
+                data-testid="toggle-closet-stream"
+                aria-pressed={showCloset}
+                onClick={handleToggleCloset}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition cursor-pointer ${
+                  showCloset
+                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white shadow-xs"
+                    : "bg-white dark:bg-neutral-900 border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                }`}
+                title={showCloset ? "Hide Closet garments from All stream" : "Include Closet garments in All stream"}
+              >
+                <Shirt className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Closet{typeof closetCount === "number" ? ` (${closetCount})` : ""}</span>
+              </button>
+            )}
+            {activeListSlug === null && !wishOnly && ((myStuffCount ?? 0) > 0 || showMyStuff) && (
+              <button
+                type="button"
+                data-testid="toggle-mystuff-stream"
+                aria-pressed={showMyStuff}
+                onClick={handleToggleMyStuff}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition cursor-pointer ${
+                  showMyStuff
+                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white shadow-xs"
+                    : "bg-white dark:bg-neutral-900 border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                }`}
+                title={showMyStuff ? "Hide My Stuff items from All stream" : "Include My Stuff items in All stream"}
+              >
+                <Package className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>My Stuff{typeof myStuffCount === "number" ? ` (${myStuffCount})` : ""}</span>
+              </button>
+            )}
             {activeListSlug === null && !wishOnly && ((wearLogCount ?? 0) > 0 || showWearLogs) && (
               <button
                 type="button"
@@ -1017,6 +1122,19 @@ export default function Home() {
               >
                 <Shirt className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Wear logs{typeof wearLogCount === "number" ? ` (${wearLogCount})` : ""}</span>
+              </button>
+            )}
+            {user && (
+              <button
+                type="button"
+                data-testid="sync-all-sources-btn"
+                onClick={triggerAllSourcesSync}
+                disabled={isSyncingAll}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition cursor-pointer disabled:opacity-50"
+                title="Sync Closet, Purchase Hub, and external feeds"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAll ? "animate-spin" : ""}`} aria-hidden="true" />
+                <span className="hidden sm:inline">{isSyncingAll ? "Syncing..." : "Sync"}</span>
               </button>
             )}
             <ViewModeSwitcher
@@ -1081,7 +1199,10 @@ export default function Home() {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-                    {(activeListSlug === "wardrobe" || activeListSlug === "outfits") && (
+                    {(activeListSlug === "closet" ||
+                      activeListSlug === "wardrobe" ||
+                      activeListSlug === "outfits" ||
+                      Boolean(activeListDetails.ancestors?.some((a) => a.slug === "closet"))) && (
                       <>
                         <button
                           type="button"

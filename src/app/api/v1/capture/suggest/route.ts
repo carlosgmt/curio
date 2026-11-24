@@ -3,6 +3,8 @@ import { db, userSaves, globalEntities, curioTypes } from "@/db";
 import { eq, and, or, like, desc, isNull } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/service";
 import { discoverUniversalEntities } from "@/lib/enrichment/universalDiscovery";
+import { searchAppleBooks } from "@/lib/enrichment/providers/books";
+import { searchItunesMovies } from "@/lib/enrichment/providers/cinema";
 import { fetchItunesMusicMetadata } from "@/lib/enrichment/providers/music";
 import { searchNominatimPlaces } from "@/lib/enrichment/providers/places";
 import { parseQuoteInput } from "@/lib/types/catalog";
@@ -73,7 +75,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ suggestions: [] });
     }
 
-    const [existingSavesRes, universalCandidatesRes, nominatimRes, itunesRes, curioTypesRes] = await Promise.allSettled([
+    const [
+      existingSavesRes,
+      universalCandidatesRes,
+      nominatimRes,
+      itunesRes,
+      appleBooksRes,
+      itunesMoviesRes,
+      curioTypesRes,
+    ] = await Promise.allSettled([
       (async () => {
         try {
           const rows = await db
@@ -111,6 +121,10 @@ export async function GET(req: NextRequest) {
       searchNominatimPlaces(query, { limit: 3, timeoutMs: 1800 }).catch(() => []),
 
       fetchItunesMusicMetadata(query, { timeoutMs: 1500 }).catch(() => null),
+
+      searchAppleBooks(query, { limit: 3, timeoutMs: 1800 }).catch(() => []),
+
+      searchItunesMovies(query, { limit: 2, timeoutMs: 1500 }).catch(() => []),
 
       db
         .select({
@@ -255,13 +269,100 @@ export async function GET(req: NextRequest) {
       }
     };
 
+    const addAppleBookSuggestions = () => {
+      if (appleBooksRes.status === "fulfilled" && appleBooksRes.value) {
+        for (const book of appleBooksRes.value) {
+          const normTitle = book.title.toLowerCase().trim();
+          const dedup = `book:${normTitle}`;
+          if (seenTitles.has(dedup)) continue;
+          seenTitles.add(dedup);
+          seenTitles.add(normTitle);
+          suggestions.push({
+            title: book.title,
+            subtitle:
+              [book.author, book.releaseYear ? String(book.releaseYear) : null]
+                .filter(Boolean)
+                .join(" • ") || "Book",
+            creator: book.author || null,
+            year: book.releaseYear || null,
+            typePath: "/product/book",
+            badgeLabel: "BOOK",
+            heroImageUrl: book.coverUrl || null,
+            canonicalUrl: book.canonicalUrl,
+            isExistingSave: false,
+            saveId: null,
+            curioTypeId: null,
+          });
+          if (suggestions.length >= 6) break;
+        }
+      }
+    };
+
+    const addItunesMovieSuggestions = () => {
+      if (itunesMoviesRes.status === "fulfilled" && itunesMoviesRes.value) {
+        for (const mov of itunesMoviesRes.value) {
+          const normTitle = mov.title.toLowerCase().trim();
+          const dedup = `film:${normTitle}`;
+          if (seenTitles.has(dedup) || seenTitles.has(normTitle)) continue;
+          seenTitles.add(dedup);
+          suggestions.push({
+            title: mov.title,
+            subtitle:
+              [mov.director, mov.releaseYear ? String(mov.releaseYear) : null]
+                .filter(Boolean)
+                .join(" • ") || "Film",
+            creator: mov.director || null,
+            year: mov.releaseYear || null,
+            typePath: "/media/film",
+            badgeLabel: "FILM",
+            heroImageUrl: mov.posterUrl || null,
+            canonicalUrl: mov.canonicalUrl,
+            isExistingSave: false,
+            saveId: null,
+            curioTypeId: null,
+          });
+          if (suggestions.length >= 6) break;
+        }
+      }
+    };
+
     const isPlaceQuery = /\b(?:cafe|cafeteria|bar|restaurant|restaurante|pub|bistro|bakery|pasteleria|hotel|hostel|museum|museo|gallery|galeria|piazza|plaza|street|carrer|calle|avenida|brutal|federal|dishoom)\b/i.test(query);
+    const normQ = query
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    const hasExactAppleBookMatch =
+      appleBooksRes.status === "fulfilled" &&
+      Array.isArray(appleBooksRes.value) &&
+      appleBooksRes.value.some((b) => {
+        const bt = (b.title || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        const ba = (b.author || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        return Boolean(bt && normQ.includes(bt) && (!ba || ba.split(" ").some((w) => w.length > 2 && normQ.includes(w))));
+      });
+    const isBookQuery =
+      /\b(?:book|libro|novel|novela|memoir|author|autor|by|por)\b/i.test(normQ) ||
+      hasExactAppleBookMatch;
 
     if (isPlaceQuery) {
       addNominatimSuggestions();
       addUniversalSuggestions();
+      addAppleBookSuggestions();
+      addItunesMovieSuggestions();
+    } else if (isBookQuery) {
+      addAppleBookSuggestions();
+      addUniversalSuggestions();
+      addItunesMovieSuggestions();
+      addNominatimSuggestions();
     } else {
       addUniversalSuggestions();
+      addAppleBookSuggestions();
+      addItunesMovieSuggestions();
       addNominatimSuggestions();
     }
 

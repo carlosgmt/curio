@@ -205,6 +205,22 @@ describe("Closet UI Bidirectional Sync & Phase 1 Security/Audio Contracts", () =
     expect(edges.some((e) => e.connectionType === "WORN_ON")).toBe(true);
     expect(edges.some((e) => e.connectionType === "PAIRED_WITH")).toBe(true);
 
+    // Verify hierarchical Closet -> Garments & Outfits boards
+    const userBoards = await db
+      .select()
+      .from(smartLists)
+      .where(eq(smartLists.userId, user.id));
+    const closetRoot = userBoards.find((b) => b.slug === "closet");
+    const garmentsChild = userBoards.find((b) => b.slug === "wardrobe");
+    const outfitsChild = userBoards.find((b) => b.slug === "outfits");
+    expect(closetRoot).toBeDefined();
+    expect(closetRoot?.title).toBe("Closet");
+    expect(closetRoot?.parentId).toBeNull();
+    expect(garmentsChild?.title).toBe("Garments");
+    expect(garmentsChild?.parentId).toBe(closetRoot?.id ?? null);
+    expect(outfitsChild?.title).toBe("Outfits");
+    expect(outfitsChild?.parentId).toBe(closetRoot?.id ?? null);
+
     // 2. Simulate closet-ui deduplicating outfit 502; re-sync prunes outfit 502 ONLY
     outfitsState = outfitsState.filter((o) => o.id !== 502);
     const sync2 = await syncClosetWithCurio(user.id, {

@@ -1,10 +1,15 @@
 import { fetchAndExtractMetadata, type ExtractedMetadata } from "./opengraph";
-import { resolveBook, type ResolvedBook } from "./providers/books";
+import {
+  parseBookQueryHints,
+  resolveBook,
+  type ResolvedBook,
+} from "./providers/books";
 import { resolveFilm, type ResolvedFilm } from "./providers/cinema";
 import { resolveMusicBrainz, resolveSpotifyUrl, type ResolvedMusic } from "./providers/music";
 import { resolveBarcode, resolveWineQuery, type ResolvedProduct } from "./providers/products";
 import {
   discoverUniversalEntities,
+  normalizeEntityString,
   type DiscoveredCandidate,
   type CandidateFallback,
 } from "./universalDiscovery";
@@ -841,6 +846,48 @@ export async function enrichCaptureInput(
 
   if (candidates.length > 0) {
     const winning = candidates[0];
+    const hints = parseBookQueryHints(trimmed);
+    const queryWords = normalizeEntityString(hints.cleanQuery)
+      .split(" ")
+      .filter((w) => w.length >= 3);
+    const winTitleNorm = normalizeEntityString(winning.title || "");
+    const titleWordHits = queryWords.filter((w) => winTitleNorm.includes(w)).length;
+    const isStrongTitleMatch =
+      queryWords.length === 0 || titleWordHits / queryWords.length >= 0.9;
+    const shouldCheckBookOverride =
+      winning.typePath !== "/product/book" &&
+      !winning.typePath.startsWith("/place") &&
+      (options?.detectedType === "BOOK" ||
+        hints.authorHint !== null ||
+        (!isStrongTitleMatch && winning.typePath !== "/media/film"));
+
+    if (shouldCheckBookOverride) {
+      const bookOverride = await resolveBook(trimmed, {
+        fetchFn,
+        requireStrongMatch: true,
+      });
+      if (bookOverride) {
+        return {
+          title: bookOverride.title,
+          summary: bookOverride.summary,
+          heroImageUrl: bookOverride.coverUrl,
+          coreType: "BOOK",
+          typePath: "/product/book",
+          canonicalExternalId: bookOverride.canonicalExternalId,
+          canonicalUrl: bookOverride.canonicalUrl,
+          brandOrCreator: bookOverride.author,
+          priceCents: bookOverride.priceCents,
+          coreStructuredData: bookOverride.coreStructuredData,
+          primarySource: {
+            sellerName: "Bookshop.org",
+            sourceUrl: `https://bookshop.org/search?keywords=${encodeURIComponent(bookOverride.title)}`,
+            priceCents: bookOverride.priceCents,
+          },
+          runnerUpCandidates: [],
+        };
+      }
+    }
+
     const runnerUpCandidates: CandidateFallback[] = candidates.slice(1).map((c) => ({
       title: c.year ? `${c.title} (${c.year})` : c.title,
       url: c.url,
@@ -923,7 +970,7 @@ export async function enrichCaptureInput(
   }
 
   // Books
-  if (options?.detectedType === "BOOK" || /\b(?:book|novel|memoir|author)\b/i.test(lower)) {
+  if (options?.detectedType === "BOOK" || /\b(?:book|novel|memoir|author|libro|novela|autor)\b/i.test(lower)) {
     const bookRes = await resolveBook(trimmed, { fetchFn });
     if (bookRes) {
       return {
@@ -1031,6 +1078,32 @@ export async function enrichCaptureInput(
     if (placeFallback) {
       return buildPlaceEnrichmentPayload(placeFallback, trimmed, null, []);
     }
+  }
+
+  // High-confidence Book + Author fallback (e.g. "Plomo Jose Luis Sastre", "Plomo by Jose Luis Sastre")
+  const fallbackBook = await resolveBook(trimmed, {
+    fetchFn,
+    requireStrongMatch: true,
+  });
+  if (fallbackBook) {
+    return {
+      title: fallbackBook.title,
+      summary: fallbackBook.summary,
+      heroImageUrl: fallbackBook.coverUrl,
+      coreType: "BOOK",
+      typePath: "/product/book",
+      canonicalExternalId: fallbackBook.canonicalExternalId,
+      canonicalUrl: fallbackBook.canonicalUrl,
+      brandOrCreator: fallbackBook.author,
+      priceCents: fallbackBook.priceCents,
+      coreStructuredData: fallbackBook.coreStructuredData,
+      primarySource: {
+        sellerName: "Bookshop.org",
+        sourceUrl: `https://bookshop.org/search?keywords=${encodeURIComponent(fallbackBook.title)}`,
+        priceCents: fallbackBook.priceCents,
+      },
+      runnerUpCandidates: [],
+    };
   }
 
   // 6. General Fallback

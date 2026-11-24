@@ -40,6 +40,45 @@ import {
   Shirt,
 } from "lucide-react";
 
+const VALID_LAYOUT_MODES = new Set<LayoutEngineType>(["masonry", "grid", "timeline", "shelf"]);
+
+function isShelfDefaultBoard(slug: string | null, wishOnly: boolean, isMyStuffDescendant = false): boolean {
+  if (wishOnly) return true;
+  if (!slug) return false;
+  return (
+    isMyStuffDescendant ||
+    slug === "my-stuff" ||
+    slug.startsWith("my-stuff-") ||
+    slug === "books" ||
+    slug === "films" ||
+    slug === "music" ||
+    slug === "wishlist"
+  );
+}
+
+function getLayoutPreferenceKey(slug: string | null, wishOnly: boolean): string {
+  if (wishOnly) return "wishlist";
+  return slug || "all";
+}
+
+function resolveBoardLayout(
+  slug: string | null,
+  wishOnly: boolean,
+  dbDefault?: string | null,
+  isMyStuffDescendant = false
+): LayoutEngineType {
+  if (dbDefault && VALID_LAYOUT_MODES.has(dbDefault as LayoutEngineType)) {
+    return dbDefault as LayoutEngineType;
+  }
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem(`curio_board_layout:${getLayoutPreferenceKey(slug, wishOnly)}`);
+    if (saved && VALID_LAYOUT_MODES.has(saved as LayoutEngineType)) {
+      return saved as LayoutEngineType;
+    }
+  }
+  return isShelfDefaultBoard(slug, wishOnly, isMyStuffDescendant) ? "shelf" : "masonry";
+}
+
 export default function Home() {
   const [items, setItems] = useState<CardData[]>([]);
   const [streamTotalCount, setStreamTotalCount] = useState<number | null>(null);
@@ -77,6 +116,7 @@ export default function Home() {
   const [garmentCategoryFilter, setGarmentCategoryFilter] = useState<string>("ALL");
   const [garmentSeasonFilter, setGarmentSeasonFilter] = useState<string>("ALL");
   const [isSyncingCloset, setIsSyncingCloset] = useState(false);
+  const [isSyncingPurchaseHub, setIsSyncingPurchaseHub] = useState(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const fetchSeqRef = useRef(0);
 
@@ -296,6 +336,34 @@ export default function Home() {
     [fetchItems, fetchLists, refreshActiveBoard, wishOnly]
   );
 
+  const triggerPurchaseHubSync = useCallback(
+    async (force: boolean = false) => {
+      if (force) setIsSyncingPurchaseHub(true);
+      try {
+        const res = await apiFetch("/api/v1/sync/purchase-hub", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force, ifStaleMs: 300_000 }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const didChange = Boolean(data?.synced);
+        if (didChange) {
+          await Promise.all([
+            fetchItems({ reset: true, wishlist: wishOnly }),
+            fetchLists(),
+            refreshActiveBoard(),
+          ]);
+        }
+      } catch {
+        // Non-fatal if purchase-hub is offline
+      } finally {
+        if (force) setIsSyncingPurchaseHub(false);
+      }
+    },
+    [fetchItems, fetchLists, refreshActiveBoard, wishOnly]
+  );
+
   const triggerBackgroundFeedSyncIfStale = async (force: boolean = false) => {
     try {
       const statusRes = await apiFetch("/api/v1/sync/feeds");
@@ -328,18 +396,20 @@ export default function Home() {
     fetchItems({ reset: true, wishlist: wishOnly });
   }, [prefsHydrated, wishOnly, fetchItems]);
 
-  // Automatic Closet <-> Curio background sync on session start + tab focus
+  // Automatic Closet & Purchase Hub <-> Curio background sync on session start + tab focus
   useEffect(() => {
     if (!user) return;
     triggerClosetSync(false);
+    triggerPurchaseHubSync(false);
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         triggerClosetSync(false);
+        triggerPurchaseHubSync(false);
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [user, triggerClosetSync]);
+  }, [user, triggerClosetSync, triggerPurchaseHubSync]);
 
   // Infinite scroll observer for main feed
   useEffect(() => {
@@ -391,6 +461,55 @@ export default function Home() {
       typePathPrefix: board.autoRules?.typePathPrefix,
     };
   }, [activeListSlug, activeListDetails, lists]);
+
+  const isMyStuffDescendant = Boolean(
+    activeListSlug &&
+      (activeListSlug === "my-stuff" ||
+        activeListSlug.startsWith("my-stuff-") ||
+        (activeListDetails?.list.slug === activeListSlug &&
+          activeListDetails.ancestors?.some((a) => a.slug === "my-stuff")))
+  );
+
+  const activeDbDefaultLayout =
+    activeListSlug === null
+      ? null
+      : activeListDetails?.list.slug === activeListSlug
+      ? activeListDetails.list.defaultLayout
+      : lists.find((l) => l.slug === activeListSlug)?.defaultLayout ?? null;
+
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    setLayoutEngine(
+      resolveBoardLayout(activeListSlug, wishOnly, activeDbDefaultLayout, isMyStuffDescendant)
+    );
+  }, [prefsHydrated, activeListSlug, wishOnly, activeDbDefaultLayout, isMyStuffDescendant]);
+
+  const handleLayoutChange = useCallback(
+    (nextLayout: LayoutEngineType) => {
+      setLayoutEngine(nextLayout);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          `curio_board_layout:${getLayoutPreferenceKey(activeListSlug, wishOnly)}`,
+          nextLayout
+        );
+      }
+      if (!activeListSlug) return;
+      setLists((prev) =>
+        prev.map((l) => (l.slug === activeListSlug ? { ...l, defaultLayout: nextLayout } : l))
+      );
+      setActiveListDetails((prev) =>
+        prev && prev.list.slug === activeListSlug
+          ? { ...prev, list: { ...prev.list, defaultLayout: nextLayout } }
+          : prev
+      );
+      apiFetch(`/api/v1/lists/${activeListSlug}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultLayout: nextLayout }),
+      }).catch(() => {});
+    },
+    [activeListSlug, wishOnly]
+  );
 
   const handleOptimisticStart = useCallback((tempCard: CardData) => {
     setItems((prev) => [tempCard, ...prev]);
@@ -776,6 +895,7 @@ export default function Home() {
           fetchLists(),
           refreshActiveBoard(),
           triggerClosetSync(false),
+          triggerPurchaseHubSync(false),
           triggerBackgroundFeedSyncIfStale(false),
         ])
       }
@@ -902,7 +1022,7 @@ export default function Home() {
             <ViewModeSwitcher
               layout={layoutEngine}
               density={cardDensity}
-              onLayoutChange={setLayoutEngine}
+              onLayoutChange={handleLayoutChange}
               onDensityChange={setCardDensity}
             />
           </div>
@@ -979,6 +1099,28 @@ export default function Home() {
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
                         >
                           <span>Open Closet ↗</span>
+                        </a>
+                      </>
+                    )}
+                    {isMyStuffDescendant && (
+                      <>
+                        <button
+                          type="button"
+                          data-testid="sync-purchase-hub-btn"
+                          onClick={() => triggerPurchaseHubSync(true)}
+                          disabled={isSyncingPurchaseHub}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isSyncingPurchaseHub ? "animate-spin" : ""}`} />
+                          <span>{isSyncingPurchaseHub ? "Syncing My Stuff..." : "Sync My Stuff"}</span>
+                        </button>
+                        <a
+                          href="/my-stuff/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
+                        >
+                          <span>Open Purchase Hub ↗</span>
                         </a>
                       </>
                     )}
@@ -1331,7 +1473,7 @@ export default function Home() {
           fetchItems({ reset: true });
           if (activeListSlug) refreshActiveBoard(activeListSlug);
         }}
-        onCardUpdated={(updatedSave) => {
+        onCardUpdated={(updatedSave, updatedEntity) => {
           fetchItems({ reset: true });
           fetchLists();
           if (activeListSlug) refreshActiveBoard(activeListSlug);
@@ -1343,9 +1485,21 @@ export default function Home() {
                     ...prev.save,
                     ...updatedSave,
                   },
+                  ...(updatedEntity !== undefined
+                    ? {
+                        entity: updatedEntity
+                          ? { ...(prev.entity || {}), ...updatedEntity }
+                          : prev.entity,
+                      }
+                    : {}),
                 }
               : prev
           );
+        }}
+        onNavigateToBoard={(slug) => {
+          setSelectedCard(null);
+          setWishOnly(false);
+          setActiveListSlug(slug);
         }}
         onCardDeleted={() => {
           setSelectedCard(null);

@@ -454,7 +454,7 @@ export default function Hero3DInspector({
           className="font-mono text-[10px] uppercase tracking-[0.12em] opacity-75"
           style={{ color: palette.muted }}
         >
-          Drag to orbit · {spec.label}
+          {meta.isWishlist ? `Drag to orbit · Wishlist ${spec.label}` : `Drag to orbit · ${spec.label}`}
         </span>
 
         <div className="pointer-events-auto flex items-center gap-1.5">

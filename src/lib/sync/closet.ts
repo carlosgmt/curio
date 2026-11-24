@@ -12,6 +12,8 @@ import {
 } from "@/db";
 import { and, eq, or } from "drizzle-orm";
 import { createList } from "@/lib/lists/service";
+import type { SyncAdapter, SyncOptions, SyncRunResult } from "./engine";
+import { registerSyncAdapter } from "./registry";
 
 export interface ClosetGarmentPayload {
   id: number;
@@ -933,3 +935,46 @@ export async function syncCurioSaveEditToCloset(
   }
   return false;
 }
+
+export const closetSyncAdapter: SyncAdapter<
+  SyncOptions & { closetApiUrl?: string; timeoutMs?: number }
+> = {
+  sourceId: "closet",
+  displayName: "Closet UI (Wardrobe & Outfits)",
+  supportsWishlistPromotion: false,
+  supportsPruning: true,
+  keyPrefix: "garment:",
+  getStatus(userId: string) {
+    return getClosetSyncStatus(userId);
+  },
+  async run(userId: string, options): Promise<SyncRunResult> {
+    const res = await syncClosetWithCurio(userId, {
+      force: Boolean(options?.force),
+      ifStaleMs: typeof options?.ifStaleMs === "number" ? options.ifStaleMs : undefined,
+      fetchFn: options?.fetchFn as typeof fetch | undefined,
+      closetApiUrl: typeof options?.closetApiUrl === "string" ? options.closetApiUrl : undefined,
+      timeoutMs: typeof options?.timeoutMs === "number" ? options.timeoutMs : undefined,
+    });
+    return {
+      sourceId: "closet",
+      synced: res.synced,
+      skippedReason: res.skippedReason,
+      recordsProcessed: res.garmentsSynced + res.outfitsSynced,
+      createdSaves: 0,
+      updatedSaves: res.garmentsSynced + res.outfitsSynced,
+      promotedFromWishlist: 0,
+      prunedSaves: res.prunedSaves,
+      prunedEntities: res.prunedEntities,
+      connectionsSynced: res.connectionsSynced,
+      boardsCreated: 0,
+      digest: res.digest,
+      syncedAt: res.syncedAt,
+      meta: {
+        garmentsSynced: res.garmentsSynced,
+        outfitsSynced: res.outfitsSynced,
+      },
+    };
+  },
+};
+
+registerSyncAdapter(closetSyncAdapter);

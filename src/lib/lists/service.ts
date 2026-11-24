@@ -10,6 +10,8 @@ export interface AutoRulesConfig {
   maxPriceCents?: number;
 }
 
+export type SmartListLayoutMode = "masonry" | "grid" | "timeline" | "shelf";
+
 export interface CreateListInput {
   title: string;
   slug?: string;
@@ -19,6 +21,7 @@ export interface CreateListInput {
   isPaywalled?: boolean;
   accessPriceCents?: number;
   autoRules?: AutoRulesConfig;
+  defaultLayout?: SmartListLayoutMode | null;
   visibility?: "PRIVATE" | "UNLISTED" | "PUBLIC";
 }
 
@@ -31,6 +34,7 @@ export interface UpdateBoardInput {
   isPaywalled?: boolean;
   accessPriceCents?: number | null;
   autoRules?: AutoRulesConfig | null;
+  defaultLayout?: SmartListLayoutMode | null;
   visibility?: "PRIVATE" | "UNLISTED" | "PUBLIC";
 }
 
@@ -227,6 +231,7 @@ export async function createList(
       isPaywalled: input.isPaywalled ?? false,
       accessPriceCents: input.accessPriceCents ?? null,
       autoRules: input.autoRules ?? null,
+      defaultLayout: input.defaultLayout ?? null,
       visibility: input.visibility ?? "PUBLIC",
     })
     .returning();
@@ -299,6 +304,7 @@ export async function updateBoard(
   if (input.isPaywalled !== undefined) updates.isPaywalled = input.isPaywalled;
   if (input.accessPriceCents !== undefined) updates.accessPriceCents = input.accessPriceCents;
   if (input.autoRules !== undefined) updates.autoRules = input.autoRules;
+  if (input.defaultLayout !== undefined) updates.defaultLayout = input.defaultLayout;
   if (input.visibility !== undefined) updates.visibility = input.visibility;
 
   const [updated] = await db

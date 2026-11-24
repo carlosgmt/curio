@@ -161,6 +161,7 @@ sqlite.exec(`
     access_price_cents INTEGER,
     auto_rules TEXT,
     external_sync_target TEXT DEFAULT 'NONE',
+    default_layout TEXT,
     visibility TEXT NOT NULL DEFAULT 'PRIVATE',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -277,6 +278,7 @@ ensureColumn("entry_connections", "metadata", "TEXT DEFAULT '{}'");
 
 ensureColumn("smart_lists", "parent_id", "TEXT REFERENCES smart_lists(id) ON DELETE CASCADE");
 ensureColumn("smart_lists", "position_index", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("smart_lists", "default_layout", "TEXT");
 
 // Normalize legacy 'films' and 'music' board auto_rules to strict /media/* prefixes
 try {

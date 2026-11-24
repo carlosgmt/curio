@@ -245,9 +245,11 @@ export function detectNormalizedArchetype(card: CardData, overrideArchetype?: st
     raw === "cosmetics" ||
     raw === "electronics" ||
     raw === "watch" ||
+    raw === "furniture" ||
     coreType === "PRODUCT" ||
     typePath.startsWith("/product") ||
-    typePath.startsWith("/style")
+    typePath.startsWith("/style") ||
+    /\b(furniture|sofa|chair|table|lamp|desk|rug|decor|appliance|camera|tripod|espresso)\b/.test(probe)
   ) {
     return "archival_box";
   }
@@ -289,6 +291,7 @@ export interface SpineMeta {
   creator: string;
   yearOrPrice: string;
   subtitle: string;
+  isWishlist?: boolean;
 }
 
 export function formatSpineMeta(card: CardData): SpineMeta {
@@ -314,5 +317,5 @@ export function formatSpineMeta(card: CardData): SpineMeta {
   }
 
   const subtitle = (e?.summary || card.save.personalNotes || "").trim().slice(0, 140);
-  return { title, creator, yearOrPrice, subtitle };
+  return { title, creator, yearOrPrice, subtitle, isWishlist: Boolean(card.save.wishlist) };
 }

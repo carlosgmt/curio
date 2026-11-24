@@ -349,6 +349,50 @@ export async function GET(
       }
     }
 
+    // Read-through cache & proxy for Purchase Hub media (/api/v1/media/purchase-hub/<filename>)
+    if (
+      !fs.existsSync(/*turbopackIgnore: true*/ targetPath) &&
+      sanitizedSlug.length === 2 &&
+      sanitizedSlug[0] === "purchase-hub"
+    ) {
+      const filename = sanitizedSlug[1];
+      const hubApiBase = (process.env.PURCHASE_HUB_API_URL || "http://127.0.0.1:8760").replace(
+        /\/+$/,
+        ""
+      );
+      const upstreamUrl = `${hubApiBase}/api/images/${encodeURIComponent(filename)}`;
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const upstreamRes = await fetch(upstreamUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (upstreamRes.ok) {
+          const bytes = Buffer.from(await upstreamRes.arrayBuffer());
+          try {
+            await fs.promises.mkdir(/*turbopackIgnore: true*/ path.dirname(targetPath), {
+              recursive: true,
+            });
+            await fs.promises.writeFile(/*turbopackIgnore: true*/ targetPath, bytes);
+          } catch {
+            const ext = path.extname(filename).toLowerCase();
+            return new NextResponse(bytes, {
+              status: 200,
+              headers: {
+                "Content-Type":
+                  upstreamRes.headers.get("content-type") || MIME_MAP[ext] || "image/jpeg",
+                "Content-Length": bytes.length.toString(),
+                "Cache-Control": cacheControl,
+              },
+            });
+          }
+        }
+      } catch {
+        // Purchase Hub temporarily unreachable; fall through to 404 if uncached
+      }
+    }
+
     // Legacy single-filename fallback to public/uploads
     if (!fs.existsSync(/*turbopackIgnore: true*/ targetPath) && sanitizedSlug.length === 1) {
       const legacyDir = path.join(process.cwd(), "public", "uploads");

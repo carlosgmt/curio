@@ -1,5 +1,7 @@
-import { db, globalEntities, userSaves } from "@/db";
+import { db, globalEntities, smartLists, users, userSaves } from "@/db";
 import { eq, and } from "drizzle-orm";
+import { ensureHierarchicalBoard, type SyncAdapter, type SyncOptions, type SyncRunResult } from "./engine";
+import { registerSyncAdapter } from "./registry";
 import { generateEntityKey } from "../ingest/cascade";
 import { computeIdentityFingerprint } from "../ingest/resolution";
 import { normalizeEntityString } from "../enrichment/universalDiscovery";
@@ -350,3 +352,79 @@ export async function syncGoodreadsRss(
     items: allItems,
   };
 }
+
+export const goodreadsSyncAdapter: SyncAdapter<
+  SyncOptions & { goodreadsUserId?: string; shelves?: GoodreadsShelf[] }
+> = {
+  sourceId: "goodreads",
+  displayName: "Goodreads RSS (Books)",
+  supportsWishlistPromotion: false,
+  supportsPruning: false,
+  async getStatus(userId: string) {
+    const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
+    return {
+      configured: Boolean(tokens.goodreadsUserId),
+      goodreadsUserId: tokens.goodreadsUserId || null,
+      lastSyncedAt: tokens.lastFeedSyncAt || null,
+    };
+  },
+  async run(userId: string, options): Promise<SyncRunResult> {
+    let grId = typeof options?.goodreadsUserId === "string" ? options.goodreadsUserId.trim() : "";
+    if (!grId) {
+      const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
+      grId = String(tokens.goodreadsUserId || "").trim();
+    }
+    if (!grId) {
+      return {
+        sourceId: "goodreads",
+        synced: false,
+        skippedReason: "not_configured",
+        recordsProcessed: 0,
+        createdSaves: 0,
+        updatedSaves: 0,
+        promotedFromWishlist: 0,
+        prunedSaves: 0,
+        prunedEntities: 0,
+        connectionsSynced: 0,
+        boardsCreated: 0,
+        digest: "",
+        syncedAt: new Date().toISOString(),
+      };
+    }
+
+    const res = await syncGoodreadsRss(grId, userId, {
+      fetchFn: options?.fetchFn as typeof fetch | undefined,
+      shelves: options?.shelves,
+    });
+    const boardRes = await ensureHierarchicalBoard(userId, {
+      rootSlug: "books",
+      rootTitle: "Books",
+      rootDefaultLayout: "shelf",
+      autoRules: { coreType: "BOOK" },
+    });
+    await db
+      .update(smartLists)
+      .set({ defaultLayout: "shelf" })
+      .where(and(eq(smartLists.id, boardRes.rootId)));
+
+    return {
+      sourceId: "goodreads",
+      synced: true,
+      recordsProcessed: res.fetchedCount,
+      createdSaves: res.createdSaves,
+      updatedSaves: res.updatedSaves,
+      promotedFromWishlist: 0,
+      prunedSaves: 0,
+      prunedEntities: 0,
+      connectionsSynced: 0,
+      boardsCreated: boardRes.createdCount,
+      digest: `gr-${res.goodreadsUserId}-${res.fetchedCount}`,
+      syncedAt: new Date().toISOString(),
+      meta: { goodreadsUserId: res.goodreadsUserId },
+    };
+  },
+};
+
+registerSyncAdapter(goodreadsSyncAdapter);

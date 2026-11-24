@@ -1,5 +1,7 @@
-import { db, globalEntities, userSaves } from "@/db";
+import { db, globalEntities, smartLists, users, userSaves } from "@/db";
 import { eq, and, or } from "drizzle-orm";
+import { ensureHierarchicalBoard, type SyncAdapter, type SyncOptions, type SyncRunResult } from "./engine";
+import { registerSyncAdapter } from "./registry";
 import { generateEntityKey } from "../ingest/cascade";
 import { computeIdentityFingerprint } from "../ingest/resolution";
 import { normalizeEntityString } from "../enrichment/universalDiscovery";
@@ -339,3 +341,79 @@ export async function syncLetterboxdRss(
     items: parsedItems,
   };
 }
+
+export const letterboxdSyncAdapter: SyncAdapter<
+  SyncOptions & { username?: string; hydrateMissingDirectors?: boolean }
+> = {
+  sourceId: "letterboxd",
+  displayName: "Letterboxd RSS (Films)",
+  supportsWishlistPromotion: false,
+  supportsPruning: false,
+  async getStatus(userId: string) {
+    const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
+    return {
+      configured: Boolean(tokens.letterboxdUsername),
+      letterboxdUsername: tokens.letterboxdUsername || null,
+      lastSyncedAt: tokens.lastFeedSyncAt || null,
+    };
+  },
+  async run(userId: string, options): Promise<SyncRunResult> {
+    let username = typeof options?.username === "string" ? options.username.trim() : "";
+    if (!username) {
+      const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
+      username = String(tokens.letterboxdUsername || "").trim();
+    }
+    if (!username) {
+      return {
+        sourceId: "letterboxd",
+        synced: false,
+        skippedReason: "not_configured",
+        recordsProcessed: 0,
+        createdSaves: 0,
+        updatedSaves: 0,
+        promotedFromWishlist: 0,
+        prunedSaves: 0,
+        prunedEntities: 0,
+        connectionsSynced: 0,
+        boardsCreated: 0,
+        digest: "",
+        syncedAt: new Date().toISOString(),
+      };
+    }
+
+    const res = await syncLetterboxdRss(username, userId, {
+      fetchFn: options?.fetchFn as typeof fetch | undefined,
+      hydrateMissingDirectors: options?.hydrateMissingDirectors,
+    });
+    const boardRes = await ensureHierarchicalBoard(userId, {
+      rootSlug: "films",
+      rootTitle: "Films",
+      rootDefaultLayout: "shelf",
+      autoRules: { typePathPrefix: "/media/film" },
+    });
+    await db
+      .update(smartLists)
+      .set({ defaultLayout: "shelf" })
+      .where(and(eq(smartLists.id, boardRes.rootId)));
+
+    return {
+      sourceId: "letterboxd",
+      synced: true,
+      recordsProcessed: res.fetchedCount,
+      createdSaves: res.createdSaves,
+      updatedSaves: res.updatedSaves,
+      promotedFromWishlist: 0,
+      prunedSaves: 0,
+      prunedEntities: 0,
+      connectionsSynced: 0,
+      boardsCreated: boardRes.createdCount,
+      digest: `lb-${res.username}-${res.fetchedCount}`,
+      syncedAt: new Date().toISOString(),
+      meta: { username: res.username },
+    };
+  },
+};
+
+registerSyncAdapter(letterboxdSyncAdapter);

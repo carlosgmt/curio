@@ -250,6 +250,7 @@ export const smartLists = sqliteTable(
       maxPriceCents?: number;
     }>(),
     externalSyncTarget: text("external_sync_target").default("NONE"),
+    defaultLayout: text("default_layout"),
     visibility: text("visibility").default("PRIVATE").notNull(),
     createdAt: text("created_at")
       .notNull()

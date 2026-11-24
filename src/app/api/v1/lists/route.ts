@@ -10,6 +10,7 @@ const createListSchema = z.object({
   parentId: z.string().nullable().optional(),
   positionIndex: z.number().int().optional(),
   visibility: z.enum(["PRIVATE", "UNLISTED", "PUBLIC"]).optional(),
+  defaultLayout: z.enum(["masonry", "grid", "timeline", "shelf"]).nullable().optional(),
   autoRules: z
     .object({
       coreType: z.string().optional(),

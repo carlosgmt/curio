@@ -1,0 +1,460 @@
+import {
+  getAdapterSyncCacheEntry,
+  runSyncAdapter,
+  type SyncAdapter,
+  type SyncBoardTarget,
+  type SyncFetchFn,
+  type SyncOptions,
+  type SyncRecord,
+  type SyncRunResult,
+} from "./engine";
+import { registerSyncAdapter } from "./registry";
+
+export interface PurchaseHubSyncItem {
+  product_id: string;
+  canonical_name: string;
+  brand?: string | null;
+  model_number?: string | null;
+  category?: string | null;
+  item_kind?: string | null;
+  owner_scope?: string | null;
+  ownership_status?: string | null;
+  collections?: string[] | null;
+  tags?: string[] | null;
+  location?: string | null;
+  manual_url?: string | null;
+  has_manual?: boolean;
+  image_url?: string | null;
+  image_filename?: string | null;
+  source_url?: string | null;
+  first_bought?: string | null;
+  last_bought?: string | null;
+  native_currency?: string | null;
+  total_spent?: number | null;
+  total_spent_eur?: number | null;
+  warranty_until?: string | null;
+  retailers?: string | null;
+  notes?: string | null;
+  closet_exported?: boolean;
+  updated_at?: string | null;
+}
+
+export interface PurchaseHubSyncOptions extends SyncOptions {
+  purchaseHubApiUrl?: string;
+  timeoutMs?: number;
+  ownerScopes?: string[];
+}
+
+export function getPurchaseHubApiBaseUrl(): string {
+  return (process.env.PURCHASE_HUB_API_URL || "http://127.0.0.1:8760").replace(
+    /\/+$/,
+    ""
+  );
+}
+
+function slugifySegment(raw: string): string {
+  return raw
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, " ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "other";
+}
+
+export function classifyPurchaseHubItem(item: PurchaseHubSyncItem): {
+  skip: boolean;
+  coreType: string;
+  typePath: string;
+  boards: SyncBoardTarget[];
+} {
+  const category = (item.category || "Other").trim();
+  const catLower = category.toLowerCase();
+  if (item.closet_exported || catLower === "apparel") {
+    return { skip: true, coreType: "PRODUCT", typePath: "/product/garment", boards: [] };
+  }
+
+  const kitSection =
+    Array.isArray(item.collections) && item.collections.length > 0
+      ? String(item.collections[0]).trim() || null
+      : null;
+
+  if (catLower === "books & media" || catLower === "books and media") {
+    const probe = `${item.canonical_name} ${item.brand || ""} ${(item.tags || []).join(" ")}`.toLowerCase();
+    if (/\b(vinyl|lp|album|turntable|record|soundtrack cd)\b/.test(probe)) {
+      return {
+        skip: false,
+        coreType: "MEDIA",
+        typePath: "/media/music/album",
+        boards: [
+          {
+            rootSlug: "music",
+            rootTitle: "Music",
+            rootDefaultLayout: "shelf",
+            sectionHeader: kitSection,
+            autoRules: { typePathPrefix: "/media/music" },
+          },
+        ],
+      };
+    }
+    if (/\b(blu-?ray|dvd|4k uhd|film|movie|criterion)\b/.test(probe)) {
+      return {
+        skip: false,
+        coreType: "MEDIA",
+        typePath: "/media/film",
+        boards: [
+          {
+            rootSlug: "films",
+            rootTitle: "Films",
+            rootDefaultLayout: "shelf",
+            sectionHeader: kitSection,
+            autoRules: { typePathPrefix: "/media/film" },
+          },
+        ],
+      };
+    }
+    return {
+      skip: false,
+      coreType: "BOOK",
+      typePath: "/product/book",
+      boards: [
+        {
+          rootSlug: "books",
+          rootTitle: "Books",
+          rootDefaultLayout: "shelf",
+          sectionHeader: kitSection,
+          autoRules: { coreType: "BOOK" },
+        },
+      ],
+    };
+  }
+
+  let typePath = "/product";
+  if (catLower === "furniture") {
+    typePath = "/product/furniture";
+  } else if (catLower === "electronics" || catLower === "office & tech") {
+    typePath = "/product/electronics";
+  }
+
+  const catSlug = slugifySegment(category);
+  return {
+    skip: false,
+    coreType: "PRODUCT",
+    typePath,
+    boards: [
+      {
+        rootSlug: "my-stuff",
+        rootTitle: "My Stuff",
+        rootDescription: "Owned durable objects synced from Purchase Hub",
+        rootDefaultLayout: "shelf",
+        subSlug: `my-stuff-${catSlug}`,
+        subTitle: category,
+        subDescription: `Owned ${category} items synced from Purchase Hub`,
+        subDefaultLayout: "shelf",
+        sectionHeader: kitSection,
+      },
+    ],
+  };
+}
+
+export function mapPurchaseHubItemToSyncRecord(
+  item: PurchaseHubSyncItem
+): SyncRecord | null {
+  const cls = classifyPurchaseHubItem(item);
+  if (cls.skip) return null;
+
+  const entityKey = `purchase-hub:${item.product_id}`;
+  const priceCents =
+    typeof item.total_spent === "number" && item.total_spent > 0
+      ? Math.round(item.total_spent * 100)
+      : null;
+  const currency = (item.native_currency || "CHF").toUpperCase();
+  const canonicalUrl =
+    item.source_url && /^https?:\/\//i.test(item.source_url.trim())
+      ? item.source_url.trim()
+      : `https://mini.orca-banjo.ts.net/my-stuff/#product-${item.product_id}`;
+
+  const heroImageUrl = item.image_filename
+    ? `/curio/api/v1/media/purchase-hub/${encodeURIComponent(item.image_filename)}`
+    : item.image_url && /^https?:\/\//i.test(item.image_url)
+    ? item.image_url
+    : null;
+
+  const summaryParts = [
+    item.brand,
+    item.model_number,
+    item.retailers,
+    item.location ? `Location: ${item.location}` : null,
+  ].filter(Boolean);
+
+  const tags = [
+    ...(Array.isArray(item.collections) ? item.collections : []),
+    ...(Array.isArray(item.tags) ? item.tags : []),
+    item.owner_scope ? `owner:${item.owner_scope}` : null,
+  ].filter((t): t is string => Boolean(t && t.trim()));
+
+  return {
+    externalId: item.product_id,
+    entityKey,
+    canonicalExternalId: entityKey,
+    canonicalUrl,
+    coreType: cls.coreType,
+    typePath: cls.typePath,
+    title: item.canonical_name,
+    brandOrCreator: item.brand ?? null,
+    modelNumber: item.model_number ?? null,
+    summary: summaryParts.join(" · ") || null,
+    heroImageUrl,
+    priceCents,
+    currency,
+    wishlist: false,
+    tags,
+    personalNotes: item.notes?.trim() || null,
+    coreStructuredData: {
+      brand: item.brand ?? undefined,
+      modelNumber: item.model_number ?? undefined,
+      retailer: item.retailers ?? undefined,
+      purchaseDate: item.last_bought ?? item.first_bought ?? undefined,
+      warrantyUntil: item.warranty_until ?? undefined,
+    },
+    extendedAttributes: {
+      source: "purchase-hub",
+      purchaseHubProductId: item.product_id,
+      ownerScope: item.owner_scope || "home",
+      category: item.category || "Other",
+      collections: item.collections || [],
+      retailers: item.retailers ?? null,
+      firstBought: item.first_bought ?? null,
+      lastBought: item.last_bought ?? null,
+      warrantyUntil: item.warranty_until ?? null,
+      location: item.location ?? null,
+      hasManual: Boolean(item.has_manual),
+      manualUrl: item.manual_url ?? null,
+      modelNumber: item.model_number ?? null,
+    },
+    sourceLink: item.source_url
+      ? {
+          sellerName: item.retailers || "Merchant",
+          sourceUrl: item.source_url,
+          priceCents,
+          currency,
+        }
+      : null,
+    boards: cls.boards,
+  };
+}
+
+export const purchaseHubAdapter: SyncAdapter<PurchaseHubSyncOptions> = {
+  sourceId: "purchase-hub",
+  displayName: "Purchase Hub (My Stuff)",
+  supportsWishlistPromotion: true,
+  supportsPruning: true,
+  keyPrefix: "purchase-hub:",
+  getStatus(userId: string) {
+    return {
+      configuredUrl: getPurchaseHubApiBaseUrl(),
+      ...getAdapterSyncCacheEntry("purchase-hub", userId),
+    };
+  },
+  async fetchSnapshot(_userId: string, options?: PurchaseHubSyncOptions) {
+    const fetchFn: SyncFetchFn = options?.fetchFn ?? fetch;
+    const baseUrl = (options?.purchaseHubApiUrl || getPurchaseHubApiBaseUrl()).replace(
+      /\/+$/,
+      ""
+    );
+    const timeoutMs = options?.timeoutMs ?? 6000;
+    const scopes =
+      options?.ownerScopes && options.ownerScopes.length > 0
+        ? options.ownerScopes.join(",")
+        : "home,personal";
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let payload: { digest?: string; items?: PurchaseHubSyncItem[] };
+    try {
+      const res = await fetchFn(
+        `${baseUrl}/api/sync/curio?owner_scopes=${encodeURIComponent(scopes)}`,
+        {
+          signal: controller.signal,
+          headers: { Accept: "application/json" },
+        }
+      );
+      if (!res.ok) {
+        throw new Error(`Purchase Hub API returned ${res.status}`);
+      }
+      payload = (await res.json()) as { digest?: string; items?: PurchaseHubSyncItem[] };
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const rawItems = Array.isArray(payload.items) ? payload.items : [];
+    const records: SyncRecord[] = [];
+    let skippedClosetOrApparel = 0;
+
+    for (const item of rawItems) {
+      if (!item || !item.product_id) continue;
+      const mapped = mapPurchaseHubItemToSyncRecord(item);
+      if (!mapped) {
+        skippedClosetOrApparel++;
+        continue;
+      }
+      records.push(mapped);
+    }
+
+    return {
+      digest: payload.digest || `ph-${records.length}`,
+      records,
+      meta: {
+        upstreamCount: rawItems.length,
+        skippedClosetOrApparel,
+      },
+    };
+  },
+};
+
+registerSyncAdapter(purchaseHubAdapter);
+
+export async function syncPurchaseHubWithCurio(
+  userId: string,
+  options?: PurchaseHubSyncOptions
+): Promise<SyncRunResult> {
+  return runSyncAdapter(userId, purchaseHubAdapter, options);
+}
+
+export function getPurchaseHubSyncStatus(userId: string): {
+  configuredUrl: string;
+  lastSyncedAt: string | null;
+  digest: string | null;
+  lastResult: SyncRunResult | null;
+} {
+  return {
+    configuredUrl: getPurchaseHubApiBaseUrl(),
+    ...getAdapterSyncCacheEntry("purchase-hub", userId),
+  };
+}
+
+export function extractPurchaseHubProductId(
+  ...candidates: Array<string | null | undefined>
+): string | null {
+  for (const c of candidates) {
+    if (!c || typeof c !== "string") continue;
+    const m = c.trim().match(/^(?:purchase-hub:)?(prd_[A-Za-z0-9_-]+)$/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+export async function syncCurioSaveEditToPurchaseHub(
+  identifiers: {
+    entityKey?: string | null;
+    canonicalExternalId?: string | null;
+    extendedAttributes?: Record<string, unknown> | null;
+  },
+  updates: {
+    title?: string | null;
+    brandOrCreator?: string | null;
+    personalNotes?: string | null;
+  },
+  options?: { fetchFn?: SyncFetchFn; purchaseHubApiUrl?: string }
+): Promise<boolean> {
+  const pid = extractPurchaseHubProductId(
+    typeof identifiers.extendedAttributes?.purchaseHubProductId === "string"
+      ? identifiers.extendedAttributes.purchaseHubProductId
+      : null,
+    identifiers.canonicalExternalId,
+    identifiers.entityKey
+  );
+  if (!pid) return false;
+
+  const payload: Record<string, unknown> = {};
+  if (updates.title !== undefined && updates.title !== null && updates.title.trim()) {
+    payload.canonical_name = updates.title.trim();
+  }
+  if (updates.brandOrCreator !== undefined) {
+    payload.brand = updates.brandOrCreator ?? "";
+  }
+  if (updates.personalNotes !== undefined) {
+    payload.notes = updates.personalNotes ?? "";
+  }
+  if (Object.keys(payload).length === 0) return false;
+
+  const fetchFn: SyncFetchFn = options?.fetchFn ?? fetch;
+  const baseUrl = (options?.purchaseHubApiUrl || getPurchaseHubApiBaseUrl()).replace(
+    /\/+$/,
+    ""
+  );
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const res = await fetchFn(`${baseUrl}/api/products/${encodeURIComponent(pid)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function createPurchaseHubItemFromWishlist(
+  payload: {
+    canonicalName: string;
+    brand?: string | null;
+    price?: number | null;
+    currency?: string | null;
+    orderDate?: string | null;
+    retailer?: string | null;
+    category?: string | null;
+    ownerScope?: "home" | "personal";
+    collections?: string[];
+    location?: string | null;
+    imageUrl?: string | null;
+    sourceUrl?: string | null;
+    notes?: string | null;
+  },
+  options?: { fetchFn?: SyncFetchFn; purchaseHubApiUrl?: string; timeoutMs?: number }
+): Promise<{ productId: string; orderId?: string; product?: Record<string, unknown> | null }> {
+  const fetchFn: SyncFetchFn = options?.fetchFn ?? fetch;
+  const baseUrl = (options?.purchaseHubApiUrl || getPurchaseHubApiBaseUrl()).replace(
+    /\/+$/,
+    ""
+  );
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? 5000);
+  try {
+    const res = await fetchFn(`${baseUrl}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        canonical_name: payload.canonicalName,
+        brand: payload.brand ?? null,
+        price: payload.price ?? 0,
+        currency: payload.currency || "CHF",
+        order_date: payload.orderDate || new Date().toISOString().slice(0, 10),
+        retailer: payload.retailer || "Manual",
+        category: payload.category || "Other",
+        item_kind: "durable",
+        owner_scope: payload.ownerScope || "home",
+        collections: payload.collections || [],
+        location: payload.location ?? null,
+        image_url: payload.imageUrl ?? null,
+        source_url: payload.sourceUrl ?? null,
+        notes: payload.notes ?? null,
+      }),
+      signal: controller.signal,
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, any>;
+    if (!res.ok || !data.product_id) {
+      throw new Error(data.error || `Purchase Hub returned ${res.status}`);
+    }
+    return {
+      productId: String(data.product_id),
+      orderId: data.order_id ? String(data.order_id) : undefined,
+      product: data.product ?? null,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}

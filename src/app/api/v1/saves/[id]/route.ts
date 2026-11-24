@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSaveDetails, updateSaveDetails, deleteSave } from "@/lib/saves/service";
 import { requireAuth, AuthError } from "@/lib/auth/service";
 import { syncCurioSaveEditToCloset } from "@/lib/sync/closet";
+import { syncCurioSaveEditToPurchaseHub } from "@/lib/sync/purchaseHub";
 
 const updateSaveSchema = z.object({
   privateTitle: z.string().optional().nullable(),
@@ -93,6 +94,27 @@ export async function PATCH(
             : undefined,
       }).catch(() => {});
     }
+
+    // Best-effort write-through to Purchase Hub if linked to a purchase-hub product
+    const extAttrs =
+      (updated.entity?.extendedAttributes as Record<string, unknown> | undefined) ??
+      (details.entity?.extendedAttributes as Record<string, unknown> | undefined) ??
+      null;
+    await syncCurioSaveEditToPurchaseHub(
+      {
+        entityKey: entityKey ?? null,
+        canonicalExternalId: updated.entity?.canonicalExternalId ?? details.entity?.canonicalExternalId ?? null,
+        extendedAttributes: extAttrs,
+      },
+      {
+        title: parsed.data.title ?? parsed.data.privateTitle,
+        brandOrCreator: parsed.data.brandOrCreator,
+        personalNotes:
+          parsed.data.personalNotes !== undefined
+            ? parsed.data.personalNotes ?? ""
+            : undefined,
+      }
+    ).catch(() => {});
 
     return NextResponse.json({ success: true, ...updated });
   } catch (error: any) {

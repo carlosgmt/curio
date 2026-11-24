@@ -16,8 +16,9 @@ services:
       - MEDIA_PATH=/data/media
       - CURIO_ALLOW_ANON=false
       - CLOSET_API_URL=http://host.docker.internal:8710
+      - PURCHASE_HUB_API_URL=http://host.docker.internal:8760
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-      - REBUILD_VERSION=4
+      - REBUILD_VERSION=5
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

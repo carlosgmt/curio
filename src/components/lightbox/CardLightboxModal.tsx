@@ -99,9 +99,66 @@ export interface CardLightboxModalProps {
   suppressEscape?: boolean;
   onConnect?: (card: CardData) => void;
   onUnlink?: (connectionId: string) => void;
-  onCardUpdated?: (updatedSave: any) => void;
+  onCardUpdated?: (updatedSave: any, updatedEntity?: any) => void;
   onCardDeleted?: (saveId: string) => void;
   onListUpdated?: () => void;
+  onNavigateToBoard?: (slug: string) => void;
+}
+
+const PURCHASE_HUB_CATEGORIES = [
+  "Furniture",
+  "Electronics",
+  "Home & Kitchen",
+  "Appliances",
+  "Tools & DIY",
+  "Sports & Outdoors",
+  "Office & Tech",
+  "Books & Media",
+  "Other",
+] as const;
+
+function guessPurchaseHubCategory(card: CardData | null): string {
+  if (!card) return "Other";
+  const ext = card.entity?.extendedAttributes as Record<string, unknown> | null | undefined;
+  const existingCat = typeof ext?.category === "string" ? ext.category : "";
+  if (existingCat && (PURCHASE_HUB_CATEGORIES as readonly string[]).includes(existingCat)) {
+    return existingCat;
+  }
+  const tp = (card.entity?.typePath || card.save.typePath || "").toLowerCase();
+  const titleText = (card.save.privateTitle || card.entity?.title || "").toLowerCase();
+  const tagsText = (card.save.autoTags || []).join(" ").toLowerCase();
+  const combined = `${tp} ${titleText} ${tagsText}`;
+  if (/furniture|chair|sofa|table|desk|lamp|shelf|cabinet|bed|rug|stool|bench|mirror/.test(combined)) {
+    return "Furniture";
+  }
+  if (/book|film|movie|vinyl|album|music|videogame|game/.test(combined)) {
+    return "Books & Media";
+  }
+  if (/electronic|camera|headphone|speaker|monitor|phone|laptop|tablet|keyboard|mouse/.test(combined)) {
+    return "Electronics";
+  }
+  if (/kitchen|coffee|espresso|pan|pot|mug|plate|glass/.test(combined)) {
+    return "Home & Kitchen";
+  }
+  if (/appliance|vacuum|washer|dryer|fridge|oven|blender/.test(combined)) {
+    return "Appliances";
+  }
+  if (/tool|drill|saw|wrench|hammer/.test(combined)) {
+    return "Tools & DIY";
+  }
+  if (/bike|camp|tent|hike|ski|sport|fitness/.test(combined)) {
+    return "Sports & Outdoors";
+  }
+  if (/office|notebook|pen|dock/.test(combined)) {
+    return "Office & Tech";
+  }
+  return "Other";
+}
+
+function isSafeHttpOrRelativeUrl(url: unknown): url is string {
+  if (typeof url !== "string") return false;
+  const trimmed = url.trim();
+  return trimmed.startsWith("https://") || trimmed.startsWith("http://") || trimmed.startsWith("/");
 }
 
 type ArchetypeOption = {
@@ -232,6 +289,7 @@ export function CardLightboxModal({
   onCardUpdated,
   onCardDeleted,
   onListUpdated,
+  onNavigateToBoard,
 }: CardLightboxModalProps) {
   const [title, setTitle] = useState("");
   const [brandOrCreator, setBrandOrCreator] = useState("");
@@ -257,6 +315,22 @@ export function CardLightboxModal({
     setWished(Boolean(card?.save.wishlist));
   }, [card?.save.id, card?.save.wishlist]);
   const [connections, setConnections] = useState<ConnectedItem[]>([]);
+  const [isMarkBoughtOpen, setIsMarkBoughtOpen] = useState(false);
+  const [boughtPrice, setBoughtPrice] = useState("");
+  const [boughtCurrency, setBoughtCurrency] = useState("CHF");
+  const [boughtDate, setBoughtDate] = useState("");
+  const [boughtRetailer, setBoughtRetailer] = useState("");
+  const [boughtCategory, setBoughtCategory] = useState("Other");
+  const [boughtOwnerScope, setBoughtOwnerScope] = useState<"home" | "personal">("home");
+  const [boughtLocation, setBoughtLocation] = useState("");
+  const [boughtLogToPurchaseHub, setBoughtLogToPurchaseHub] = useState(true);
+  const [isMarkingBought, setIsMarkingBought] = useState(false);
+  const [markBoughtError, setMarkBoughtError] = useState<string | null>(null);
+  const [markBoughtResult, setMarkBoughtResult] = useState<{
+    targetBoardSlug: string;
+    purchaseHubSynced: boolean;
+    purchaseHubError?: string;
+  } | null>(null);
 
   const loadBoardMemberships = useCallback(
     (targetCard: CardData) => {
@@ -338,6 +412,9 @@ export function CardLightboxModal({
   useEffect(() => {
     if (!isOpen || !card) {
       initializedKeyRef.current = null;
+      setIsMarkBoughtOpen(false);
+      setMarkBoughtError(null);
+      setMarkBoughtResult(null);
       return;
     }
     const initKey = `${card.save.id}:${readOnly ? "ro" : "rw"}`;
@@ -356,6 +433,25 @@ export function CardLightboxModal({
     setHasChangedArchetype(false);
     setActiveArchetype(detectInitialArchetypeId(card));
     setPresentation(initialPresentation);
+    setIsMarkBoughtOpen(false);
+    setMarkBoughtError(null);
+    setMarkBoughtResult(null);
+    const ext = card.entity?.extendedAttributes as Record<string, unknown> | null | undefined;
+    const primarySource = card.primarySource as Record<string, unknown> | null | undefined;
+    setBoughtPrice(
+      typeof card.entity?.priceCents === "number" && card.entity.priceCents > 0
+        ? (card.entity.priceCents / 100).toFixed(2)
+        : ""
+    );
+    setBoughtCurrency((card.entity?.currency || "CHF").toUpperCase());
+    setBoughtDate(new Date().toISOString().slice(0, 10));
+    setBoughtRetailer(
+      typeof primarySource?.merchantName === "string" ? primarySource.merchantName : ""
+    );
+    setBoughtCategory(guessPurchaseHubCategory(card));
+    setBoughtOwnerScope(ext?.ownerScope === "personal" ? "personal" : "home");
+    setBoughtLocation(typeof ext?.location === "string" ? ext.location : "");
+    setBoughtLogToPurchaseHub(true);
     loadBoardMemberships(card);
 
     // Load connections if not already hydrated on card
@@ -434,13 +530,68 @@ export function CardLightboxModal({
         if (card.entity && updated.entity) {
           Object.assign(card.entity, updated.entity);
         }
-        onCardUpdated?.({ ...updated.save, entity: updated.entity });
+        onCardUpdated?.(updated.save, updated.entity);
         onClose();
       }
     } catch (err) {
       console.error("Failed to save card changes:", err);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleMarkBoughtSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!card) return;
+    const trimmedPrice = boughtPrice.trim();
+    const numericPrice = trimmedPrice === "" ? null : Number(trimmedPrice);
+    if (numericPrice !== null && (Number.isNaN(numericPrice) || numericPrice < 0)) {
+      setMarkBoughtError("Enter a valid non-negative price.");
+      return;
+    }
+    setIsMarkingBought(true);
+    setMarkBoughtError(null);
+    try {
+      const res = await apiFetch(`/api/v1/saves/${card.save.id}/mark-bought`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          price: numericPrice,
+          currency: (boughtCurrency.trim() || "CHF").toUpperCase(),
+          orderDate: boughtDate.trim() || undefined,
+          retailer: boughtRetailer.trim() || undefined,
+          category: boughtCategory || "Other",
+          ownerScope: boughtOwnerScope,
+          location: boughtLocation.trim() || undefined,
+          notes: personalNotes.trim() || undefined,
+          logToPurchaseHub: boughtLogToPurchaseHub,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMarkBoughtError(data?.error || "Failed to mark item as bought.");
+        return;
+      }
+      setWished(false);
+      setIsMarkBoughtOpen(false);
+      setMarkBoughtResult({
+        targetBoardSlug: data.targetBoardSlug || "my-stuff",
+        purchaseHubSynced: Boolean(data.purchaseHubSynced),
+        purchaseHubError: data.purchaseHubError,
+      });
+      if (card.entity && data.entity) {
+        Object.assign(card.entity, data.entity);
+      }
+      onCardUpdated?.(
+        data.save || { ...card.save, wishlist: false, hasConvertedPurchase: true },
+        data.entity
+      );
+      onListUpdated?.();
+      loadBoardMemberships(card);
+    } catch {
+      setMarkBoughtError("Network error while promoting item.");
+    } finally {
+      setIsMarkingBought(false);
     }
   };
 
@@ -724,6 +875,183 @@ export function CardLightboxModal({
 
   const rightPane = (
     <div className="md:col-span-6 flex flex-col p-4 sm:p-6 md:overflow-y-auto overscroll-contain space-y-6">
+      {markBoughtResult && (
+        <div
+          data-testid="mark-bought-confirmation"
+          className="p-3 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/80 dark:bg-emerald-950/30 text-xs flex flex-wrap items-center justify-between gap-2"
+        >
+          <div className="text-emerald-900 dark:text-emerald-200">
+            <span className="font-semibold">Promoted to My Stuff.</span>{" "}
+            <span className="text-emerald-700 dark:text-emerald-300">
+              {markBoughtResult.purchaseHubSynced
+                ? "Logged in Purchase Hub."
+                : markBoughtResult.purchaseHubError
+                ? `Saved in Curio (Purchase Hub note: ${markBoughtResult.purchaseHubError}).`
+                : "Saved in Curio."}
+            </span>
+          </div>
+          {onNavigateToBoard && (
+            <button
+              type="button"
+              data-testid="mark-bought-open-board"
+              onClick={() => onNavigateToBoard(markBoughtResult.targetBoardSlug)}
+              className="px-2.5 py-1 rounded-xl font-semibold bg-emerald-700 text-white hover:bg-emerald-800 transition cursor-pointer"
+            >
+              Open board →
+            </button>
+          )}
+        </div>
+      )}
+
+      {!readOnly && isMarkBoughtOpen && (
+        <form
+          onSubmit={handleMarkBoughtSubmit}
+          data-testid="mark-bought-form"
+          className="p-3.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 space-y-3 text-xs"
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-wider font-bold text-neutral-500">
+              Bought it → Promote to My Stuff
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsMarkBoughtOpen(false)}
+              className="text-[11px] text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+          {markBoughtError && (
+            <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+              {markBoughtError}
+            </p>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Price
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                data-testid="mark-bought-price"
+                value={boughtPrice}
+                onChange={(e) => setBoughtPrice(e.target.value)}
+                placeholder="0.00"
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Currency
+              </label>
+              <input
+                type="text"
+                maxLength={3}
+                value={boughtCurrency}
+                onChange={(e) => setBoughtCurrency(e.target.value.toUpperCase())}
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 font-mono uppercase focus:outline-none"
+              />
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Order Date
+              </label>
+              <input
+                type="date"
+                value={boughtDate}
+                onChange={(e) => setBoughtDate(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Retailer / Merchant
+              </label>
+              <input
+                type="text"
+                data-testid="mark-bought-retailer"
+                value={boughtRetailer}
+                onChange={(e) => setBoughtRetailer(e.target.value)}
+                placeholder="e.g. Vitra, Galaxus..."
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Category
+              </label>
+              <select
+                data-testid="mark-bought-category"
+                value={boughtCategory}
+                onChange={(e) => setBoughtCategory(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+              >
+                {PURCHASE_HUB_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Owner
+              </label>
+              <select
+                value={boughtOwnerScope}
+                onChange={(e) => setBoughtOwnerScope(e.target.value === "personal" ? "personal" : "home")}
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+              >
+                <option value="home">home</option>
+                <option value="personal">personal</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1">
+                Room / Location (optional)
+              </label>
+              <input
+                type="text"
+                value={boughtLocation}
+                onChange={(e) => setBoughtLocation(e.target.value)}
+                placeholder="e.g. Living room, Study"
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <label className="inline-flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300 cursor-pointer">
+              <input
+                type="checkbox"
+                data-testid="mark-bought-log-ph"
+                checked={boughtLogToPurchaseHub}
+                onChange={(e) => setBoughtLogToPurchaseHub(e.target.checked)}
+                className="rounded border-neutral-300 dark:border-neutral-700"
+              />
+              <span>Log in Purchase Hub</span>
+            </label>
+            <button
+              type="submit"
+              data-testid="mark-bought-submit"
+              disabled={isMarkingBought}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer"
+            >
+              {isMarkingBought ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <Check className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
+              <span>Confirm Purchase</span>
+            </button>
+          </div>
+        </form>
+      )}
       {/* Editable Title & Inline Entity Metadata Editor */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -922,6 +1250,98 @@ export function CardLightboxModal({
         </div>
       )}
 
+      {/* Purchase Hub Ownership Metadata */}
+      {(() => {
+        const ext = card.entity?.extendedAttributes as Record<string, unknown> | null | undefined;
+        if (!ext?.purchaseHubProductId) return null;
+        const retailers = Array.isArray(ext.retailers)
+          ? ext.retailers.map(String).filter(Boolean).join(", ")
+          : typeof ext.retailers === "string"
+          ? ext.retailers
+          : "";
+        const purchaseDate =
+          typeof ext.lastBought === "string" && ext.lastBought
+            ? ext.lastBought
+            : typeof ext.firstBought === "string"
+            ? ext.firstBought
+            : "";
+        const warrantyUntil = typeof ext.warrantyUntil === "string" ? ext.warrantyUntil : "";
+        const location = typeof ext.location === "string" ? ext.location : "";
+        const ownerScope = typeof ext.ownerScope === "string" ? ext.ownerScope : "";
+        const modelNumber = typeof ext.modelNumber === "string" ? ext.modelNumber : "";
+        const manualUrl = isSafeHttpOrRelativeUrl(ext.manualUrl) ? ext.manualUrl.trim() : null;
+        return (
+          <div
+            data-testid="purchase-hub-metadata"
+            className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-2 text-xs"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold">
+                Ownership &amp; Purchase Hub
+              </span>
+              <a
+                href="/my-stuff/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-mono text-neutral-600 dark:text-neutral-300 hover:underline"
+              >
+                Open in My Stuff ↗
+              </a>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+              {retailers && (
+                <div>
+                  <span className="text-neutral-400 font-mono uppercase text-[9px] block">Retailer</span>
+                  <span className="text-neutral-800 dark:text-neutral-200">{retailers}</span>
+                </div>
+              )}
+              {purchaseDate && (
+                <div>
+                  <span className="text-neutral-400 font-mono uppercase text-[9px] block">Acquired</span>
+                  <span className="text-neutral-800 dark:text-neutral-200 font-mono tabular-nums">{purchaseDate}</span>
+                </div>
+              )}
+              {warrantyUntil && (
+                <div>
+                  <span className="text-neutral-400 font-mono uppercase text-[9px] block">Warranty Until</span>
+                  <span className="text-emerald-700 dark:text-emerald-400 font-mono tabular-nums">{warrantyUntil}</span>
+                </div>
+              )}
+              {location && (
+                <div>
+                  <span className="text-neutral-400 font-mono uppercase text-[9px] block">Location</span>
+                  <span className="text-neutral-800 dark:text-neutral-200">{location}</span>
+                </div>
+              )}
+              {ownerScope && (
+                <div>
+                  <span className="text-neutral-400 font-mono uppercase text-[9px] block">Scope</span>
+                  <span className="text-neutral-800 dark:text-neutral-200 font-mono">{ownerScope}</span>
+                </div>
+              )}
+              {modelNumber && (
+                <div>
+                  <span className="text-neutral-400 font-mono uppercase text-[9px] block">Model</span>
+                  <span className="text-neutral-800 dark:text-neutral-200 font-mono">{modelNumber}</span>
+                </div>
+              )}
+            </div>
+            {manualUrl && (
+              <div className="pt-1">
+                <a
+                  href={manualUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-mono text-neutral-700 dark:text-neutral-200 underline hover:opacity-80"
+                >
+                  Open Product Manual ↗
+                </a>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Curio Learns: Custom Attributes Grid */}
       <div>
         <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
@@ -1043,6 +1463,7 @@ export function CardLightboxModal({
     creator: brandOrCreator.trim() || basePressMeta.creator,
     yearOrPrice: basePressMeta.yearOrPrice,
     subtitle: summary.trim() || basePressMeta.subtitle,
+    isWishlist: wished,
   };
   const pressImageUrl = resolveSameOriginImageUrl(
     heroImageUrl.trim() || card.entity?.heroImageUrl
@@ -1202,6 +1623,21 @@ export function CardLightboxModal({
               <span className="sm:hidden">{isPressStage ? "Card" : "3D"}</span>
             </button>
 
+            {!readOnly && wished && (
+              <button
+                type="button"
+                data-testid="lightbox-mark-bought"
+                onClick={() => {
+                  setMarkBoughtError(null);
+                  setIsMarkBoughtOpen((prev) => !prev);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition cursor-pointer"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Bought it</span>
+              </button>
+            )}
+
             {!readOnly && (
               <button
                 type="button"
@@ -1210,6 +1646,7 @@ export function CardLightboxModal({
                 onClick={async () => {
                   const next = !wished;
                   setWished(next);
+                  if (!next) setIsMarkBoughtOpen(false);
                   try {
                     const res = await apiFetch(`/api/v1/saves/${card.save.id}`, {
                       method: "PATCH",

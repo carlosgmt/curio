@@ -403,9 +403,11 @@ export function ShelfLayout({
                       className="press-face press-linen-grain absolute inset-0 overflow-hidden rounded-r-[3px] flex flex-col justify-between text-left"
                       style={{
                         transform: `translateZ(${Math.round(t / 2)}px)`,
-                        backgroundColor: pal.coverBg,
+                        backgroundColor: meta.isWishlist ? pal.surfaceSecondary : pal.coverBg,
                         color: pal.coverInk,
-                        border: `1px solid rgba(255,255,255,0.12)`,
+                        border: meta.isWishlist
+                          ? `1.5px dashed ${pal.accent}`
+                          : `1px solid rgba(255,255,255,0.12)`,
                       }}
                     >
                       {/* Spine hinge crease */}
@@ -463,14 +465,18 @@ export function ShelfLayout({
                       ) : (
                         <div className="relative flex h-full w-full flex-col justify-between p-4 pl-5">
                           <div
-                            className="h-full w-full border p-2.5 flex flex-col justify-between"
-                            style={{ borderColor: `${pal.coverInk}44` }}
+                            className="h-full w-full p-2.5 flex flex-col justify-between"
+                            style={{
+                              borderWidth: "1px",
+                              borderStyle: meta.isWishlist ? "dashed" : "solid",
+                              borderColor: meta.isWishlist ? pal.accent : `${pal.coverInk}44`,
+                            }}
                           >
                             <span
                               className="font-mono text-[9px] uppercase tracking-[0.14em]"
                               style={{ color: pal.accent }}
                             >
-                              {spec.label}
+                              {meta.isWishlist ? `Wishlist · ${spec.label}` : spec.label}
                             </span>
                             <h4 className="font-serif-editorial text-[15px] leading-[1.15] font-medium line-clamp-4">
                               {meta.title}
@@ -609,6 +615,14 @@ export function ShelfLayout({
         <div className="min-w-0 max-w-2xl space-y-1.5">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em]">
             <span style={{ color: activePalette.accent }}>{activeMeta.creator}</span>
+            {activeMeta.isWishlist && (
+              <span
+                className="px-1.5 py-0.5 rounded border border-dashed text-[10px]"
+                style={{ borderColor: activePalette.accent, color: activePalette.accent }}
+              >
+                Wishlist
+              </span>
+            )}
             {activeMeta.yearOrPrice && (
               <span className="tabular-nums" style={{ color: activePalette.muted }}>
                 {activeMeta.yearOrPrice}

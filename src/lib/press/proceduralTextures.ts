@@ -82,7 +82,11 @@ export function createFrontCoverCanvas(
 
       ctx.fillStyle = palette.coverInk;
       ctx.font = '500 18px "IBM Plex Mono", ui-monospace, monospace';
-      ctx.fillText(`[ ${spec.label.toUpperCase()} ]`, pad, 92);
+      ctx.fillText(
+        meta.isWishlist ? `[ WISHLIST · ${spec.label.toUpperCase()} ]` : `[ ${spec.label.toUpperCase()} ]`,
+        pad,
+        92
+      );
 
       ctx.font = '500 38px "Newsreader", Georgia, serif';
       drawWrappedText(ctx, meta.title, pad, 130 + frameH + 58, frameW, 46, 3);
@@ -98,25 +102,45 @@ export function createFrontCoverCanvas(
     } else {
       // Full-bleed edge-to-edge jacket (Hardcover / Media Case / Vinyl Sleeve)
       drawImageCover(ctx, coverImage, 0, 0, w, h);
-      // Subtle top/bottom vignette keeping artwork faithful
+    // Subtle top/bottom vignette keeping artwork faithful
       const vig = ctx.createLinearGradient(0, h - 180, 0, h);
       vig.addColorStop(0, "rgba(0,0,0,0)");
       vig.addColorStop(1, "rgba(0,0,0,0.35)");
       ctx.fillStyle = vig;
       ctx.fillRect(0, h - 180, w, 180);
     }
+    if (meta.isWishlist) {
+      ctx.save();
+      ctx.strokeStyle = palette.accent;
+      ctx.lineWidth = 4;
+      ctx.setLineDash([16, 10]);
+      ctx.strokeRect(20, 20, w - 40, h - 40);
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(18, 17, 15, 0.78)";
+      ctx.fillRect(36, 36, 204, 38);
+      ctx.fillStyle = palette.accent;
+      ctx.font = '600 16px "IBM Plex Mono", ui-monospace, monospace';
+      ctx.fillText("WISHLIST STUDY", 52, 61);
+      ctx.restore();
+    }
   } else {
     // Pure Stripe Press typographic cloth cover when item has no hero photo
     const pad = 72;
-    ctx.strokeStyle = palette.coverInk;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = meta.isWishlist ? palette.accent : palette.coverInk;
+    ctx.globalAlpha = meta.isWishlist ? 0.65 : 0.35;
+    ctx.lineWidth = meta.isWishlist ? 3 : 2;
+    if (meta.isWishlist) ctx.setLineDash([12, 8]);
     ctx.strokeRect(pad - 20, pad - 20, w - (pad - 20) * 2, h - (pad - 20) * 2);
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
     ctx.fillStyle = palette.accent;
     ctx.font = '600 18px "IBM Plex Mono", ui-monospace, monospace';
-    ctx.fillText(spec.label.toUpperCase(), pad, pad + 18);
+    ctx.fillText(
+      meta.isWishlist ? `WISHLIST · ${spec.label.toUpperCase()}` : spec.label.toUpperCase(),
+      pad,
+      pad + 18
+    );
 
     ctx.fillStyle = palette.coverInk;
     ctx.font = '500 54px "Newsreader", Georgia, serif';
@@ -166,7 +190,8 @@ export function createSpineCanvas(
   ctx.textBaseline = "middle";
   ctx.font = '500 32px "Newsreader", Georgia, serif';
   ctx.textAlign = "left";
-  ctx.fillText(meta.title.slice(0, 34), -h * 0.36, 0);
+  const spineTitle = meta.isWishlist ? `WISHLIST · ${meta.title}` : meta.title;
+  ctx.fillText(spineTitle.slice(0, 34), -h * 0.36, 0);
 
   ctx.fillStyle = palette.accent;
   ctx.font = '500 18px "IBM Plex Mono", ui-monospace, monospace';

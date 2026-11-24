@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import type { CardData } from "@/components/cards/PolymorphicCard";
 import {
   CURATED_CLOTH_PALETTES,
+  formatSpineMeta,
   getArchetypeSpec,
   resolveSameOriginImageUrl,
 } from "./archetypes";
@@ -32,7 +33,15 @@ describe("Curio Press Shelf engine", () => {
     expect(getArchetypeSpec(makeCard({ entity: { id: "2", title: "Film", coreType: "MEDIA", typePath: "/media/film", canonicalUrl: "u" } })).id).toBe("media_case");
     expect(getArchetypeSpec(makeCard({ entity: { id: "3", title: "Album", coreType: "MEDIA", typePath: "/media/music/album", canonicalUrl: "u" } })).id).toBe("vinyl_sleeve");
     expect(getArchetypeSpec(makeCard({ entity: { id: "4", title: "Coat", coreType: "PRODUCT", typePath: "/product/garment", canonicalUrl: "u" } })).id).toBe("archival_box");
+    expect(getArchetypeSpec(makeCard({ entity: { id: "4b", title: "Lounge Chair", coreType: "PRODUCT", typePath: "/product/furniture", canonicalUrl: "u" } })).id).toBe("archival_box");
     expect(getArchetypeSpec(makeCard({ entity: { id: "5", title: "Focaccia", coreType: "CULINARY", typePath: "/culinary/recipe", canonicalUrl: "u" } })).id).toBe("linen_folio");
+
+    const wishMeta = formatSpineMeta(
+      makeCard({
+        save: { id: "s-wl", isPrivateMemo: false, wishlist: true, createdAt: "2026-10-01T12:00:00Z" },
+      })
+    );
+    expect(wishMeta.isWishlist).toBe(true);
   });
 
   it("wraps external HTTPS URLs through same-origin proxy and preserves internal media URLs", () => {

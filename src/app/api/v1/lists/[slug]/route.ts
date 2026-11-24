@@ -13,6 +13,7 @@ const updateBoardSchema = z.object({
   parentId: z.string().nullable().optional(),
   positionIndex: z.number().int().optional(),
   visibility: z.enum(["PRIVATE", "UNLISTED", "PUBLIC"]).optional(),
+  defaultLayout: z.enum(["masonry", "grid", "timeline", "shelf"]).nullable().optional(),
   isPaywalled: z.boolean().optional(),
   accessPriceCents: z.number().nullable().optional(),
   autoRules: z

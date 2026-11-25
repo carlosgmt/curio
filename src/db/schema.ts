@@ -62,6 +62,8 @@ export const users = sqliteTable("users", {
     ytMusicEnabled?: boolean;
     googleTvEnabled?: boolean;
     letterboxdUsername?: string;
+    letterboxdLastSyncedAt?: string | null;
+    letterboxdLastError?: string | null;
     goodreadsUserId?: string;
     goodreadsAuthStatus?: "ok" | "expired" | "unconfigured";
     goodreadsLastError?: string | null;

@@ -3,6 +3,8 @@ import { and, eq, or } from "drizzle-orm";
 import { db, globalEntities, userSaves } from "@/db";
 import { AuthError, requireAuth } from "@/lib/auth/service";
 import { enrichBookEntity } from "@/lib/books/enrichBoughtBook";
+import { cleanCommercialBookTitle } from "@/lib/books/library";
+import { deduplicateUserBooks } from "@/lib/books/deduplicate";
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,9 +34,19 @@ export async function POST(req: NextRequest) {
           entity.coreStructuredData && typeof entity.coreStructuredData === "object"
             ? (entity.coreStructuredData as Record<string, any>)
             : {};
-        return !entity.heroImageUrl || !entity.brandOrCreator || !csd.pageCount;
+        const noisyTitle =
+          cleanCommercialBookTitle(entity.title).title !== entity.title.trim() ||
+          /[…]$|\.\.\.$/.test(entity.title);
+        return (
+          noisyTitle ||
+          !entity.heroImageUrl ||
+          !entity.brandOrCreator ||
+          !csd.pageCount ||
+          !csd.isbn ||
+          !entity.summary
+        );
       })
-      .slice(0, 25);
+      .slice(0, 40);
 
     let enrichedCount = 0;
     for (const entity of candidates) {
@@ -45,10 +57,15 @@ export async function POST(req: NextRequest) {
       if (res.updated) enrichedCount++;
     }
 
+    const dedupResult = await deduplicateUserBooks(user.id).catch(() => ({
+      mergedSavesRemoved: 0,
+    }));
+
     return NextResponse.json({
       success: true,
       enrichedCount,
       totalChecked: candidates.length,
+      mergedSavesRemoved: dedupResult.mergedSavesRemoved,
     });
   } catch (err: any) {
     if (err instanceof AuthError) {

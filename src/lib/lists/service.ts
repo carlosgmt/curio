@@ -10,7 +10,7 @@ export interface AutoRulesConfig {
   maxPriceCents?: number;
 }
 
-export type SmartListLayoutMode = "masonry" | "grid" | "timeline" | "shelf";
+export type SmartListLayoutMode = "masonry" | "grid" | "timeline" | "shelf" | "posters";
 
 export interface CreateListInput {
   title: string;

@@ -401,4 +401,36 @@ describe("PurchaseHubAdapter & Books/Media/Furniture Sync", () => {
 
     clearAdapterSyncCache("purchase-hub", user.id);
   });
+
+  it("routes travel guides and study/textbooks (including bundled CD/DVD + ISBN-13) to My Stuff Travel & Study rather than FILM or BOOK", () => {
+    const edito = classifyPurchaseHubItem({
+      product_id: "prd_edito_b2",
+      canonical_name: "EDITO B2 ELEVE+CD+DVD - 9788490492055",
+      category: "Books & Media",
+      tags: ["french", "textbook"],
+    });
+    expect(edito.coreType).toBe("PRODUCT");
+    expect(edito.typePath).toBe("/product/reference");
+    expect(edito.boards[0]?.subSlug).toBe("my-stuff-reference-travel");
+
+    const guide = classifyPurchaseHubItem({
+      product_id: "prd_rome_guide",
+      canonical_name: "Guía de viaje National Geographic: Roma (GUIAS)",
+      category: "Books & Media",
+      tags: ["travel guide", "rome"],
+    });
+    expect(guide.coreType).toBe("PRODUCT");
+    expect(guide.typePath).toBe("/product/reference");
+    expect(guide.boards[0]?.subSlug).toBe("my-stuff-reference-travel");
+
+    const novel = classifyPurchaseHubItem({
+      product_id: "prd_babel",
+      canonical_name: "Babel",
+      brand: "R. F. Kuang",
+      category: "Books & Media",
+      tags: ["novel", "book"],
+    });
+    expect(novel.coreType).toBe("BOOK");
+    expect(novel.typePath).toBe("/product/book");
+  });
 });

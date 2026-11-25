@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Folder, Sparkles, Plus, Layers, Heart } from "lucide-react";
+import { Folder, Sparkles, Plus, Layers, Heart, BookOpen, Film } from "lucide-react";
 import type { SmartList } from "@/db";
 
 export interface ListTabsBarProps {
@@ -131,7 +131,11 @@ export function ListTabsBar({
             }`}
           >
             {isNested && <span className="text-neutral-400 text-[10px]">↳</span>}
-            {hasAutoRules ? (
+            {list.slug === "books" ? (
+              <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            ) : list.slug === "films" ? (
+              <Film className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            ) : hasAutoRules ? (
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             ) : (
               <Folder className="w-3.5 h-3.5 text-neutral-500" />

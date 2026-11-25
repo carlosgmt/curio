@@ -9,6 +9,7 @@ import {
   type SyncRunResult,
 } from "./engine";
 import { registerSyncAdapter } from "./registry";
+import { areSameBook, isTravelGuideOrStudyBook } from "@/lib/books/identity";
 
 export interface PurchaseHubSyncItem {
   product_id: string;
@@ -169,8 +170,14 @@ export function classifyPurchaseHubItem(item: PurchaseHubSyncItem): {
       };
     }
 
-    // 5. Films / Blu-ray
-    if (/\b(blu-?ray|dvd|4k uhd|film|movie|criterion)\b/.test(probe)) {
+    // 5. Films / Blu-ray (skip textbooks/books with bundled CD/DVD or ISBN-13)
+    const hasIsbn13 = /\b97[89]\d{10}\b/.test(probe) || (item.model_number ? /^97[89]\d{10}$/.test(item.model_number.trim()) : false);
+    const looksLikeBookWithDisc =
+      hasIsbn13 ||
+      (/\b(eleve|textbook|workbook|libro|book)\b/.test(probe) &&
+        /\b(cd\+?dvd|with dvd|con dvd|cd)\b/.test(probe));
+
+    if (!looksLikeBookWithDisc && /\b(blu-?ray|dvd|4k uhd|film|movie|criterion)\b/.test(probe)) {
       return {
         skip: false,
         coreType: "MEDIA",
@@ -179,7 +186,7 @@ export function classifyPurchaseHubItem(item: PurchaseHubSyncItem): {
           {
             rootSlug: "films",
             rootTitle: "Films",
-            rootDefaultLayout: "shelf",
+            rootDefaultLayout: "posters",
             sectionHeader: kitSection,
             autoRules: { typePathPrefix: "/media/film" },
           },
@@ -206,6 +213,29 @@ export function classifyPurchaseHubItem(item: PurchaseHubSyncItem): {
             subSlug: "my-stuff-kids-activities",
             subTitle: "Kids & Activities",
             subDescription: "Owned kids sticker, coloring & activity items synced from Purchase Hub",
+            subDefaultLayout: "shelf",
+            sectionHeader: kitSection,
+          },
+        ],
+      };
+    }
+
+    // 6b. Travel guides & language/study books -> My Stuff / Travel & Study (excluded from Books board)
+    if (isTravelGuideOrStudyBook(probe)) {
+      return {
+        skip: false,
+        coreType: "PRODUCT",
+        typePath: "/product/reference",
+        boards: [
+          {
+            rootSlug: "my-stuff",
+            rootTitle: "My Stuff",
+            rootDescription: "Owned durable objects synced from Purchase Hub",
+            rootDefaultLayout: "shelf",
+            subSlug: "my-stuff-reference-travel",
+            subTitle: "Travel & Study",
+            subDescription:
+              "Owned travel guides, language textbooks, and study books synced from Purchase Hub",
             subDefaultLayout: "shelf",
             sectionHeader: kitSection,
           },
@@ -404,6 +434,7 @@ export const purchaseHubAdapter: SyncAdapter<PurchaseHubSyncOptions> = {
 
     const rawItems = Array.isArray(payload.items) ? payload.items : [];
     const records: SyncRecord[] = [];
+    const bookRecords: SyncRecord[] = [];
     let skippedClosetOrApparel = 0;
 
     for (const item of rawItems) {
@@ -413,6 +444,74 @@ export const purchaseHubAdapter: SyncAdapter<PurchaseHubSyncOptions> = {
         skippedClosetOrApparel++;
         continue;
       }
+
+      if (mapped.coreType === "BOOK") {
+        const mappedProbe = {
+          title: mapped.title,
+          author:
+            mapped.brandOrCreator ||
+            (typeof mapped.coreStructuredData?.author === "string"
+              ? mapped.coreStructuredData.author
+              : null),
+          isbn:
+            (typeof mapped.coreStructuredData?.isbn === "string"
+              ? mapped.coreStructuredData.isbn
+              : null) || mapped.modelNumber,
+          coverUrl: mapped.heroImageUrl,
+        };
+        const dup = bookRecords.find((existing) =>
+          areSameBook(
+            {
+              title: existing.title,
+              author:
+                existing.brandOrCreator ||
+                (typeof existing.coreStructuredData?.author === "string"
+                  ? existing.coreStructuredData.author
+                  : null),
+              isbn:
+                (typeof existing.coreStructuredData?.isbn === "string"
+                  ? existing.coreStructuredData.isbn
+                  : null) || existing.modelNumber,
+              coverUrl: existing.heroImageUrl,
+            },
+            mappedProbe
+          )
+        );
+        if (dup) {
+          const dupExt = (dup.extendedAttributes || {}) as Record<string, unknown>;
+          const prevIds = Array.isArray(dupExt.mergedPurchaseHubIds)
+            ? dupExt.mergedPurchaseHubIds.map(String)
+            : [dup.externalId];
+          dup.extendedAttributes = {
+            ...dupExt,
+            mergedPurchaseHubIds: [...new Set([...prevIds, mapped.externalId])],
+          };
+          if (!dup.heroImageUrl && mapped.heroImageUrl) {
+            dup.heroImageUrl = mapped.heroImageUrl;
+          }
+          if (!dup.brandOrCreator && mapped.brandOrCreator) {
+            dup.brandOrCreator = mapped.brandOrCreator;
+          }
+          if (!dup.personalNotes && mapped.personalNotes) {
+            dup.personalNotes = mapped.personalNotes;
+          }
+          const mergedTags = new Map<string, string>();
+          for (const t of [...(dup.tags || []), ...(mapped.tags || [])]) {
+            const c = String(t || "").trim();
+            if (c && !mergedTags.has(c.toLowerCase())) {
+              mergedTags.set(c.toLowerCase(), c);
+            }
+          }
+          dup.tags = [...mergedTags.values()];
+          continue;
+        }
+        mapped.extendedAttributes = {
+          ...(mapped.extendedAttributes || {}),
+          mergedPurchaseHubIds: [mapped.externalId],
+        };
+        bookRecords.push(mapped);
+      }
+
       records.push(mapped);
     }
 

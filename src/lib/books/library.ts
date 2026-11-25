@@ -1,8 +1,10 @@
 import type { GlobalEntity, UserSave } from "@/db";
+import { sanitizeGoodreadsNote } from "./identity";
 import type { CardData } from "@/components/cards/PolymorphicCard";
 
 export type ReadingStatus = "WANT_TO_READ" | "READING" | "FINISHED";
 export type BookSource = "OWNED" | "READ_ONLINE" | "BORROWED" | "GOODREADS";
+export type BookOriginSource = "MY_STUFF" | "GOODREADS" | "MANUAL";
 export type BookFormat = "PHYSICAL" | "KINDLE" | "EBOOK" | "AUDIOBOOK" | "ONLINE";
 
 export interface LibraryBookView {
@@ -18,10 +20,12 @@ export interface LibraryBookView {
   year: number | null;
   readingStatus: ReadingStatus;
   bookSource: BookSource;
+  sources: BookOriginSource[];
   format: BookFormat;
   isOwned: boolean;
   rating: number | null;
   dateRead: string | null;
+  dateAdded: string;
   personalNotes: string | null;
   marginQuotes: string[];
   tags: string[];
@@ -62,6 +66,8 @@ const INTERNAL_NOISE_TAGS = new Set([
   "bestseller",
   "sunday times",
   "media",
+  "[edit]",
+  "edit",
 ]);
 
 function asRecord(val: unknown): Record<string, any> {
@@ -115,6 +121,51 @@ export function isOwnedBook(
   if (typeof cv.ownedCopies === "number" && cv.ownedCopies > 0) return true;
   if (typeof cv.ownedCopies === "string" && parseInt(cv.ownedCopies, 10) > 0) return true;
   return false;
+}
+
+export function resolveBookSources(
+  save: Pick<UserSave, "hasConvertedPurchase" | "userCustomValues" | "autoTags">,
+  entity?: Pick<GlobalEntity, "canonicalExternalId" | "canonicalUrl" | "coreStructuredData" | "extendedAttributes"> | null
+): BookOriginSource[] {
+  const sources: BookOriginSource[] = [];
+  const cv = asRecord(save.userCustomValues);
+  const csd = asRecord(entity?.coreStructuredData);
+  const tags = Array.isArray(save.autoTags) ? save.autoTags : [];
+
+  if (isOwnedBook(save, entity)) {
+    sources.push("MY_STUFF");
+  }
+
+  const hasGoodreadsSignal =
+    Boolean(cv.goodreadsBookId) ||
+    Boolean(csd.goodreadsId) ||
+    Boolean(entity?.canonicalExternalId?.startsWith("goodreads:")) ||
+    (Array.isArray(cv.goodreadsShelves) && cv.goodreadsShelves.length > 0) ||
+    (typeof cv.bookSource === "string" && cv.bookSource.trim().toUpperCase() === "GOODREADS") ||
+    Boolean(entity?.canonicalUrl?.toLowerCase().includes("goodreads.com")) ||
+    tags.some((t) => String(t).toLowerCase() === "goodreads");
+
+  if (hasGoodreadsSignal) {
+    sources.push("GOODREADS");
+  }
+
+  const rawSource = typeof cv.bookSource === "string" ? cv.bookSource.trim().toUpperCase() : "";
+  if (
+    rawSource === "READ_ONLINE" ||
+    rawSource === "BORROWED" ||
+    rawSource === "MANUAL" ||
+    sources.length === 0
+  ) {
+    sources.push("MANUAL");
+  }
+
+  return sources;
+}
+
+export function formatBookSourceLabel(src: BookOriginSource): string {
+  if (src === "MY_STUFF") return "My Stuff";
+  if (src === "GOODREADS") return "Goodreads";
+  return "Manual";
 }
 
 export function resolveBookSource(
@@ -295,6 +346,7 @@ export function toLibraryBookView(
   const owned = isOwnedBook(save, entity);
   const readingStatus = normalizeReadingStatus(cv, save.wishlist);
   const bookSource = resolveBookSource(save, entity);
+  const sources = resolveBookSources(save, entity);
   const format = resolveBookFormat(save, entity);
 
   const marginQuotes = Array.isArray(cv.marginQuotes)
@@ -302,12 +354,19 @@ export function toLibraryBookView(
     : [];
 
   const goodreadsShelves = Array.isArray(cv.goodreadsShelves)
-    ? cv.goodreadsShelves.map((s) => String(s)).filter(Boolean)
+    ? cv.goodreadsShelves
+        .map((s) => String(s).trim())
+        .filter((s) => Boolean(s) && s.toLowerCase() !== "[edit]" && s.toLowerCase() !== "edit")
     : [];
 
   const dateRead = normalizeDateString(
     typeof cv.dateRead === "string" ? cv.dateRead : null
   );
+  const dateAdded =
+    normalizeDateString(typeof cv.dateAdded === "string" ? cv.dateAdded : null) ||
+    normalizeDateString(save.createdAt) ||
+    save.createdAt.slice(0, 10);
+  const cleanNotes = sanitizeGoodreadsNote(save.personalNotes);
 
   const card: CardData = {
     save: {
@@ -315,7 +374,7 @@ export function toLibraryBookView(
       isPrivateMemo: save.isPrivateMemo,
       privateTitle: save.privateTitle,
       wishlist: save.wishlist,
-      personalNotes: save.personalNotes,
+      personalNotes: cleanNotes,
       userCustomValues: save.userCustomValues,
       candidateFallbacks: save.candidateFallbacks,
       typePath: save.typePath,
@@ -355,11 +414,13 @@ export function toLibraryBookView(
     year,
     readingStatus,
     bookSource,
+    sources,
     format,
     isOwned: owned,
     rating,
     dateRead,
-    personalNotes: save.personalNotes || null,
+    dateAdded,
+    personalNotes: cleanNotes,
     marginQuotes,
     tags: extractDisplayTags(save),
     goodreadsShelves,
@@ -445,4 +506,71 @@ export function computeLibraryStats(books: LibraryBookView[]): LibraryStats {
     avgRating: ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : null,
     tagCounts,
   };
+}
+
+export type BookSortKey =
+  | "dateAdded"
+  | "author"
+  | "title"
+  | "read"
+  | "dateRead"
+  | "rating"
+  | "pages";
+
+const READ_STATUS_SORT_ORDER: Record<ReadingStatus, number> = {
+  FINISHED: 0,
+  READING: 1,
+  WANT_TO_READ: 2,
+};
+
+export function compareLibraryBooks(
+  a: LibraryBookView,
+  b: LibraryBookView,
+  sortBy: BookSortKey
+): number {
+  if (sortBy === "author") {
+    const unknownA = !a.author || a.author.toLowerCase() === "unknown author";
+    const unknownB = !b.author || b.author.toLowerCase() === "unknown author";
+    if (unknownA !== unknownB) return unknownA ? 1 : -1;
+    const cmp = a.author.localeCompare(b.author, undefined, { sensitivity: "base" });
+    if (cmp !== 0) return cmp;
+    return cleanCommercialBookTitle(a.title).title.localeCompare(
+      cleanCommercialBookTitle(b.title).title,
+      undefined,
+      { sensitivity: "base" }
+    );
+  }
+  if (sortBy === "title") {
+    const titleA = cleanCommercialBookTitle(a.title).title;
+    const titleB = cleanCommercialBookTitle(b.title).title;
+    return titleA.localeCompare(titleB, undefined, { sensitivity: "base" });
+  }
+  if (sortBy === "read") {
+    const statusDiff =
+      READ_STATUS_SORT_ORDER[a.readingStatus] -
+      READ_STATUS_SORT_ORDER[b.readingStatus];
+    if (statusDiff !== 0) return statusDiff;
+    const dateCmp = (b.dateRead || "").localeCompare(a.dateRead || "");
+    if (dateCmp !== 0) return dateCmp;
+    return cleanCommercialBookTitle(a.title).title.localeCompare(
+      cleanCommercialBookTitle(b.title).title,
+      undefined,
+      { sensitivity: "base" }
+    );
+  }
+  if (sortBy === "rating") {
+    const rDiff = (b.rating ?? 0) - (a.rating ?? 0);
+    if (rDiff !== 0) return rDiff;
+  }
+  if (sortBy === "pages") {
+    const pDiff = (b.pageCount ?? 0) - (a.pageCount ?? 0);
+    if (pDiff !== 0) return pDiff;
+  }
+  if (sortBy === "dateRead") {
+    const dCmp = (b.dateRead || "").localeCompare(a.dateRead || "");
+    if (dCmp !== 0) return dCmp;
+  }
+  const addCmp = (b.dateAdded || b.createdAt).localeCompare(a.dateAdded || a.createdAt);
+  if (addCmp !== 0) return addCmp;
+  return b.createdAt.localeCompare(a.createdAt);
 }

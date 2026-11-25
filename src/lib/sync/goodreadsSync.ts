@@ -12,6 +12,14 @@ import {
   normalizeReadingStatus,
   readingStatusToShelf,
 } from "../books/library";
+import {
+  areSameBook,
+  deduplicateUserBooks,
+  extractBookProbe,
+  sanitizeGoodreadsNote,
+} from "../books/deduplicate";
+
+export { sanitizeGoodreadsNote };
 
 export type GoodreadsShelf = "read" | "currently-reading" | "to-read";
 
@@ -131,8 +139,17 @@ function normalizeGoodreadsShelvesList(rawShelves: string[]): string[] {
   for (const s of rawShelves) {
     const clean = decodeHtmlEntities(s).replace(/^#+/, "").trim();
     if (!clean) continue;
+    if (/^\[.*\]$/.test(clean)) continue;
     const lower = clean.toLowerCase();
-    if (EXCLUSIVE_SHELVES.has(lower)) continue;
+    if (
+      EXCLUSIVE_SHELVES.has(lower) ||
+      lower === "edit" ||
+      lower === "add shelf" ||
+      lower === "choose shelves" ||
+      lower === "..."
+    ) {
+      continue;
+    }
     if (!seen.has(lower)) {
       seen.set(lower, lower);
     }
@@ -245,26 +262,35 @@ export function parseGoodreadsShelfHtml(
     const reviewTd = extractTdByField(rowHtml, "review");
     let userReview: string | undefined;
     if (reviewTd) {
-      const fullSpanMatch = reviewTd.match(
+      const sanitizedHtml = reviewTd
+        .replace(/<label\b[^>]*>[\s\S]*?<\/label>/gi, " ")
+        .replace(
+          /<a\b[^>]*>\s*(?:\[edit\]|edit|write\s+a\s+review|add\s+notes)\s*<\/a>/gi,
+          " "
+        );
+      const fullSpanMatch = sanitizedHtml.match(
         /<span\b[^>]*id="freeText(?!Container)[^"]*"[^>]*>([\s\S]*?)<\/span>/i
       );
-      const containerSpanMatch = reviewTd.match(
+      const containerSpanMatch = sanitizedHtml.match(
         /<span\b[^>]*id="freeTextContainer[^"]*"[^>]*>([\s\S]*?)<\/span>/i
       );
-      const rawRevHtml = fullSpanMatch?.[1] || containerSpanMatch?.[1] || reviewTd;
-      const cleanedRev = stripTags(rawRevHtml)
-        .replace(/^\s*(?:None|Write a review)\s*$/i, "")
-        .replace(/\s*\.\.\.more\s*$/i, "")
-        .replace(/\s*\(less\)\s*$/i, "")
-        .trim();
+      const rawRevHtml = fullSpanMatch?.[1] || containerSpanMatch?.[1] || sanitizedHtml;
+      const cleanedRev = sanitizeGoodreadsNote(stripTags(rawRevHtml));
       if (cleanedRev) userReview = cleanedRev;
     }
 
     const notesTd = extractTdByField(rowHtml, "notes");
-    const rawPrivateNotes = notesTd
-      ? stripTags(notesTd).replace(/^\s*(?:None|Add notes)\s*$/i, "").trim()
+    const sanitizedNotesHtml = notesTd
+      ? notesTd
+          .replace(/<label\b[^>]*>[\s\S]*?<\/label>/gi, " ")
+          .replace(
+            /<a\b[^>]*>\s*(?:\[edit\]|edit|write\s+a\s+review|add\s+notes)\s*<\/a>/gi,
+            " "
+          )
       : "";
-    const privateNotes = rawPrivateNotes || undefined;
+    const privateNotes = sanitizedNotesHtml
+      ? sanitizeGoodreadsNote(stripTags(sanitizedNotesHtml)) || undefined
+      : undefined;
 
     const ownedTd = extractTdByField(rowHtml, "owned");
     const ownedMatch = stripTags(ownedTd).match(/(\d+)/);
@@ -419,9 +445,9 @@ function mergeNoteBlocks(
   existingNotes: string | null | undefined,
   incomingBlocks: Array<string | undefined>
 ): string | null {
-  let out = (existingNotes || "").trim();
+  let out = sanitizeGoodreadsNote(existingNotes) || "";
   for (const raw of incomingBlocks) {
-    const clean = (raw || "").trim();
+    const clean = sanitizeGoodreadsNote(raw) || "";
     if (!clean) continue;
     if (!out) {
       out = clean;
@@ -488,6 +514,20 @@ export async function upsertGoodreadsBooks(
       if (
         (item.isbn && eIsbn === item.isbn) ||
         (item.isbn13 && eIsbn === item.isbn13)
+      ) {
+        return true;
+      }
+      if (
+        areSameBook(
+          extractBookProbe({ privateTitle: null, userCustomValues: {} }, e),
+          {
+            title: item.title,
+            author: item.author,
+            isbn: cleanIsbn,
+            goodreadsBookId: item.bookId,
+            coverUrl: item.coverUrl,
+          }
+        )
       ) {
         return true;
       }
@@ -737,6 +777,8 @@ export async function upsertGoodreadsBooks(
       .update(smartLists)
       .set({ defaultLayout: "shelf" })
       .where(eq(smartLists.id, boardRes.rootId));
+
+    await deduplicateUserBooks(curioUserId).catch(() => null);
   }
 
   return {

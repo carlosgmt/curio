@@ -277,17 +277,59 @@ export function GoodreadsSyncModal({
                   autoComplete="off"
                   className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring"
                 />
-                <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed">
-                  In Chrome on <span className="font-mono">goodreads.com/review/list</span>: open DevTools → Network → select the page request → copy the{" "}
-                  <span className="font-mono text-foreground">Cookie</span> request header. Stored locally in <span className="font-mono">0600</span> storage, never sent back to the browser.
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Stored locally in <span className="font-mono text-foreground">0600</span> storage on mini and never returned to the browser.
                 </p>
+                <details className="mt-2.5 rounded-xl border border-border bg-secondary/40 p-3 text-[11px] text-muted-foreground">
+                  <summary className="cursor-pointer font-mono text-[11px] font-medium text-foreground select-none">
+                    Step-by-step: How to get your Goodreads User ID &amp; Session Cookie
+                  </summary>
+                  <ol className="mt-2.5 space-y-2 list-decimal list-inside leading-relaxed">
+                    <li>
+                      <span className="font-medium text-foreground">Find your Goodreads User ID:</span>{" "}
+                      Sign in at <span className="font-mono">goodreads.com</span>, click your avatar →{" "}
+                      <span className="font-medium text-foreground">Profile</span>, and copy the URL (e.g.{" "}
+                      <span className="font-mono">goodreads.com/user/show/12345678-name</span>) or just the number{" "}
+                      <span className="font-mono">12345678</span>.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">Copy your Session Cookie (Mac Chrome / Safari):</span>{" "}
+                      Open <span className="font-mono">https://www.goodreads.com/review/list</span> while signed in. Open DevTools (<span className="font-mono">Cmd + Option + I</span> in Chrome, or{" "}
+                      <span className="font-mono">Develop → Show Web Inspector</span> in Safari) →{" "}
+                      <span className="font-medium text-foreground">Network</span> tab → filter by{" "}
+                      <span className="font-mono">Doc</span> → reload (<span className="font-mono">Cmd + R</span>).
+                    </li>
+                    <li>
+                      Click the first <span className="font-mono">list</span> request → scroll to{" "}
+                      <span className="font-medium text-foreground">Request Headers</span> → copy the full{" "}
+                      <span className="font-mono text-foreground">Cookie:</span> value and paste it above.
+                    </li>
+                    <li>
+                      <span className="font-medium text-foreground">On iPad / Mobile?</span> Use the{" "}
+                      <span className="font-medium text-foreground">Import CSV Export</span> tab instead, or paste the cookie once from your Mac — Curio&apos;s 2-hour background sync on mini will reuse it automatically until it expires.
+                    </li>
+                  </ol>
+                </details>
               </div>
             </form>
           ) : (
             <div className="space-y-4">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Export your library on Goodreads (<span className="font-mono text-foreground">My Books → Import and Export → Export Library</span>) and drop the CSV here to import all books, reviews, dates, and custom shelf tags.
-              </p>
+              <div className="p-3.5 rounded-2xl bg-secondary/60 border border-border text-xs space-y-1.5">
+                <p className="font-medium text-foreground">
+                  Step-by-step CSV Export (works on iPad &amp; Desktop)
+                </p>
+                <ol className="space-y-1 list-decimal list-inside text-muted-foreground leading-relaxed">
+                  <li>
+                    Open <span className="font-mono text-foreground">goodreads.com/review/import</span> while signed in.
+                  </li>
+                  <li>
+                    Click <span className="font-medium text-foreground">Export Library</span> at the top and wait a few seconds for the download link.
+                  </li>
+                  <li>
+                    Upload <span className="font-mono text-foreground">goodreads_library_export.csv</span> below — Curio imports ratings, reviews, dates, and all custom shelf tags, and merges with your owned books.
+                  </li>
+                </ol>
+              </div>
 
               <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-border rounded-2xl bg-muted/20 hover:bg-muted/40 cursor-pointer transition-colors text-center">
                 <input

@@ -1,10 +1,10 @@
 "use client";
 
 import React from "react";
-import { LayoutGrid, Columns3, Clock, Layers, Minimize2, Maximize2, BookOpen } from "lucide-react";
+import { LayoutGrid, Columns3, Clock, Layers, Minimize2, Maximize2, BookOpen, Film } from "lucide-react";
 import type { SilhouetteDensity } from "@/components/cards/registry";
 
-export type LayoutEngineType = "masonry" | "grid" | "timeline" | "shelf";
+export type LayoutEngineType = "masonry" | "grid" | "timeline" | "shelf" | "posters";
 
 export interface ViewModeSwitcherProps {
   layout: LayoutEngineType;
@@ -86,6 +86,21 @@ export function ViewModeSwitcher({
         >
           <BookOpen className="w-3.5 h-3.5" />
           <span className="hidden sm:inline text-[11px] font-mono">Shelf</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onLayoutChange("posters")}
+          title="Cinema Poster Gallery (3D)"
+          data-testid="switch-posters"
+          className={`p-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1 ${
+            layout === "posters"
+              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
+              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+          }`}
+        >
+          <Film className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline text-[11px] font-mono">Posters</span>
         </button>
       </div>
 

@@ -15,6 +15,7 @@ import {
   readingStatusToShelf,
   toLibraryBookView,
 } from "@/lib/books/library";
+import { areSameBook, extractBookProbe } from "@/lib/books/deduplicate";
 
 const logBookSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -114,6 +115,19 @@ export async function POST(req: NextRequest) {
       if (e.identityFingerprint === fingerprint) return true;
       const eCore = (e.coreStructuredData as Record<string, any>) || {};
       if (resolvedIsbn && eCore.isbn === resolvedIsbn) return true;
+      if (
+        areSameBook(
+          extractBookProbe({ privateTitle: null, userCustomValues: {} }, e),
+          {
+            title: input.title,
+            author: finalAuthor,
+            isbn: resolvedIsbn,
+            coverUrl: resolvedCover,
+          }
+        )
+      ) {
+        return true;
+      }
       const eCleaned = cleanCommercialBookTitle(e.title);
       const normETitle = normalizeEntityString(eCleaned.title);
       const normEAuthor = normalizeEntityString(

@@ -5,7 +5,7 @@ import { Pin, Quote, ChevronDown, Folder, Plus, ExternalLink } from "lucide-reac
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import type { SectionGroup, BoardChildSummary } from "@/lib/lists/service";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
-import { MasonryLayout, GridLayout, TimelineLayout, ShelfLayout } from "@/components/layout";
+import { MasonryLayout, GridLayout, TimelineLayout, ShelfLayout, PosterWallLayout } from "@/components/layout";
 import type { LayoutEngineType } from "@/components/layout/ViewModeSwitcher";
 import type { SilhouetteDensity } from "@/components/cards/registry";
 
@@ -207,7 +207,7 @@ export function SectionGroupView({
     );
   };
 
-  if (layout === "shelf") {
+  if (layout === "shelf" || layout === "posters") {
     return (
       <div className="space-y-6">
         {(shelfBuckets.length > 1 || onAddSubBoard) && (
@@ -277,16 +277,29 @@ export function SectionGroupView({
           </div>
         )}
 
-        <ShelfLayout
-          items={unifiedShelfItems}
-          shelfLabel={
-            effectiveShelfBucketKey === "ALL"
-              ? "CURIO PRESS ARCHIVE"
-              : shelfBuckets.find((b) => b.key === effectiveShelfBucketKey)?.label ||
-                "Board Shelf"
-          }
-          onOpenObject={(card, presentation) => onCardClick?.(card, presentation)}
-        />
+        {layout === "posters" ? (
+          <PosterWallLayout
+            items={unifiedShelfItems}
+            galleryLabel={
+              effectiveShelfBucketKey === "ALL"
+                ? "CURIO CINEMA POSTERS"
+                : shelfBuckets.find((b) => b.key === effectiveShelfBucketKey)?.label ||
+                  "Poster Gallery"
+            }
+            onOpenObject={(card, presentation) => onCardClick?.(card, presentation)}
+          />
+        ) : (
+          <ShelfLayout
+            items={unifiedShelfItems}
+            shelfLabel={
+              effectiveShelfBucketKey === "ALL"
+                ? "CURIO PRESS ARCHIVE"
+                : shelfBuckets.find((b) => b.key === effectiveShelfBucketKey)?.label ||
+                  "Board Shelf"
+            }
+            onOpenObject={(card, presentation) => onCardClick?.(card, presentation)}
+          />
+        )}
       </div>
     );
   }

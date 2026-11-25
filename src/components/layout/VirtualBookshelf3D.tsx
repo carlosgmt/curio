@@ -28,6 +28,7 @@ export interface VirtualBookshelf3DProps {
   inspectMode: "front" | "spine";
   shelfMode?: "showcase" | "spines";
   onSelectIndex: (nextIndex: number) => void;
+  onActivateActiveItem?: (activeIndex: number) => void;
   onToggleInspectMode?: () => void;
   onWebglUnavailable?: () => void;
   compact?: boolean;
@@ -140,6 +141,7 @@ export default function VirtualBookshelf3D({
   inspectMode,
   shelfMode = "showcase",
   onSelectIndex,
+  onActivateActiveItem,
   onToggleInspectMode,
   onWebglUnavailable,
   compact = false,
@@ -147,24 +149,17 @@ export default function VirtualBookshelf3D({
 }: VirtualBookshelf3DProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const itemsRef = useRef(items);
-  itemsRef.current = items;
   const activeIndexRef = useRef(activeIndex);
-  activeIndexRef.current = activeIndex;
   const inspectModeRef = useRef(inspectMode);
-  inspectModeRef.current = inspectMode;
   const shelfModeRef = useRef(shelfMode);
-  shelfModeRef.current = shelfMode;
   const onSelectIndexRef = useRef(onSelectIndex);
-  onSelectIndexRef.current = onSelectIndex;
+  const onActivateActiveItemRef = useRef(onActivateActiveItem);
   const onToggleInspectModeRef = useRef(onToggleInspectMode);
-  onToggleInspectModeRef.current = onToggleInspectMode;
   const onWebglUnavailableRef = useRef(onWebglUnavailable);
-  onWebglUnavailableRef.current = onWebglUnavailable;
 
   const bayPositionsRef = useRef<number[]>(
     computeBayPositions(items, activeIndex, shelfMode)
   );
-  bayPositionsRef.current = computeBayPositions(items, activeIndex, shelfMode);
 
   const sceneBundleRef = useRef<{
     THREE: typeof THREE_NS;
@@ -176,8 +171,29 @@ export default function VirtualBookshelf3D({
 
   const activeOrbitRef = useRef<{ x: number; y: number }>({ x: 0.04, y: -0.24 });
   const hoveredSaveIdRef = useRef<string | null>(null);
-  const cameraXRef = useRef<number>(bayPositionsRef.current[activeIndex] ?? 0);
+  const cameraXRef = useRef<number>(0);
   const scrollPanOffsetRef = useRef<number>(0);
+
+  useEffect(() => {
+    itemsRef.current = items;
+    activeIndexRef.current = activeIndex;
+    inspectModeRef.current = inspectMode;
+    shelfModeRef.current = shelfMode;
+    onSelectIndexRef.current = onSelectIndex;
+    onActivateActiveItemRef.current = onActivateActiveItem;
+    onToggleInspectModeRef.current = onToggleInspectMode;
+    onWebglUnavailableRef.current = onWebglUnavailable;
+    bayPositionsRef.current = computeBayPositions(items, activeIndex, shelfMode);
+  }, [
+    items,
+    activeIndex,
+    inspectMode,
+    shelfMode,
+    onSelectIndex,
+    onActivateActiveItem,
+    onToggleInspectMode,
+    onWebglUnavailable,
+  ]);
 
   // Reset local orbit when changing active item, switching inspectMode, or external reset
   useEffect(() => {
@@ -628,7 +644,11 @@ export default function VirtualBookshelf3D({
             const tappedIdx = itemsRef.current.findIndex((it) => it.saveId === tappedId);
             if (tappedIdx >= 0) {
               if (tappedIdx === activeIndexRef.current) {
-                onToggleInspectModeRef.current?.();
+                if (onActivateActiveItemRef.current) {
+                  onActivateActiveItemRef.current(tappedIdx);
+                } else {
+                  onToggleInspectModeRef.current?.();
+                }
               } else {
                 scrollPanOffsetRef.current = 0;
                 onSelectIndexRef.current(tappedIdx);

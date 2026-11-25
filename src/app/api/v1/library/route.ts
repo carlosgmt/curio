@@ -4,6 +4,7 @@ import { db, globalEntities, users, userSaves } from "@/db";
 import { AuthError, requireAuth } from "@/lib/auth/service";
 import { getConnectedSavesMap } from "@/lib/connections/service";
 import { computeLibraryStats, toLibraryBookView } from "@/lib/books/library";
+import { findDuplicateBookGroups } from "@/lib/books/deduplicate";
 import {
   getGoodreadsAuthRecord,
   getOrCreateSyncSecret,
@@ -50,6 +51,8 @@ export async function GET(req: NextRequest) {
     });
 
     const stats = computeLibraryStats(books);
+    const duplicateGroups = findDuplicateBookGroups(rows);
+    const duplicateCount = duplicateGroups.reduce((acc, g) => acc + g.length - 1, 0);
 
     const [freshUser] = await db
       .select()
@@ -66,6 +69,7 @@ export async function GET(req: NextRequest) {
       success: true,
       books,
       stats,
+      duplicateCount,
       goodreadsStatus: {
         configured: Boolean(goodreadsUserId && hasCookie),
         goodreadsUserId,

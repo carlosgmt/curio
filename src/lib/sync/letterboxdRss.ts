@@ -1,11 +1,13 @@
 import { db, globalEntities, smartLists, users, userSaves } from "@/db";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { ensureHierarchicalBoard, type SyncAdapter, type SyncOptions, type SyncRunResult } from "./engine";
 import { registerSyncAdapter } from "./registry";
 import { generateEntityKey } from "../ingest/cascade";
 import { computeIdentityFingerprint } from "../ingest/resolution";
 import { normalizeEntityString } from "../enrichment/universalDiscovery";
 import { resolveFilm } from "../enrichment/providers/cinema";
+import { isOwnedFilm } from "../cinema/library";
+import { normalizeDateString } from "../books/library";
 
 export interface LetterboxdRssItem {
   title: string;
@@ -22,6 +24,7 @@ export interface LetterboxdRssItem {
   posterUrl?: string;
   reviewText?: string;
   pubDate?: string;
+  letterboxdTags?: string[];
 }
 
 export interface LetterboxdSyncResult {
@@ -41,7 +44,7 @@ function decodeXmlEntities(text: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#0*39;/g, "'")
-    .replace(/&#x27;/g, "'")
+    .replace(/&#x27;/gi, "'")
     .trim();
 }
 
@@ -51,6 +54,20 @@ function extractXmlTag(block: string, tagName: string): string | undefined {
   const m = block.match(regex);
   if (!m) return undefined;
   return decodeXmlEntities(m[1]);
+}
+
+function mergeDistinctTags(
+  existingTags: string[] | null | undefined,
+  incomingTags: string[]
+): string[] {
+  const seen = new Map<string, string>();
+  for (const t of [...(existingTags || []), ...incomingTags]) {
+    const clean = String(t || "").trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (!seen.has(key)) seen.set(key, clean);
+  }
+  return [...seen.values()];
 }
 
 /**
@@ -75,11 +92,9 @@ export function parseLetterboxdRssXml(xmlText: string): LetterboxdRssItem[] {
     const pubDate = extractXmlTag(block, "pubDate");
     const rawDescription = extractXmlTag(block, "description") || "";
 
-    // Skip non-film list items if they don't have a filmTitle and don't link to /film/
     const slugMatch = link.match(/letterboxd\.com\/(?:[^/]+\/)?film\/([^/?#]+)/i);
     if (!filmTitleTag && !slugMatch) continue;
 
-    // Fallback parse from <title> e.g. "The Revenant, 2015 - ★★★★½" or "The Revenant (2015)"
     let filmTitle = filmTitleTag || rawTitle;
     let filmYear = filmYearTag ? parseInt(filmYearTag, 10) : undefined;
     if (!filmTitleTag && rawTitle) {
@@ -106,11 +121,9 @@ export function parseLetterboxdRssXml(xmlText: string): LetterboxdRssItem[] {
       link.toLowerCase().includes("/watchlist") ||
       /added .* to their watchlist/i.test(rawDescription);
 
-    // Extract poster <img> from description CDATA
     const imgMatch = rawDescription.match(/<img[^>]+src=["']([^"']+)["']/i);
     const posterUrl = imgMatch ? imgMatch[1] : undefined;
 
-    // Strip leading poster <p><img .../></p> and "Watched on ..." / watchlist boilerplate to extract pure review text
     const cleanReview = rawDescription
       .replace(/<p>\s*<img[^>]*>\s*<\/p>/gi, "")
       .replace(/<p>\s*Watched on [^<]*<\/p>/gi, "")
@@ -141,52 +154,43 @@ export function parseLetterboxdRssXml(xmlText: string): LetterboxdRssItem[] {
   return items;
 }
 
-/**
- * Fetches and syncs a user's Letterboxd RSS feed into global_entities and user_saves
- */
-export async function syncLetterboxdRss(
-  usernameInput: string,
+export async function upsertLetterboxdFilms(
   userId: string,
+  parsedItems: LetterboxdRssItem[],
   options?: { fetchFn?: typeof fetch; hydrateMissingDirectors?: boolean }
-): Promise<LetterboxdSyncResult> {
+): Promise<{
+  fetchedCount: number;
+  createdEntities: number;
+  createdSaves: number;
+  updatedSaves: number;
+  tagsImportedCount: number;
+}> {
   const fetchFn = options?.fetchFn ?? fetch;
-  // Normalize username or full URL (e.g. "https://letterboxd.com/carlosgmt/" -> "carlosgmt")
-  const cleanUsername = usernameInput
-    .trim()
-    .replace(/^https?:\/\/(?:www\.)?letterboxd\.com\//i, "")
-    .replace(/\/rss\/?$/i, "")
-    .replace(/^@+/, "")
-    .split("/")[0]
-    .trim();
-
-  if (!cleanUsername) {
-    throw new Error("Valid Letterboxd username is required");
-  }
-
-  const rssUrl = `https://letterboxd.com/${encodeURIComponent(cleanUsername)}/rss/`;
-  const res = await fetchFn(rssUrl, {
-    headers: {
-      "User-Agent": "Curio/3.2 (https://curio.local; live-rss-sync)",
-      Accept: "application/rss+xml, application/xml, text/xml, */*",
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Letterboxd RSS returned HTTP ${res.status} for @${cleanUsername}`);
-  }
-
-  const xmlText = await res.text();
-  const parsedItems = parseLetterboxdRssXml(xmlText);
-
   let createdEntities = 0;
   let createdSaves = 0;
   let updatedSaves = 0;
+  let tagsImportedCount = 0;
 
-  // Load existing film entities for fast multi-key deduplication
   const existingFilms = await db
     .select()
     .from(globalEntities)
     .where(eq(globalEntities.typePath, "/media/film"));
+
+  const userFilmSaves = await db
+    .select({ entity: globalEntities })
+    .from(userSaves)
+    .innerJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
+    .where(
+      and(
+        eq(userSaves.userId, userId),
+        eq(globalEntities.typePath, "/media/film")
+      )
+    );
+  const userFilmIds = new Set(userFilmSaves.map((r) => r.entity.id));
+  const prioritizedFilms = [
+    ...userFilmSaves.map((r) => r.entity),
+    ...existingFilms.filter((e) => !userFilmIds.has(e.id)),
+  ];
 
   for (const item of parsedItems) {
     const tmdbExtId = item.tmdbId ? `tmdb:movie:${item.tmdbId}` : null;
@@ -196,8 +200,7 @@ export async function syncLetterboxdRss(
     });
     const normItemTitle = normalizeEntityString(item.filmTitle);
 
-    // 1. Multi-Key Canonical Deduplication
-    let matchedEntity = existingFilms.find((e) => {
+    let matchedEntity = prioritizedFilms.find((e) => {
       if (tmdbExtId && e.canonicalExternalId === tmdbExtId) return true;
       if (e.canonicalExternalId === lbExtId) return true;
       if (e.canonicalUrl === item.canonicalFilmUrl) return true;
@@ -206,15 +209,16 @@ export async function syncLetterboxdRss(
       if (item.tmdbId && String(eCore.tmdbId) === String(item.tmdbId)) return true;
       const normETitle = normalizeEntityString(e.title);
       const eYear = eCore.releaseYear || eCore.year;
-      if (normETitle === normItemTitle && (!item.filmYear || !eYear || Number(eYear) === item.filmYear)) {
+      if (
+        normETitle === normItemTitle &&
+        (!item.filmYear || !eYear || Number(eYear) === item.filmYear)
+      ) {
         return true;
       }
       return false;
     });
 
     if (!matchedEntity) {
-      // Zero-Call Fast Path: Use Letterboxd RSS poster + title + year directly;
-      // only call resolveFilm if poster is missing or director hydration is enabled
       let posterUrl = item.posterUrl;
       let director: string | undefined;
       let runtimeMinutes: number | undefined;
@@ -272,9 +276,9 @@ export async function syncLetterboxdRss(
 
       matchedEntity = inserted;
       existingFilms.push(inserted);
+      prioritizedFilms.unshift(inserted);
       createdEntities++;
     } else if (!matchedEntity.heroImageUrl && item.posterUrl) {
-      // Self-heal missing poster on existing entity from Letterboxd high-res poster
       await db
         .update(globalEntities)
         .set({ heroImageUrl: item.posterUrl })
@@ -282,21 +286,51 @@ export async function syncLetterboxdRss(
       matchedEntity.heroImageUrl = item.posterUrl;
     }
 
-    // 2. Idempotent User Save Upsert on (userId, entityId)
     const [existingSave] = await db
       .select()
       .from(userSaves)
       .where(and(eq(userSaves.userId, userId), eq(userSaves.entityId, matchedEntity.id)))
       .limit(1);
 
+    const existingCv =
+      existingSave?.userCustomValues &&
+      typeof existingSave.userCustomValues === "object"
+        ? (existingSave.userCustomValues as Record<string, any>)
+        : {};
+    const alreadyOwned = existingSave
+      ? isOwnedFilm(existingSave, matchedEntity)
+      : false;
+    const isWishlist = alreadyOwned ? false : Boolean(item.isWatchlist);
+
+    const incomingLbTags = (item.letterboxdTags || [])
+      .map((t) => String(t || "").trim().toLowerCase())
+      .filter(Boolean);
+    const existingLbTags = Array.isArray(existingCv.letterboxdTags)
+      ? (existingCv.letterboxdTags as string[])
+      : [];
+    const combinedLbTags = [
+      ...new Set([...existingLbTags, ...incomingLbTags]),
+    ];
+    tagsImportedCount += incomingLbTags.length;
+
     const customVals: Record<string, any> = {
-      ...((existingSave?.userCustomValues as Record<string, any>) || {}),
+      ...existingCv,
+      watchStatus: Boolean(item.isWatchlist) ? "WATCHLIST" : "WATCHED",
+      ...(combinedLbTags.length > 0 ? { letterboxdTags: combinedLbTags } : {}),
     };
     if (item.memberRating !== undefined) customVals.rating = item.memberRating;
-    if (item.watchedDate) customVals.dateWatched = item.watchedDate;
+    if (item.watchedDate) {
+      customVals.dateWatched = normalizeDateString(item.watchedDate) || item.watchedDate;
+    }
     if (item.rewatch) customVals.rewatch = true;
 
-    const isWishlist = Boolean(item.isWatchlist);
+    const incomingTags = [
+      "media",
+      "film",
+      "letterboxd",
+      ...(item.isWatchlist ? ["watchlist"] : []),
+      ...incomingLbTags,
+    ];
 
     if (existingSave) {
       const updatedNotes =
@@ -311,6 +345,7 @@ export async function syncLetterboxdRss(
         .set({
           wishlist: isWishlist,
           userCustomValues: customVals,
+          autoTags: mergeDistinctTags(existingSave.autoTags, incomingTags),
           personalNotes: updatedNotes,
         })
         .where(eq(userSaves.id, existingSave.id));
@@ -324,7 +359,7 @@ export async function syncLetterboxdRss(
         wishlist: isWishlist,
         personalNotes: item.reviewText || null,
         userCustomValues: customVals,
-        autoTags: isWishlist ? ["media", "film", "letterboxd", "watchlist"] : ["media", "film", "letterboxd"],
+        autoTags: mergeDistinctTags([], incomingTags),
         enrichmentStatus: "ENRICHED",
         visibility: "PRIVATE",
       });
@@ -332,12 +367,72 @@ export async function syncLetterboxdRss(
     }
   }
 
+  if (parsedItems.length > 0) {
+    const boardRes = await ensureHierarchicalBoard(userId, {
+      rootSlug: "films",
+      rootTitle: "Films",
+      rootDefaultLayout: "posters",
+      autoRules: { typePathPrefix: "/media/film" },
+    });
+    await db
+      .update(smartLists)
+      .set({ defaultLayout: "posters" })
+      .where(and(eq(smartLists.id, boardRes.rootId)));
+  }
+
   return {
-    username: cleanUsername,
     fetchedCount: parsedItems.length,
     createdEntities,
     createdSaves,
     updatedSaves,
+    tagsImportedCount,
+  };
+}
+
+/**
+ * Fetches and syncs a user's Letterboxd RSS feed into global_entities and user_saves
+ */
+export async function syncLetterboxdRss(
+  usernameInput: string,
+  userId: string,
+  options?: { fetchFn?: typeof fetch; hydrateMissingDirectors?: boolean }
+): Promise<LetterboxdSyncResult> {
+  const fetchFn = options?.fetchFn ?? fetch;
+  const cleanUsername = usernameInput
+    .trim()
+    .replace(/^https?:\/\/(?:www\.)?letterboxd\.com\//i, "")
+    .replace(/\/rss\/?$/i, "")
+    .replace(/^@+/, "")
+    .split("/")[0]
+    .trim();
+
+  if (!cleanUsername) {
+    throw new Error("Valid Letterboxd username is required");
+  }
+
+  const rssUrl = `https://letterboxd.com/${encodeURIComponent(cleanUsername)}/rss/`;
+  const res = await fetchFn(rssUrl, {
+    headers: {
+      "User-Agent": "Curio/3.2 (https://curio.local; live-rss-sync)",
+      Accept: "application/rss+xml, application/xml, text/xml, */*",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Letterboxd RSS returned HTTP ${res.status} for @${cleanUsername}`);
+  }
+
+  const xmlText = await res.text();
+  const parsedItems = parseLetterboxdRssXml(xmlText);
+
+  const upsertRes = await upsertLetterboxdFilms(userId, parsedItems, options);
+
+  return {
+    username: cleanUsername,
+    fetchedCount: upsertRes.fetchedCount,
+    createdEntities: upsertRes.createdEntities,
+    createdSaves: upsertRes.createdSaves,
+    updatedSaves: upsertRes.updatedSaves,
     items: parsedItems,
   };
 }
@@ -355,16 +450,18 @@ export const letterboxdSyncAdapter: SyncAdapter<
     return {
       configured: Boolean(tokens.letterboxdUsername),
       letterboxdUsername: tokens.letterboxdUsername || null,
-      lastSyncedAt: tokens.lastFeedSyncAt || null,
+      lastSyncedAt:
+        tokens.letterboxdLastSyncedAt || tokens.lastFeedSyncAt || null,
+      lastError: tokens.letterboxdLastError || null,
     };
   },
   async run(userId: string, options): Promise<SyncRunResult> {
-    let username = typeof options?.username === "string" ? options.username.trim() : "";
-    if (!username) {
-      const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-      const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
-      username = String(tokens.letterboxdUsername || "").trim();
-    }
+    const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
+    const username =
+      (typeof options?.username === "string" && options.username.trim()) ||
+      String(tokens.letterboxdUsername || "").trim();
+
     if (!username) {
       return {
         sourceId: "letterboxd",
@@ -383,36 +480,54 @@ export const letterboxdSyncAdapter: SyncAdapter<
       };
     }
 
-    const res = await syncLetterboxdRss(username, userId, {
-      fetchFn: options?.fetchFn as typeof fetch | undefined,
-      hydrateMissingDirectors: options?.hydrateMissingDirectors,
-    });
-    const boardRes = await ensureHierarchicalBoard(userId, {
-      rootSlug: "films",
-      rootTitle: "Films",
-      rootDefaultLayout: "shelf",
-      autoRules: { typePathPrefix: "/media/film" },
-    });
-    await db
-      .update(smartLists)
-      .set({ defaultLayout: "shelf" })
-      .where(and(eq(smartLists.id, boardRes.rootId)));
+    try {
+      const res = await syncLetterboxdRss(username, userId, {
+        fetchFn: options?.fetchFn as typeof fetch | undefined,
+        hydrateMissingDirectors: options?.hydrateMissingDirectors,
+      });
+      const syncedAt = new Date().toISOString();
 
-    return {
-      sourceId: "letterboxd",
-      synced: true,
-      recordsProcessed: res.fetchedCount,
-      createdSaves: res.createdSaves,
-      updatedSaves: res.updatedSaves,
-      promotedFromWishlist: 0,
-      prunedSaves: 0,
-      prunedEntities: 0,
-      connectionsSynced: 0,
-      boardsCreated: boardRes.createdCount,
-      digest: `lb-${res.username}-${res.fetchedCount}`,
-      syncedAt: new Date().toISOString(),
-      meta: { username: res.username },
-    };
+      await db
+        .update(users)
+        .set({
+          googleSyncTokens: {
+            ...tokens,
+            letterboxdUsername: res.username,
+            letterboxdLastSyncedAt: syncedAt,
+            letterboxdLastError: null,
+            lastFeedSyncAt: syncedAt,
+          },
+        })
+        .where(eq(users.id, userId));
+
+      return {
+        sourceId: "letterboxd",
+        synced: true,
+        recordsProcessed: res.fetchedCount,
+        createdSaves: res.createdSaves,
+        updatedSaves: res.updatedSaves,
+        promotedFromWishlist: 0,
+        prunedSaves: 0,
+        prunedEntities: 0,
+        connectionsSynced: 0,
+        boardsCreated: 0,
+        digest: `lb-${res.username}-${res.fetchedCount}`,
+        syncedAt,
+        meta: { username: res.username },
+      };
+    } catch (err: any) {
+      await db
+        .update(users)
+        .set({
+          googleSyncTokens: {
+            ...tokens,
+            letterboxdUsername: username,
+            letterboxdLastError: err?.message || "Letterboxd sync failed",
+          },
+        })
+        .where(eq(users.id, userId));
+      throw err;
+    }
   },
 };
 

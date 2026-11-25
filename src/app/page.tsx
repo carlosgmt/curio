@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import Link from "next/link";
 import { Omnibox } from "@/components/shapeshift/Omnibox";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import { ImporterModal } from "@/components/importers/ImporterModal";
@@ -27,7 +26,7 @@ import {
   isTypeCoveredByBoards,
   type TypePromptInfo,
 } from "@/lib/lists/promptRules";
-import { MasonryLayout, GridLayout, TimelineLayout, ShelfLayout } from "@/components/layout";
+import { MasonryLayout, GridLayout, TimelineLayout, ShelfLayout, PosterWallLayout } from "@/components/layout";
 import { ViewModeSwitcher, type LayoutEngineType } from "@/components/layout/ViewModeSwitcher";
 import type { SilhouetteDensity } from "@/components/cards/registry";
 import {
@@ -41,15 +40,41 @@ import {
   Shirt,
   Package,
   BookOpen,
+  Film,
   Plus,
+  Search,
+  CheckCircle2,
+  Clock,
+  ShoppingBag,
+  Repeat,
 } from "lucide-react";
 import { LogBookModal } from "@/components/library/LogBookModal";
 import {
   GoodreadsSyncModal,
   type GoodreadsSyncStatusInfo,
 } from "@/components/library/GoodreadsSyncModal";
+import { OpenBook3DModal } from "@/components/library/OpenBook3DModal";
+import { LogFilmModal } from "@/components/cinema/LogFilmModal";
+import {
+  LetterboxdSyncModal,
+  type LetterboxdSyncStatusInfo,
+} from "@/components/cinema/LetterboxdSyncModal";
+import {
+  compareLibraryBooks,
+  computeLibraryStats,
+  formatBookSourceLabel,
+  toLibraryBookView,
+  type BookSortKey,
+  type LibraryBookView,
+} from "@/lib/books/library";
+import {
+  findDuplicateBookGroups,
+  isTravelGuideOrStudyBook,
+  sanitizeGoodreadsNote,
+} from "@/lib/books/identity";
+import { computeCinemaStats, toFilmView, type FilmView } from "@/lib/cinema/library";
 
-const VALID_LAYOUT_MODES = new Set<LayoutEngineType>(["masonry", "grid", "timeline", "shelf"]);
+const VALID_LAYOUT_MODES = new Set<LayoutEngineType>(["masonry", "grid", "timeline", "shelf", "posters"]);
 
 function isShelfDefaultBoard(slug: string | null, wishOnly: boolean, isMyStuffDescendant = false): boolean {
   if (wishOnly) return true;
@@ -59,7 +84,6 @@ function isShelfDefaultBoard(slug: string | null, wishOnly: boolean, isMyStuffDe
     slug === "my-stuff" ||
     slug.startsWith("my-stuff-") ||
     slug === "books" ||
-    slug === "films" ||
     slug === "music" ||
     slug === "wishlist"
   );
@@ -76,16 +100,27 @@ function resolveBoardLayout(
   dbDefault?: string | null,
   isMyStuffDescendant = false
 ): LayoutEngineType {
-  if (dbDefault && VALID_LAYOUT_MODES.has(dbDefault as LayoutEngineType)) {
-    return dbDefault as LayoutEngineType;
-  }
   if (typeof window !== "undefined") {
     const saved = localStorage.getItem(`curio_board_layout:${getLayoutPreferenceKey(slug, wishOnly)}`);
     if (saved && VALID_LAYOUT_MODES.has(saved as LayoutEngineType)) {
       return saved as LayoutEngineType;
     }
   }
+  if (slug === "films" && (!dbDefault || dbDefault === "shelf")) {
+    return "posters";
+  }
+  if (dbDefault && VALID_LAYOUT_MODES.has(dbDefault as LayoutEngineType)) {
+    return dbDefault as LayoutEngineType;
+  }
+  if (slug === "films") return "posters";
   return isShelfDefaultBoard(slug, wishOnly, isMyStuffDescendant) ? "shelf" : "masonry";
+}
+
+function isLetterboxdFilmView(f: FilmView): boolean {
+  if (f.letterboxdTags.length > 0) return true;
+  if (f.canonicalUrl?.toLowerCase().includes("letterboxd.com")) return true;
+  const tags = Array.isArray(f.card.save.autoTags) ? f.card.save.autoTags : [];
+  return tags.some((t) => String(t).toLowerCase() === "letterboxd");
 }
 
 export default function Home() {
@@ -135,6 +170,26 @@ export default function Home() {
   const [isGoodreadsSyncOpen, setIsGoodreadsSyncOpen] = useState(false);
   const [goodreadsStatus, setGoodreadsStatus] =
     useState<GoodreadsSyncStatusInfo | null>(null);
+  const [isLogFilmOpen, setIsLogFilmOpen] = useState(false);
+  const [isLetterboxdSyncOpen, setIsLetterboxdSyncOpen] = useState(false);
+  const [letterboxdStatus, setLetterboxdStatus] =
+    useState<LetterboxdSyncStatusInfo | null>(null);
+  const [bookSubFilter, setBookSubFilter] = useState<
+    "ALL" | "MY_STUFF" | "GOODREADS" | "MANUAL" | "FINISHED" | "READING" | "WANT_TO_READ"
+  >("ALL");
+  const [bookTagFilter, setBookTagFilter] = useState<string | null>(null);
+  const [bookSearchQuery, setBookSearchQuery] = useState("");
+  const [bookSortBy, setBookSortBy] = useState<BookSortKey>("dateAdded");
+  const [isDedupingBooks, setIsDedupingBooks] = useState(false);
+  const [isEnrichingBooks, setIsEnrichingBooks] = useState(false);
+  const [booksBannerMsg, setBooksBannerMsg] = useState<string | null>(null);
+  const [openBookSaveId, setOpenBookSaveId] = useState<string | null>(null);
+  const [filmSubFilter, setFilmSubFilter] = useState<
+    "ALL" | "LETTERBOXD" | "WATCHED" | "WATCHLIST" | "REWATCH" | "OWNED"
+  >("ALL");
+  const [filmTagFilter, setFilmTagFilter] = useState<string | null>(null);
+  const [filmSearchQuery, setFilmSearchQuery] = useState("");
+  const [filmSortBy, setFilmSortBy] = useState<"recent" | "dateWatched" | "rating" | "title" | "year">("recent");
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const fetchSeqRef = useRef(0);
 
@@ -800,8 +855,192 @@ export default function Home() {
 
   const visibleItems = wishOnly ? items.filter((it) => it.save.wishlist) : items;
 
+  const openCardOrBook = useCallback(
+    (card: CardData, presentation?: "standard" | "press") => {
+      const isBookCard =
+        card.entity?.coreType === "BOOK" || card.save.typePath === "/product/book";
+      if (isBookCard && presentation !== "press") {
+        setOpenBookSaveId(card.save.id);
+        return;
+      }
+      setLightboxPresentation(presentation || "standard");
+      setSelectedCard(card);
+    },
+    []
+  );
+
+  const booksBoardData = useMemo(() => {
+    if (activeListSlug !== "books" || !activeListDetails?.sections) {
+      return null;
+    }
+    const rawPairs: Array<{ save: any; entity: any; card: CardData; view: LibraryBookView }> = [];
+    for (const sec of activeListDetails.sections) {
+      for (const it of sec.items) {
+        const cardData: CardData = {
+          save: it.save,
+          entity: it.entity,
+          connections: it.connections,
+        };
+        const view = toLibraryBookView(it.save, it.entity);
+        view.card = cardData;
+        rawPairs.push({ save: it.save, entity: it.entity, card: cardData, view });
+      }
+    }
+    const views = rawPairs.map((p) => p.view);
+    const stats = computeLibraryStats(views);
+    const goodreadsCount = views.filter((b) => b.sources.includes("GOODREADS")).length;
+    const myStuffBookCount = views.filter((b) => b.sources.includes("MY_STUFF")).length;
+    const manualCount = views.filter((b) => b.sources.includes("MANUAL")).length;
+    const dupGroups = findDuplicateBookGroups(rawPairs);
+    const duplicateCount = dupGroups.reduce((acc, g) => acc + g.length - 1, 0);
+    const hygieneIssueCount = rawPairs.filter(({ save, entity }) => {
+      const title = (save.privateTitle || entity?.title || "").trim();
+      const probe = `${title} ${entity?.brandOrCreator || ""} ${(save.autoTags || []).join(" ")}`;
+      if (isTravelGuideOrStudyBook(probe)) return true;
+      const sanitized = sanitizeGoodreadsNote(save.personalNotes);
+      if ((save.personalNotes || null) !== sanitized) return true;
+      const tags = Array.isArray(save.autoTags) ? save.autoTags : [];
+      return tags.some((t: string) => String(t).toLowerCase() === "[edit]");
+    }).length;
+    const missingMetadataCount = views.filter(
+      (b) => !b.coverUrl || !b.pageCount || b.author === "Unknown Author"
+    ).length;
+
+    const bySaveId = new Map<string, LibraryBookView>();
+    for (const v of views) bySaveId.set(v.saveId, v);
+
+    return {
+      views,
+      bySaveId,
+      stats,
+      goodreadsCount,
+      myStuffBookCount,
+      manualCount,
+      duplicateCount,
+      hygieneIssueCount,
+      missingMetadataCount,
+    };
+  }, [activeListSlug, activeListDetails]);
+
+  const filmsBoardData = useMemo(() => {
+    if (activeListSlug !== "films" || !activeListDetails?.sections) {
+      return null;
+    }
+    const views: FilmView[] = [];
+    const bySaveId = new Map<string, FilmView>();
+    for (const sec of activeListDetails.sections) {
+      for (const it of sec.items) {
+        const cardData: CardData = {
+          save: it.save,
+          entity: it.entity,
+          connections: it.connections,
+        };
+        const view = toFilmView(it.save, it.entity);
+        view.card = cardData;
+        views.push(view);
+        bySaveId.set(view.saveId, view);
+      }
+    }
+    const stats = computeCinemaStats(views);
+    const letterboxdCount = views.filter(isLetterboxdFilmView).length;
+    const rewatchCount = views.filter((f) => f.rewatch).length;
+
+    return {
+      views,
+      bySaveId,
+      stats,
+      letterboxdCount,
+      rewatchCount,
+    };
+  }, [activeListSlug, activeListDetails]);
+
   const displayedBoardSections = useMemo(() => {
     if (!activeListDetails?.sections) return [];
+    if (activeListSlug === "books" && booksBoardData) {
+      const q = bookSearchQuery.trim().toLowerCase();
+      return activeListDetails.sections
+        .map((section) => {
+          const filtered = section.items.filter((item) => {
+            const view = booksBoardData.bySaveId.get(item.save.id);
+            if (!view) return false;
+            if (bookSubFilter === "MY_STUFF" && !view.sources.includes("MY_STUFF")) return false;
+            if (bookSubFilter === "GOODREADS" && !view.sources.includes("GOODREADS")) return false;
+            if (bookSubFilter === "MANUAL" && !view.sources.includes("MANUAL")) return false;
+            if (bookSubFilter === "FINISHED" && view.readingStatus !== "FINISHED") return false;
+            if (bookSubFilter === "READING" && view.readingStatus !== "READING") return false;
+            if (bookSubFilter === "WANT_TO_READ" && view.readingStatus !== "WANT_TO_READ") return false;
+            if (
+              bookTagFilter &&
+              !view.tags.some((t) => t.toLowerCase() === bookTagFilter.toLowerCase())
+            ) {
+              return false;
+            }
+            if (q) {
+              const hay = `${view.title} ${view.author} ${view.personalNotes || ""} ${view.sources
+                .map(formatBookSourceLabel)
+                .join(" ")} ${view.tags.join(" ")}`.toLowerCase();
+              if (!hay.includes(q)) return false;
+            }
+            return true;
+          });
+
+          const sorted = [...filtered];
+          sorted.sort((ia, ib) => {
+            const a = booksBoardData.bySaveId.get(ia.save.id)!;
+            const b = booksBoardData.bySaveId.get(ib.save.id)!;
+            return compareLibraryBooks(a, b, bookSortBy);
+          });
+          return { ...section, items: sorted };
+        })
+        .filter((section) => section.items.length > 0);
+    }
+
+    if (activeListSlug === "films" && filmsBoardData) {
+      const q = filmSearchQuery.trim().toLowerCase();
+      return activeListDetails.sections
+        .map((section) => {
+          const filtered = section.items.filter((item) => {
+            const view = filmsBoardData.bySaveId.get(item.save.id);
+            if (!view) return false;
+            if (filmSubFilter === "LETTERBOXD" && !isLetterboxdFilmView(view)) return false;
+            if (filmSubFilter === "WATCHED" && view.watchStatus !== "WATCHED") return false;
+            if (filmSubFilter === "WATCHLIST" && view.watchStatus !== "WATCHLIST") return false;
+            if (filmSubFilter === "REWATCH" && !view.rewatch) return false;
+            if (filmSubFilter === "OWNED" && !view.isOwned) return false;
+            if (
+              filmTagFilter &&
+              !view.tags.some((t) => t.toLowerCase() === filmTagFilter.toLowerCase())
+            ) {
+              return false;
+            }
+            if (q) {
+              const hay = `${view.title} ${view.director} ${view.personalNotes || ""} ${view.tags.join(
+                " "
+              )}`.toLowerCase();
+              if (!hay.includes(q)) return false;
+            }
+            return true;
+          });
+
+          const sorted = [...filtered];
+          if (filmSortBy !== "recent") {
+            sorted.sort((ia, ib) => {
+              const a = filmsBoardData.bySaveId.get(ia.save.id)!;
+              const b = filmsBoardData.bySaveId.get(ib.save.id)!;
+              if (filmSortBy === "rating") return (b.rating ?? 0) - (a.rating ?? 0);
+              if (filmSortBy === "title") return a.title.localeCompare(b.title);
+              if (filmSortBy === "year") return (b.releaseYear ?? 0) - (a.releaseYear ?? 0);
+              if (filmSortBy === "dateWatched") {
+                return (b.dateWatched || "").localeCompare(a.dateWatched || "");
+              }
+              return 0;
+            });
+          }
+          return { ...section, items: sorted };
+        })
+        .filter((section) => section.items.length > 0);
+    }
+
     if (activeListSlug !== "wardrobe") return activeListDetails.sections;
 
     if (garmentCategoryFilter === "ALL" && garmentSeasonFilter === "ALL") {
@@ -848,7 +1087,57 @@ export default function Home() {
         }),
       }))
       .filter((section) => section.items.length > 0);
-  }, [activeListDetails, activeListSlug, garmentCategoryFilter, garmentSeasonFilter]);
+  }, [
+    activeListDetails,
+    activeListSlug,
+    garmentCategoryFilter,
+    garmentSeasonFilter,
+    booksBoardData,
+    bookSubFilter,
+    bookTagFilter,
+    bookSearchQuery,
+    bookSortBy,
+    filmsBoardData,
+    filmSubFilter,
+    filmTagFilter,
+    filmSearchQuery,
+    filmSortBy,
+  ]);
+
+  const orderedBookViews = useMemo(() => {
+    if (activeListSlug === "books" && booksBoardData) {
+      return displayedBoardSections.flatMap((sec) =>
+        sec.items
+          .map((it) => booksBoardData.bySaveId.get(it.save.id))
+          .filter((v): v is LibraryBookView => Boolean(v))
+      );
+    }
+    return items
+      .filter((it) => it.entity?.coreType === "BOOK" || it.save.typePath === "/product/book")
+      .map((it) => toLibraryBookView(it.save as any, it.entity as any));
+  }, [activeListSlug, booksBoardData, displayedBoardSections, items]);
+
+  const openBookIdx = useMemo(
+    () =>
+      openBookSaveId
+        ? orderedBookViews.findIndex((b) => b.saveId === openBookSaveId)
+        : -1,
+    [orderedBookViews, openBookSaveId]
+  );
+
+  const openBookView = useMemo(() => {
+    if (!openBookSaveId) return null;
+    if (openBookIdx >= 0) return orderedBookViews[openBookIdx];
+    const fromBooks = booksBoardData?.bySaveId.get(openBookSaveId);
+    if (fromBooks) return fromBooks;
+    const fromFeed = items.find((it) => it.save.id === openBookSaveId);
+    if (fromFeed) {
+      const v = toLibraryBookView(fromFeed.save as any, fromFeed.entity as any);
+      v.card = fromFeed;
+      return v;
+    }
+    return null;
+  }, [openBookSaveId, openBookIdx, orderedBookViews, booksBoardData, items]);
 
   if (authLoading) {
     return (
@@ -910,8 +1199,7 @@ export default function Home() {
       item={item}
       density={cardDensity}
       onCardClick={(card) => {
-        setLightboxPresentation("standard");
-        setSelectedCard(card);
+        openCardOrBook(card);
       }}
       onConnect={(card) => {
         setPairingCard(card);
@@ -961,7 +1249,7 @@ export default function Home() {
 
   return (
     <PullToRefresh
-      disabled={Boolean(selectedCard) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen || isLogBookOpen || isGoodreadsSyncOpen}
+      disabled={Boolean(selectedCard) || Boolean(openBookView) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen || isLogBookOpen || isGoodreadsSyncOpen || isLogFilmOpen || isLetterboxdSyncOpen}
       onRefresh={() =>
         Promise.all([
           fetchItems({ reset: true, wishlist: wishOnly }),
@@ -977,14 +1265,6 @@ export default function Home() {
       {/* Header */}
       <div className="max-w-4xl mx-auto mb-8">
         <div className="flex items-center justify-end gap-2.5 mb-4">
-          <Link
-            href="/library"
-            data-testid="nav-personal-library"
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 hover:bg-neutral-200/80 dark:hover:bg-neutral-700/80 border border-neutral-200/60 dark:border-neutral-700/60 text-xs font-medium text-neutral-800 dark:text-neutral-200 transition"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span>Library</span>
-          </Link>
           <UserNav
             user={user}
             onOpenAuth={(tab = "login") => {
@@ -1245,17 +1525,93 @@ export default function Home() {
                     )}
                     {activeListSlug === "books" && (
                       <>
-                        <Link
-                          href="/library"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition"
-                        >
-                          <BookOpen className="w-3.5 h-3.5" />
-                          <span>Open Personal Library →</span>
-                        </Link>
+                        {booksBoardData && (booksBoardData.duplicateCount > 0 || booksBoardData.hygieneIssueCount > 0) && (
+                          <button
+                            type="button"
+                            data-testid="fix-book-duplicates-btn"
+                            disabled={isDedupingBooks}
+                            onClick={async () => {
+                              setIsDedupingBooks(true);
+                              setBooksBannerMsg(null);
+                              try {
+                                const res = await apiFetch("/api/v1/library/deduplicate", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({}),
+                                });
+                                const d = await res.json().catch(() => ({}));
+                                if (res.ok) {
+                                  const parts: string[] = [];
+                                  if (d.mergedSavesRemoved > 0) {
+                                    parts.push(`merged ${d.mergedSavesRemoved} duplicates`);
+                                  }
+                                  if (d.cleanedNotesCount > 0) {
+                                    parts.push(`cleaned ${d.cleanedNotesCount} Goodreads notes/tags`);
+                                  }
+                                  if (d.reclassifiedReferenceCount > 0) {
+                                    parts.push(`moved ${d.reclassifiedReferenceCount} travel/study books to My Stuff`);
+                                  }
+                                  setBooksBannerMsg(
+                                    parts.length > 0
+                                      ? `Library cleaned: ${parts.join(", ")}.`
+                                      : "Library is already clean."
+                                  );
+                                  await Promise.all([
+                                    fetchItems({ reset: true }),
+                                    fetchLists(),
+                                    refreshActiveBoard("books"),
+                                  ]);
+                                }
+                              } finally {
+                                setIsDedupingBooks(false);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 hover:border-amber-500 transition cursor-pointer disabled:opacity-50"
+                          >
+                            {isDedupingBooks && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            <span>
+                              Clean &amp; Deduplicate (
+                              {booksBoardData.duplicateCount + booksBoardData.hygieneIssueCount})
+                            </span>
+                          </button>
+                        )}
+                        {booksBoardData && booksBoardData.missingMetadataCount > 0 && (
+                          <button
+                            type="button"
+                            disabled={isEnrichingBooks}
+                            onClick={async () => {
+                              setIsEnrichingBooks(true);
+                              setBooksBannerMsg(null);
+                              try {
+                                const res = await apiFetch("/api/v1/library/enrich", { method: "POST" });
+                                const d = await res.json().catch(() => ({}));
+                                if (res.ok) {
+                                  setBooksBannerMsg(
+                                    `Enriched ${d.enrichedCount ?? 0} of ${d.totalChecked ?? 0} books with covers, authors, and summaries.`
+                                  );
+                                  await Promise.all([
+                                    fetchItems({ reset: true }),
+                                    refreshActiveBoard("books"),
+                                  ]);
+                                }
+                              } finally {
+                                setIsEnrichingBooks(false);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
+                          >
+                            {isEnrichingBooks ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            )}
+                            <span>Enrich Covers ({booksBoardData.missingMetadataCount})</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setIsLogBookOpen(true)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition cursor-pointer"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>Log Read Book</span>
@@ -1275,6 +1631,34 @@ export default function Home() {
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
                           <span>Sync Goodreads</span>
+                        </button>
+                      </>
+                    )}
+                    {activeListSlug === "films" && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setIsLogFilmOpen(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Log Film</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            apiFetch("/api/v1/cinema/letterboxd-sync")
+                              .then((r) => (r.ok ? r.json() : null))
+                              .then((d) => {
+                                if (d) setLetterboxdStatus(d);
+                              })
+                              .catch(() => {});
+                            setIsLetterboxdSyncOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Sync Letterboxd</span>
                         </button>
                       </>
                     )}
@@ -1332,6 +1716,241 @@ export default function Home() {
                     </a>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Books Sub-Board Filter Bar & Telemetry (when on Books board) */}
+            {activeListSlug === "books" && booksBoardData && (
+              <div className="mb-6 space-y-3" data-testid="books-subboard-filters">
+                {booksBannerMsg && (
+                  <div className="flex items-center justify-between gap-2 px-4 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs font-mono text-neutral-800 dark:text-neutral-200">
+                    <span>{booksBannerMsg}</span>
+                    <button
+                      type="button"
+                      onClick={() => setBooksBannerMsg(null)}
+                      className="text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(
+                      [
+                        { id: "ALL", label: "All", count: booksBoardData.stats.total },
+                        { id: "MY_STUFF", label: "My Stuff", count: booksBoardData.myStuffBookCount, icon: ShoppingBag },
+                        { id: "GOODREADS", label: "Goodreads", count: booksBoardData.goodreadsCount },
+                        { id: "MANUAL", label: "Manual", count: booksBoardData.manualCount },
+                        { id: "FINISHED", label: "Read", count: booksBoardData.stats.finishedCount, icon: CheckCircle2 },
+                        { id: "READING", label: "Reading", count: booksBoardData.stats.readingCount, icon: BookOpen },
+                        { id: "WANT_TO_READ", label: "Want to Read", count: booksBoardData.stats.wantToReadCount, icon: Clock },
+                      ] as const
+                    ).map((f) => {
+                      const active = bookSubFilter === f.id;
+                      const Icon = "icon" in f ? f.icon : null;
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          data-testid={`books-filter-${f.id.toLowerCase()}`}
+                          onClick={() => setBookSubFilter(f.id)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border transition cursor-pointer ${
+                            active
+                              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white shadow-xs"
+                              : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                          }`}
+                        >
+                          {Icon && <Icon className="w-3 h-3" />}
+                          <span>{f.label}</span>
+                          <span className="opacity-70 tabular-nums">{f.count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 sm:flex-initial sm:w-56">
+                      <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={bookSearchQuery}
+                        onChange={(e) => setBookSearchQuery(e.target.value)}
+                        placeholder="Search books, authors, notes..."
+                        className="w-full pl-8 pr-3 py-1.5 rounded-full border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                      />
+                    </div>
+                    <select
+                      value={bookSortBy}
+                      onChange={(e) => setBookSortBy(e.target.value as BookSortKey)}
+                      aria-label="Sort books"
+                      className="px-3 py-1.5 rounded-full border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs font-mono focus:outline-none"
+                    >
+                      <option value="dateAdded">Sort: Date Added</option>
+                      <option value="author">Sort: Author (A–Z)</option>
+                      <option value="title">Sort: Title (A–Z)</option>
+                      <option value="read">Sort: Read Status</option>
+                      <option value="dateRead">Sort: Date Read</option>
+                      <option value="rating">Sort: Highest Rated</option>
+                      <option value="pages">Sort: Page Count</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Goodreads & Personal Labels Bar */}
+                {booksBoardData.stats.tagCounts.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                    <button
+                      type="button"
+                      onClick={() => setBookTagFilter(null)}
+                      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer ${
+                        bookTagFilter === null
+                          ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white"
+                          : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                      }`}
+                    >
+                      All Labels
+                    </button>
+                    {booksBoardData.stats.tagCounts.map((t) => (
+                      <button
+                        key={t.tag}
+                        type="button"
+                        onClick={() =>
+                          setBookTagFilter((cur) => (cur === t.tag ? null : t.tag))
+                        }
+                        className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer ${
+                          bookTagFilter?.toLowerCase() === t.tag.toLowerCase()
+                            ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white"
+                            : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                        }`}
+                      >
+                        <span>#{t.tag}</span>
+                        <span className="opacity-65 tabular-nums">{t.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Compact Flush Reading Metrics Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 border-y border-neutral-200 dark:border-neutral-800 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200 dark:divide-neutral-800 text-left">
+                  {[
+                    { label: "Volumes", value: booksBoardData.stats.total },
+                    { label: "Owned", value: booksBoardData.stats.ownedCount },
+                    { label: "Read", value: booksBoardData.stats.finishedCount },
+                    { label: "Pages Read", value: booksBoardData.stats.totalPagesRead.toLocaleString() },
+                    {
+                      label: "Avg Rating",
+                      value: booksBoardData.stats.avgRating !== null ? `${booksBoardData.stats.avgRating} ★` : "—",
+                    },
+                  ].map((m) => (
+                    <div key={m.label} className="py-2.5 px-3.5">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-neutral-400">
+                        {m.label}
+                      </div>
+                      <div className="font-mono text-base sm:text-lg tabular-nums font-medium text-neutral-900 dark:text-neutral-100">
+                        {m.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Films Sub-Board Filter Bar & Telemetry (when on Films board) */}
+            {activeListSlug === "films" && filmsBoardData && (
+              <div className="mb-6 space-y-3" data-testid="films-subboard-filters">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(
+                      [
+                        { id: "ALL", label: "All", count: filmsBoardData.stats.total },
+                        { id: "LETTERBOXD", label: "Letterboxd", count: filmsBoardData.letterboxdCount },
+                        { id: "WATCHED", label: "Watched", count: filmsBoardData.stats.watchedCount, icon: CheckCircle2 },
+                        { id: "WATCHLIST", label: "Watchlist", count: filmsBoardData.stats.watchlistCount, icon: Clock },
+                        { id: "REWATCH", label: "Rewatches", count: filmsBoardData.rewatchCount, icon: Repeat },
+                        { id: "OWNED", label: "Owned", count: filmsBoardData.stats.ownedCount, icon: ShoppingBag },
+                      ] as const
+                    ).map((f) => {
+                      const active = filmSubFilter === f.id;
+                      const Icon = "icon" in f ? f.icon : null;
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          data-testid={`films-filter-${f.id.toLowerCase()}`}
+                          onClick={() => setFilmSubFilter(f.id)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border transition cursor-pointer ${
+                            active
+                              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white shadow-xs"
+                              : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                          }`}
+                        >
+                          {Icon && <Icon className="w-3 h-3" />}
+                          <span>{f.label}</span>
+                          <span className="opacity-70 tabular-nums">{f.count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 sm:flex-initial sm:w-56">
+                      <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={filmSearchQuery}
+                        onChange={(e) => setFilmSearchQuery(e.target.value)}
+                        placeholder="Search films, directors, notes..."
+                        className="w-full pl-8 pr-3 py-1.5 rounded-full border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                      />
+                    </div>
+                    <select
+                      value={filmSortBy}
+                      onChange={(e) => setFilmSortBy(e.target.value as any)}
+                      className="px-3 py-1.5 rounded-full border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs font-mono focus:outline-none"
+                    >
+                      <option value="recent">Sort: Board Order</option>
+                      <option value="dateWatched">Sort: Date Watched</option>
+                      <option value="rating">Sort: Highest Rated</option>
+                      <option value="title">Sort: Title A–Z</option>
+                      <option value="year">Sort: Release Year</option>
+                    </select>
+                  </div>
+                </div>
+
+                {filmsBoardData.stats.tagCounts.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilmTagFilter(null)}
+                      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer ${
+                        filmTagFilter === null
+                          ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white"
+                          : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                      }`}
+                    >
+                      All Labels
+                    </button>
+                    {filmsBoardData.stats.tagCounts.map((t) => (
+                      <button
+                        key={t.tag}
+                        type="button"
+                        onClick={() =>
+                          setFilmTagFilter((cur) => (cur === t.tag ? null : t.tag))
+                        }
+                        className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer ${
+                          filmTagFilter?.toLowerCase() === t.tag.toLowerCase()
+                            ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white"
+                            : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                        }`}
+                      >
+                        <span>#{t.tag}</span>
+                        <span className="opacity-65 tabular-nums">{t.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1421,8 +2040,7 @@ export default function Home() {
                     refreshActiveBoard(activeListSlug);
                   }}
                   onCardClick={(card, presentation) => {
-                    setLightboxPresentation(presentation || "standard");
-                    setSelectedCard(card);
+                    openCardOrBook(card, presentation);
                   }}
                 />
               ) : (
@@ -1430,11 +2048,18 @@ export default function Home() {
                   <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
                     {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL")
                       ? "No garments match the selected filters."
+                      : activeListSlug === "books" && (bookSubFilter !== "ALL" || bookTagFilter || bookSearchQuery.trim())
+                      ? "No books match the selected filters."
+                      : activeListSlug === "films" && (filmSubFilter !== "ALL" || filmTagFilter || filmSearchQuery.trim())
+                      ? "No films match the selected filters."
                       : "This board is currently empty."}
                   </p>
                   <p className="text-neutral-400 text-xs max-w-sm mx-auto mb-4">
                     {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL")
                       ? "Try selecting a different category or season combination."
+                      : (activeListSlug === "books" && (bookSubFilter !== "ALL" || bookTagFilter || bookSearchQuery.trim())) ||
+                        (activeListSlug === "films" && (filmSubFilter !== "ALL" || filmTagFilter || filmSearchQuery.trim()))
+                      ? "Clear the active sub-board filters to view the full board."
                       : "Capture an item above while viewing this board, or click Board on any card."}
                   </p>
                   {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL") && (
@@ -1446,6 +2071,30 @@ export default function Home() {
                       className="px-4 py-2 rounded-xl text-xs font-semibold bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-950 transition"
                     >
                       Clear Filters
+                    </button>
+                  )}
+                  {activeListSlug === "books" && (bookSubFilter !== "ALL" || bookTagFilter || bookSearchQuery.trim()) && (
+                    <button
+                      onClick={() => {
+                        setBookSubFilter("ALL");
+                        setBookTagFilter(null);
+                        setBookSearchQuery("");
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-950 transition cursor-pointer"
+                    >
+                      Clear Book Filters
+                    </button>
+                  )}
+                  {activeListSlug === "films" && (filmSubFilter !== "ALL" || filmTagFilter || filmSearchQuery.trim()) && (
+                    <button
+                      onClick={() => {
+                        setFilmSubFilter("ALL");
+                        setFilmTagFilter(null);
+                        setFilmSearchQuery("");
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-950 transition cursor-pointer"
+                    >
+                      Clear Film Filters
                     </button>
                   )}
                 </div>
@@ -1518,8 +2167,16 @@ export default function Home() {
                   <ShelfLayout
                     items={visibleItems}
                     onOpenObject={(card, presentation) => {
-                      setLightboxPresentation(presentation || "standard");
-                      setSelectedCard(card);
+                      openCardOrBook(card, presentation);
+                    }}
+                  />
+                )}
+
+                {layoutEngine === "posters" && (
+                  <PosterWallLayout
+                    items={visibleItems}
+                    onOpenObject={(card, presentation) => {
+                      openCardOrBook(card, presentation);
                     }}
                   />
                 )}
@@ -1557,6 +2214,32 @@ export default function Home() {
         }}
       />
 
+      <OpenBook3DModal
+        book={openBookView}
+        isOpen={Boolean(openBookView)}
+        hasPrev={openBookIdx > 0}
+        hasNext={openBookIdx >= 0 && openBookIdx < orderedBookViews.length - 1}
+        onPrev={() => {
+          if (openBookIdx > 0) setOpenBookSaveId(orderedBookViews[openBookIdx - 1].saveId);
+        }}
+        onNext={() => {
+          if (openBookIdx >= 0 && openBookIdx < orderedBookViews.length - 1) {
+            setOpenBookSaveId(orderedBookViews[openBookIdx + 1].saveId);
+          }
+        }}
+        onClose={() => setOpenBookSaveId(null)}
+        onUpdated={() => {
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
+        onOpenFullDossier={(book) => {
+          setOpenBookSaveId(null);
+          setLightboxPresentation("standard");
+          setSelectedCard(book.card);
+        }}
+      />
+
       <LogBookModal
         isOpen={isLogBookOpen}
         onClose={() => setIsLogBookOpen(false)}
@@ -1571,6 +2254,27 @@ export default function Home() {
         isOpen={isGoodreadsSyncOpen}
         status={goodreadsStatus}
         onClose={() => setIsGoodreadsSyncOpen(false)}
+        onSynced={() => {
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
+      />
+
+      <LogFilmModal
+        isOpen={isLogFilmOpen}
+        onClose={() => setIsLogFilmOpen(false)}
+        onSaved={() => {
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
+      />
+
+      <LetterboxdSyncModal
+        isOpen={isLetterboxdSyncOpen}
+        status={letterboxdStatus}
+        onClose={() => setIsLetterboxdSyncOpen(false)}
         onSynced={() => {
           fetchItems({ reset: true });
           fetchLists();

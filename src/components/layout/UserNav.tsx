@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Download, Share, User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers, Upload, BookOpen } from "lucide-react";
+import { Download, Share, User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers, Upload } from "lucide-react";
 import { AffiliateSettingsModal } from "@/components/commerce/AffiliateSettingsModal";
 import { useInstallPrompt } from "@/components/pwa/useInstallPrompt";
 import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
@@ -136,15 +136,6 @@ export function UserNav({
                 </span>
               </div>
             </div>
-
-            <Link
-              href="/library"
-              onClick={() => setDropdownOpen(false)}
-              className="w-full flex items-center gap-2 p-2 rounded-xl text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition text-left cursor-pointer"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-amber-600" />
-              <span>Personal Library</span>
-            </Link>
 
             <button
               type="button"

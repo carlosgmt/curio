@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  Film,
   LayoutGrid,
   List as ListIcon,
   Loader2,
@@ -30,17 +31,18 @@ import {
   type PressPalette,
 } from "@/lib/press/archetypes";
 import { extractPaletteFromImageUrl } from "@/lib/press/palette";
-import type {
-  LibraryBookView,
-  LibraryStats,
-  ReadingStatus,
+import {
+  compareLibraryBooks,
+  formatBookSourceLabel,
+  type BookSortKey,
+  type LibraryBookView,
+  type LibraryStats,
+  type ReadingStatus,
 } from "@/lib/books/library";
 import { LogBookModal } from "./LogBookModal";
-import {
-  GoodreadsSyncModal,
-  type GoodreadsSyncStatusInfo,
-} from "./GoodreadsSyncModal";
+import { GoodreadsSyncModal, type GoodreadsSyncStatusInfo } from "./GoodreadsSyncModal";
 import { BookInspectorDrawer } from "./BookInspectorDrawer";
+import { OpenBook3DModal } from "./OpenBook3DModal";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { AuthModal } from "@/components/auth/AuthModal";
 
@@ -57,7 +59,6 @@ const VirtualBookshelf3D = dynamic(
 );
 
 type ShelfScope = "owned" | "online" | "all";
-type CatalogSort = "recent" | "dateRead" | "rating" | "title" | "pages";
 
 export function PersonalLibraryView() {
   const [books, setBooks] = useState<LibraryBookView[]>([]);
@@ -81,10 +82,13 @@ export function PersonalLibraryView() {
 
   // Catalog Filters
   const [statusFilter, setStatusFilter] = useState<"ALL" | ReadingStatus>("ALL");
-  const [sourceFilter, setSourceFilter] = useState<"ALL" | "OWNED" | "ONLINE">("ALL");
+  const [sourceFilter, setSourceFilter] = useState<"ALL" | "MY_STUFF" | "GOODREADS" | "MANUAL">("ALL");
+  const [duplicateCount, setDuplicateCount] = useState(0);
+  const [isDeduping, setIsDeduping] = useState(false);
+  const [openBookSaveId, setOpenBookSaveId] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<CatalogSort>("recent");
+  const [sortBy, setSortBy] = useState<BookSortKey>("dateAdded");
   const [catalogLayout, setCatalogLayout] = useState<"grid" | "list">("grid");
 
   // Modals & Actions
@@ -120,6 +124,7 @@ export function PersonalLibraryView() {
       setBooks(loadedBooks);
       setStats(data.stats || null);
       setGrStatus(data.goodreadsStatus || null);
+      setDuplicateCount(typeof data.duplicateCount === "number" ? data.duplicateCount : 0);
 
       if (!initialScopeChosenRef.current) {
         initialScopeChosenRef.current = true;
@@ -258,8 +263,9 @@ export function PersonalLibraryView() {
     const q = searchQuery.trim().toLowerCase();
     const list = books.filter((b) => {
       if (statusFilter !== "ALL" && b.readingStatus !== statusFilter) return false;
-      if (sourceFilter === "OWNED" && !b.isOwned) return false;
-      if (sourceFilter === "ONLINE" && b.isOwned) return false;
+      if (sourceFilter === "MY_STUFF" && !b.sources.includes("MY_STUFF")) return false;
+      if (sourceFilter === "GOODREADS" && !b.sources.includes("GOODREADS")) return false;
+      if (sourceFilter === "MANUAL" && !b.sources.includes("MANUAL")) return false;
       if (
         tagFilter &&
         !b.tags.some((t) => t.toLowerCase() === tagFilter.toLowerCase())
@@ -276,15 +282,7 @@ export function PersonalLibraryView() {
     });
 
     const sorted = [...list];
-    sorted.sort((a, b) => {
-      if (sortBy === "rating") return (b.rating ?? 0) - (a.rating ?? 0);
-      if (sortBy === "title") return a.title.localeCompare(b.title);
-      if (sortBy === "pages") return (b.pageCount ?? 0) - (a.pageCount ?? 0);
-      if (sortBy === "dateRead") {
-        return (b.dateRead || "").localeCompare(a.dateRead || "");
-      }
-      return b.createdAt.localeCompare(a.createdAt);
-    });
+    sorted.sort((a, b) => compareLibraryBooks(a, b, sortBy));
     return sorted;
   }, [books, statusFilter, sourceFilter, tagFilter, searchQuery, sortBy]);
 
@@ -427,6 +425,13 @@ export function PersonalLibraryView() {
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Curio</span>
             </Link>
+            <Link
+              href="/cinema"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border text-xs font-mono text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+            >
+              <Film className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Cinema</span>
+            </Link>
             <div className="min-w-0">
               <h1 className="font-serif-editorial text-2xl sm:text-3xl leading-none tracking-tight text-foreground">
                 Personal Library
@@ -457,6 +462,36 @@ export function PersonalLibraryView() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {duplicateCount > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsDeduping(true);
+                  setBannerNotice(null);
+                  try {
+                    const res = await apiFetch("/api/v1/library/deduplicate", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({}),
+                    });
+                    const d = await res.json();
+                    if (res.ok) {
+                      setBannerNotice(
+                        `Merged ${d.mergedSavesRemoved ?? 0} duplicate books into canonical editions.`
+                      );
+                      await loadLibrary();
+                    }
+                  } finally {
+                    setIsDeduping(false);
+                  }
+                }}
+                disabled={isDeduping}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-amber-500/40 bg-amber-500/15 text-xs font-mono text-amber-700 dark:text-amber-300 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isDeduping && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Fix Duplicates ({duplicateCount})</span>
+              </button>
+            )}
             {missingMetadataCount > 0 && (
               <button
                 type="button"
@@ -688,6 +723,9 @@ export function PersonalLibraryView() {
                   setInspectMode("front");
                   setActiveShelfByIndex(idx);
                 }}
+                onActivateActiveItem={() => {
+                  if (activeBook) setOpenBookSaveId(activeBook.saveId);
+                }}
                 onToggleInspectMode={() =>
                   setInspectMode((m) => (m === "spine" ? "front" : "spine"))
                 }
@@ -890,7 +928,7 @@ export function PersonalLibraryView() {
 
               <span className="h-4 w-px bg-border mx-1 hidden sm:inline-block" />
 
-              {(["ALL", "OWNED", "ONLINE"] as const).map((src) => (
+              {(["ALL", "MY_STUFF", "GOODREADS", "MANUAL"] as const).map((src) => (
                 <button
                   key={src}
                   type="button"
@@ -903,9 +941,7 @@ export function PersonalLibraryView() {
                 >
                   {src === "ALL"
                     ? "Any Source"
-                    : src === "OWNED"
-                    ? "Owned"
-                    : "Read Online"}
+                    : formatBookSourceLabel(src)}
                 </button>
               ))}
             </div>
@@ -923,14 +959,16 @@ export function PersonalLibraryView() {
               </div>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as CatalogSort)}
+                onChange={(e) => setSortBy(e.target.value as BookSortKey)}
                 aria-label="Sort books"
                 className="px-3 py-1.5 rounded-full border border-border bg-card text-xs font-mono focus:outline-none"
               >
-                <option value="recent">Recent</option>
+                <option value="dateAdded">Date Added</option>
+                <option value="author">Author (A–Z)</option>
+                <option value="title">Title (A–Z)</option>
+                <option value="read">Read Status</option>
                 <option value="dateRead">Date Read</option>
-                <option value="rating">Rating</option>
-                <option value="title">Title</option>
+                <option value="rating">Highest Rated</option>
                 <option value="pages">Page Count</option>
               </select>
               <div className="inline-flex items-center rounded-full border border-border bg-card p-0.5">
@@ -1062,15 +1100,20 @@ export function PersonalLibraryView() {
                       )}
 
                       <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                        <span
-                          className={`px-2 py-0.5 rounded-full font-mono text-[9px] uppercase tracking-wider backdrop-blur-xs border ${
-                            book.isOwned
-                              ? "bg-neutral-950/80 text-emerald-300 border-emerald-400/30"
-                              : "bg-neutral-950/75 text-neutral-200 border-white/15"
-                          }`}
-                        >
-                          {book.isOwned ? "Owned" : "Online"}
-                        </span>
+                        {book.sources.slice(0, 2).map((src) => (
+                          <span
+                            key={src}
+                            className={`px-2 py-0.5 rounded-full font-mono text-[9px] uppercase tracking-wider backdrop-blur-xs border ${
+                              src === "MY_STUFF"
+                                ? "bg-neutral-950/80 text-emerald-300 border-emerald-400/30"
+                                : src === "GOODREADS"
+                                ? "bg-neutral-950/80 text-amber-200 border-amber-400/30"
+                                : "bg-neutral-950/75 text-neutral-200 border-white/15"
+                            }`}
+                          >
+                            {formatBookSourceLabel(src)}
+                          </span>
+                        ))}
                       </div>
                     </div>
 
@@ -1113,8 +1156,8 @@ export function PersonalLibraryView() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setLightboxPresentation("standard");
-                            setLightboxCard(book.card);
+                            setSelectedSaveId(book.saveId);
+                            setOpenBookSaveId(book.saveId);
                           }}
                           className="font-mono text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
                         >
@@ -1219,6 +1262,21 @@ export function PersonalLibraryView() {
         onClose={() => setIsSyncModalOpen(false)}
         onSynced={() => {
           void loadLibrary();
+        }}
+      />
+
+      {/* 3D Open Book Spread Modal */}
+      <OpenBook3DModal
+        book={books.find((b) => b.saveId === openBookSaveId) || null}
+        isOpen={Boolean(openBookSaveId)}
+        onClose={() => setOpenBookSaveId(null)}
+        onUpdated={() => {
+          void loadLibrary();
+        }}
+        onOpenFullDossier={(book) => {
+          setOpenBookSaveId(null);
+          setLightboxPresentation("standard");
+          setLightboxCard(book.card);
         }}
       />
 

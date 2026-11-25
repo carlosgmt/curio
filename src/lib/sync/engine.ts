@@ -18,6 +18,7 @@ import {
   type AutoRulesConfig,
   type SmartListLayoutMode,
 } from "@/lib/lists/service";
+import { areSameBook, extractBookProbe } from "@/lib/books/identity";
 
 export type SyncSourceId =
   | "closet"
@@ -536,6 +537,18 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
         if (r.entity.canonicalExternalId) {
           saveByEntityKey.set(r.entity.canonicalExternalId, { save: r.save, entity: r.entity });
         }
+        const rExt =
+          r.entity.extendedAttributes && typeof r.entity.extendedAttributes === "object"
+            ? (r.entity.extendedAttributes as Record<string, unknown>)
+            : {};
+        if (Array.isArray(rExt.mergedPurchaseHubIds)) {
+          for (const pid of rExt.mergedPurchaseHubIds) {
+            const cleanPid = String(pid || "").trim();
+            if (cleanPid) {
+              saveByEntityKey.set(`purchase-hub:${cleanPid}`, { save: r.save, entity: r.entity });
+            }
+          }
+        }
       }
       if (r.save.wishlist) {
         wishlistPool.push({
@@ -598,6 +611,13 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
       liveEntityKeys.add(rec.entityKey);
       const extKey = rec.canonicalExternalId || rec.entityKey;
       liveEntityKeys.add(extKey);
+      const recMergedIds = Array.isArray((rec.extendedAttributes as any)?.mergedPurchaseHubIds)
+        ? ((rec.extendedAttributes as any).mergedPurchaseHubIds as unknown[])
+        : [];
+      for (const pid of recMergedIds) {
+        const cleanPid = String(pid || "").trim();
+        if (cleanPid) liveEntityKeys.add(`purchase-hub:${cleanPid}`);
+      }
 
       const urlHash = sha256Hex(rec.canonicalUrl);
       const mergedStruct: Record<string, unknown> = {};
@@ -613,14 +633,44 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
       let resolvedEntityId: string | null = null;
       let wasReclassified = false;
 
-      // Check existing user save by entityKey or canonicalExternalId
-      const existingMatch =
+      // Check existing user save by entityKey or canonicalExternalId (or book identity match)
+      let existingMatch =
         saveByEntityKey.get(rec.entityKey) || saveByEntityKey.get(extKey);
+      let matchedByBookIdentity = false;
+
+      if (!existingMatch && rec.coreType === "BOOK") {
+        const recProbe = {
+          title: rec.title,
+          author:
+            rec.brandOrCreator ||
+            (typeof rec.coreStructuredData?.author === "string"
+              ? rec.coreStructuredData.author
+              : null),
+          isbn:
+            (typeof rec.coreStructuredData?.isbn === "string"
+              ? rec.coreStructuredData.isbn
+              : null) || rec.modelNumber,
+          coverUrl: rec.heroImageUrl,
+        };
+        const foundBookRow = existingRows.find(
+          (r) =>
+            !r.save.isPrivateMemo &&
+            r.entity &&
+            (r.entity.coreType === "BOOK" || r.save.typePath === "/product/book") &&
+            areSameBook(extractBookProbe(r.save, r.entity), recProbe)
+        );
+        if (foundBookRow && foundBookRow.entity) {
+          existingMatch = { save: foundBookRow.save, entity: foundBookRow.entity };
+          matchedByBookIdentity = true;
+        }
+      }
 
       if (existingMatch) {
         const { save, entity } = existingMatch;
         resolvedSaveId = save.id;
         resolvedEntityId = entity.id;
+        if (entity.entityKey) liveEntityKeys.add(entity.entityKey);
+        if (entity.canonicalExternalId) liveEntityKeys.add(entity.canonicalExternalId);
         wasReclassified =
           entity.coreType !== rec.coreType || (entity.typePath || "") !== rec.typePath;
 
@@ -636,9 +686,19 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
         const preserveEnrichedBook =
           rec.coreType === "BOOK" && entity.coreType === "BOOK";
 
+        const mergedHubIds = new Set<string>([
+          ...(Array.isArray(existingExt.mergedPurchaseHubIds)
+            ? existingExt.mergedPurchaseHubIds.map(String)
+            : []),
+          ...(Array.isArray(mergedExtAttr.mergedPurchaseHubIds)
+            ? mergedExtAttr.mergedPurchaseHubIds.map(String)
+            : []),
+          ...(rec.entityKey.startsWith("purchase-hub:") ? [rec.externalId] : []),
+        ]);
+
         tx.update(globalEntities)
           .set({
-            title: rec.title,
+            title: preserveEnrichedBook ? entity.title || rec.title : rec.title,
             summary: preserveEnrichedBook && entity.summary && !entity.summary.includes("Location:")
               ? entity.summary
               : rec.summary ?? entity.summary,
@@ -652,9 +712,17 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
             typePath: rec.typePath,
             priceCents: rec.priceCents ?? entity.priceCents,
             currency: rec.currency ?? entity.currency,
-            canonicalExternalId: extKey,
+            canonicalExternalId: matchedByBookIdentity
+              ? entity.canonicalExternalId || extKey
+              : extKey,
             coreStructuredData: { ...existingStruct, ...mergedStruct },
-            extendedAttributes: { ...existingExt, ...mergedExtAttr },
+            extendedAttributes: {
+              ...existingExt,
+              ...mergedExtAttr,
+              ...(mergedHubIds.size > 0
+                ? { mergedPurchaseHubIds: [...mergedHubIds] }
+                : {}),
+            },
             updatedAt: new Date(nowMs).toISOString(),
           })
           .where(eq(globalEntities.id, entity.id))
@@ -885,7 +953,20 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
         const belongsToAdapter =
           ek.startsWith(adapter.keyPrefix) || ext.startsWith(adapter.keyPrefix);
         if (!belongsToAdapter) continue;
-        if (liveEntityKeys.has(ek) || (ext && liveEntityKeys.has(ext))) continue;
+        const rExtAttr =
+          r.entity.extendedAttributes && typeof r.entity.extendedAttributes === "object"
+            ? (r.entity.extendedAttributes as Record<string, unknown>)
+            : {};
+        const mergedIds = Array.isArray(rExtAttr.mergedPurchaseHubIds)
+          ? rExtAttr.mergedPurchaseHubIds.map((pid) => `purchase-hub:${String(pid)}`)
+          : [];
+        if (
+          liveEntityKeys.has(ek) ||
+          (ext && liveEntityKeys.has(ext)) ||
+          mergedIds.some((k) => liveEntityKeys.has(k))
+        ) {
+          continue;
+        }
 
         tx.delete(listItems).where(eq(listItems.saveId, r.save.id)).run();
         tx.delete(entryConnections)

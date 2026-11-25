@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Host cron / LaunchAgent script for syncing Goodreads shelves into Curio.
+Host cron / LaunchAgent script for syncing Goodreads & Letterboxd shelves into Curio.
 Uses Apple-signed /usr/bin/python3 -I (stdlib only, no third-party deps).
 Never logs cookie secrets.
 """
@@ -25,6 +25,12 @@ GOODREADS_ENV_PATH = Path(
     os.environ.get(
         "GOODREADS_ENV_PATH",
         str(Path.home() / "Utilities/secrets/goodreads.env"),
+    )
+)
+LETTERBOXD_ENV_PATH = Path(
+    os.environ.get(
+        "LETTERBOXD_ENV_PATH",
+        str(Path.home() / "Utilities/secrets/letterboxd.env"),
     )
 )
 HEARTBEAT_SCRIPT = Path.home() / "Git/mini/Utilities/homepage/heartbeat.sh"
@@ -58,6 +64,28 @@ def emit_heartbeat(status: str) -> None:
             pass
 
 
+def post_sync(endpoint: str, payload: dict[str, str], sync_secret: str) -> tuple[int, dict]:
+    req = urllib.request.Request(
+        f"{CURIO_BASE_URL}{endpoint}",
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-Curio-Sync-Secret": sync_secret,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as err:
+        raw_err = err.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(raw_err)
+        except Exception:
+            parsed = {"error": raw_err[:200]}
+        return err.code, parsed
+
+
 def main() -> int:
     ts = datetime.now(timezone.utc).isoformat()
     if not SYNC_SECRET_PATH.is_file():
@@ -71,48 +99,74 @@ def main() -> int:
         emit_heartbeat("fail")
         return 1
 
-    env_vals = load_env_file(GOODREADS_ENV_PATH)
-    payload: dict[str, str] = {}
-    if env_vals.get("GOODREADS_USER_ID"):
-        payload["goodreadsUserId"] = env_vals["GOODREADS_USER_ID"]
-    if env_vals.get("GOODREADS_COOKIE"):
-        payload["cookie"] = env_vals["GOODREADS_COOKIE"]
+    had_error = False
 
-    req = urllib.request.Request(
-        f"{CURIO_BASE_URL}/api/v1/library/goodreads-sync",
-        data=json.dumps(payload).encode("utf-8"),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "X-Curio-Sync-Secret": sync_secret,
-        },
-    )
+    # 1. Goodreads Sync
+    gr_env = load_env_file(GOODREADS_ENV_PATH)
+    gr_payload: dict[str, str] = {}
+    if gr_env.get("GOODREADS_USER_ID"):
+        gr_payload["goodreadsUserId"] = gr_env["GOODREADS_USER_ID"]
+    if gr_env.get("GOODREADS_COOKIE"):
+        gr_payload["cookie"] = gr_env["GOODREADS_COOKIE"]
 
     try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
+        code, body = post_sync("/api/v1/library/goodreads-sync", gr_payload, sync_secret)
+        if code == 200:
             print(
                 f"[{ts}] Goodreads sync complete: "
                 f"processed={body.get('recordsProcessed', 0)} "
                 f"created={body.get('createdSaves', 0)} "
                 f"updated={body.get('updatedSaves', 0)}"
             )
-            emit_heartbeat("ok")
-            return 0
-    except urllib.error.HTTPError as err:
-        raw_err = err.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(raw_err)
-            msg = parsed.get("error", raw_err[:200])
-        except Exception:
-            msg = raw_err[:200]
-        print(f"[{ts}] Goodreads sync HTTP {err.code}: {msg}", file=sys.stderr)
-        emit_heartbeat("fail")
-        return 1
+        elif code == 400 and (
+            body.get("code") == "GOODREADS_COOKIE_REQUIRED"
+            or "Valid numeric Goodreads User ID" in str(body.get("error", ""))
+        ):
+            print(f"[{ts}] Goodreads not configured yet; skipping.")
+        else:
+            print(
+                f"[{ts}] Goodreads sync HTTP {code}: {body.get('error', 'unknown error')}",
+                file=sys.stderr,
+            )
+            had_error = True
     except Exception as err:
         print(f"[{ts}] Goodreads sync error: {err}", file=sys.stderr)
+        had_error = True
+
+    # 2. Letterboxd Sync
+    lb_env = load_env_file(LETTERBOXD_ENV_PATH)
+    lb_payload: dict[str, str] = {}
+    if lb_env.get("LETTERBOXD_USERNAME"):
+        lb_payload["username"] = lb_env["LETTERBOXD_USERNAME"]
+
+    try:
+        code, body = post_sync("/api/v1/cinema/letterboxd-sync", lb_payload, sync_secret)
+        if code == 200:
+            if body.get("skipped"):
+                print(f"[{ts}] Letterboxd not configured yet; skipping.")
+            else:
+                print(
+                    f"[{ts}] Letterboxd sync complete: "
+                    f"processed={body.get('recordsProcessed', 0)} "
+                    f"created={body.get('createdSaves', 0)} "
+                    f"updated={body.get('updatedSaves', 0)}"
+                )
+        else:
+            print(
+                f"[{ts}] Letterboxd sync HTTP {code}: {body.get('error', 'unknown error')}",
+                file=sys.stderr,
+            )
+            had_error = True
+    except Exception as err:
+        print(f"[{ts}] Letterboxd sync error: {err}", file=sys.stderr)
+        had_error = True
+
+    if had_error:
         emit_heartbeat("fail")
         return 1
+
+    emit_heartbeat("ok")
+    return 0
 
 
 if __name__ == "__main__":

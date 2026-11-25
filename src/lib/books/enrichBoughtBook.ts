@@ -223,13 +223,33 @@ export async function enrichBookEntity(
     changed = true;
   }
   if (
-    (!entity.brandOrCreator ||
-      /^(amazon|galaxus|provini|google_play|unknown)/i.test(
-        entity.brandOrCreator.trim()
-      )) &&
-    resolved.author
+    resolved.title &&
+    resolved.title.length >= 2 &&
+    (cleaned.title !== entity.title.trim() || /[…]$|\.\.\.$/.test(entity.title)) &&
+    !/:.*\b(sunday\s*times|bestseller|premio|reese\s+witherspoon)\b/i.test(resolved.title)
+  ) {
+    const cleanResolved = cleanCommercialBookTitle(resolved.title).title;
+    if (cleanResolved && cleanResolved !== entity.title.trim()) {
+      patch.title = cleanResolved;
+      nextCsd.title = cleanResolved;
+      changed = true;
+    }
+  } else if (cleaned.title && cleaned.title !== entity.title.trim() && cleaned.title.length >= 3) {
+    patch.title = cleaned.title;
+    nextCsd.title = cleaned.title;
+    changed = true;
+  }
+  const existingCreator = (entity.brandOrCreator || "").trim();
+  const looksLastFirst = /^[A-ZÀ-Ü][^,]+,\s*[A-ZÀ-Ü]/.test(existingCreator);
+  if (
+    (!existingCreator ||
+      looksLastFirst ||
+      /^(amazon|galaxus|provini|google_play|unknown)/i.test(existingCreator)) &&
+    resolved.author &&
+    resolved.author !== "Unknown Author"
   ) {
     patch.brandOrCreator = resolved.author;
+    nextCsd.author = resolved.author;
     changed = true;
   }
   if ((!entity.summary || entity.summary.includes("Location:")) && resolved.summary) {

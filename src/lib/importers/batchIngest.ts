@@ -8,6 +8,7 @@ import type { ImportedKeepNote, ImportedPlace } from "./takeout";
 import { resolveFilm } from "../enrichment/providers/cinema";
 import { resolveBook } from "../enrichment/providers/books";
 import { cleanCommercialBookTitle, isOwnedBook } from "../books/library";
+import { areSameBook, extractBookProbe } from "../books/deduplicate";
 import { ensureHierarchicalBoard } from "../sync/engine";
 
 export type AnyImportedItem =
@@ -87,6 +88,7 @@ export async function ingestImportedItems(
   let insertedCount = 0;
   let cacheHitCount = 0;
   let hasImportedBooks = false;
+  let hasImportedFilms = false;
   const errors: string[] = [];
 
   for (const item of items) {
@@ -112,6 +114,7 @@ export async function ingestImportedItems(
       let canonicalUrl = "";
       if ("letterboxdUri" in item && item.letterboxdUri) {
         canonicalUrl = item.letterboxdUri;
+        hasImportedFilms = true;
       } else if ("url" in item && item.url) {
         canonicalUrl = item.url;
       } else if ("googleMapsUrl" in item && item.googleMapsUrl) {
@@ -154,6 +157,19 @@ export async function ingestImportedItems(
             const csd = (e.coreStructuredData as Record<string, any>) || {};
             if (bookItem.isbn && csd.isbn === bookItem.isbn) return true;
             if (bookItem.bookId && csd.goodreadsId === bookItem.bookId) return true;
+            if (
+              areSameBook(
+                extractBookProbe({ privateTitle: null, userCustomValues: {} }, e),
+                {
+                  title: bookItem.title,
+                  author: bookItem.author,
+                  isbn: bookItem.isbn || bookItem.isbn13,
+                  goodreadsBookId: bookItem.bookId,
+                }
+              )
+            ) {
+              return true;
+            }
             return cleanCommercialBookTitle(e.title).title.toLowerCase() === targetNorm;
           }) || null;
       }
@@ -262,6 +278,13 @@ export async function ingestImportedItems(
         autoTags = item.tags;
       }
 
+      if (item.coreType === "MEDIA" && "letterboxdUri" in item) {
+        const filmItem = item as ImportedFilm;
+        if (filmItem.rewatch) userCustomValues.rewatch = true;
+        if (filmItem.letterboxdTags) userCustomValues.letterboxdTags = filmItem.letterboxdTags;
+        userCustomValues.watchStatus = filmItem.isWatchlist ? "WATCHLIST" : "WATCHED";
+      }
+
       if (item.coreType === "BOOK") {
         const bookItem = item as ImportedBook;
         if (bookItem.shelf) userCustomValues.shelf = bookItem.shelf;
@@ -306,7 +329,11 @@ export async function ingestImportedItems(
             : personalNotes
           : existingSave.personalNotes;
         const incomingWish =
-          item.coreType === "BOOK" && "wishlist" in item ? Boolean(item.wishlist) : existingSave.wishlist;
+          item.coreType === "BOOK" && "wishlist" in item
+            ? Boolean(item.wishlist)
+            : item.coreType === "MEDIA" && "isWatchlist" in item
+            ? Boolean((item as ImportedFilm).isWatchlist)
+            : existingSave.wishlist;
         await db
           .update(userSaves)
           .set({
@@ -332,6 +359,8 @@ export async function ingestImportedItems(
               ? isOwned
                 ? false
                 : Boolean(item.wishlist)
+              : item.coreType === "MEDIA" && "isWatchlist" in item
+              ? Boolean((item as ImportedFilm).isWatchlist)
               : false,
           hasConvertedPurchase: isOwned,
           personalNotes: personalNotes || null,
@@ -354,6 +383,15 @@ export async function ingestImportedItems(
       rootTitle: "Books",
       rootDefaultLayout: "shelf",
       autoRules: { coreType: "BOOK" },
+    }).catch(() => {});
+  }
+
+  if (hasImportedFilms) {
+    await ensureHierarchicalBoard(targetUserId, {
+      rootSlug: "films",
+      rootTitle: "Films",
+      rootDefaultLayout: "shelf",
+      autoRules: { typePathPrefix: "/media/film" },
     }).catch(() => {});
   }
 

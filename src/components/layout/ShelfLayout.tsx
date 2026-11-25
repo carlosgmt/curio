@@ -22,6 +22,7 @@ import {
   resolveSameOriginImageUrl,
 } from "@/lib/press/archetypes";
 import { extractPaletteFromImageUrl } from "@/lib/press/palette";
+import { formatBookSourceLabel, resolveBookSources } from "@/lib/books/library";
 
 export interface ShelfLayoutProps {
   items: CardData[];
@@ -351,6 +352,9 @@ export function ShelfLayout({
               setInspectMode("front");
               setActiveByIndex(idx);
             }}
+            onActivateActiveItem={() => {
+              if (activeCard) onOpenObject(activeCard, "standard");
+            }}
             onToggleInspectMode={() =>
               setInspectMode((m) => (m === "spine" ? "front" : "spine"))
             }
@@ -360,7 +364,7 @@ export function ShelfLayout({
           />
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-7 pb-2 text-[10px] font-mono uppercase tracking-[0.12em]">
             <span style={{ color: activePalette.muted }}>
-              Drag shelf or scroll sideways · Click focused object to turn spine
+              Drag shelf or scroll sideways · Tap focused volume to open details
             </span>
             <div className="flex items-center gap-1.5">
               <button
@@ -732,6 +736,22 @@ export function ShelfLayout({
                 {activeMeta.yearOrPrice}
               </span>
             )}
+            {(activeCard.entity?.coreType === "BOOK" ||
+              activeCard.save.typePath === "/product/book") &&
+              resolveBookSources(activeCard.save as any, activeCard.entity as any).map(
+                (src) => (
+                  <span
+                    key={src}
+                    className="px-1.5 py-0.5 rounded border text-[9px] tracking-wider"
+                    style={{
+                      borderColor: activePalette.rule,
+                      color: activePalette.muted,
+                    }}
+                  >
+                    {formatBookSourceLabel(src)}
+                  </span>
+                )
+              )}
           </div>
           <h3 className="font-serif-editorial text-2xl sm:text-3xl leading-[1.12] font-normal tracking-tight">
             {activeMeta.title}

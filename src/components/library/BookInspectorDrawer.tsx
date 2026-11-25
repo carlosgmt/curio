@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
 import {
+  formatBookSourceLabel,
   readingStatusToShelf,
   type LibraryBookView,
   type ReadingStatus,
@@ -227,7 +228,7 @@ export function BookInspectorDrawer({
                 {book.isOwned ? (
                   <>
                     <ShoppingBag className="w-2.5 h-2.5" />
-                    Owned
+                    My Stuff
                   </>
                 ) : (
                   <>
@@ -236,6 +237,16 @@ export function BookInspectorDrawer({
                   </>
                 )}
               </button>
+              {book.sources
+                .filter((src) => !(src === "MY_STUFF" && book.isOwned))
+                .map((src) => (
+                  <span
+                    key={src}
+                    className="px-2 py-0.5 rounded-full bg-secondary border border-border font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                  >
+                    {formatBookSourceLabel(src)}
+                  </span>
+                ))}
               {book.retailer && (
                 <span className="font-mono text-[10px] text-muted-foreground">
                   via {book.retailer}

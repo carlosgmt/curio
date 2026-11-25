@@ -73,19 +73,19 @@ export function TimelineLayout<T = any>({
   return (
     <div data-testid="timeline-layout" className={`relative py-6 ${className}`}>
       {/* Central Spine line */}
-      <div className="absolute left-6 md:left-1/2 -translate-x-1/2 top-4 bottom-4 w-0.5 bg-neutral-200 dark:bg-neutral-800" />
+      <div className="absolute left-4 md:left-1/2 -translate-x-1/2 top-4 bottom-4 w-0.5 bg-neutral-200 dark:bg-neutral-800" />
 
-      <div className="space-y-12">
+      <div className="space-y-10 sm:space-y-12">
         {sortedGroups.map((group) => (
           <div key={group.periodKey} className="relative">
             {/* Sticky Date Marker Badge */}
-            <div className="sticky top-20 z-20 flex justify-start md:justify-center mb-6 pl-2 md:pl-0">
+            <div className="sticky top-20 z-20 flex justify-start md:justify-center mb-5 pl-0">
               <div
                 data-testid="timeline-date-marker"
                 data-period={group.periodKey}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 shadow-sm text-xs font-mono font-bold text-neutral-800 dark:text-neutral-200"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xs border border-neutral-200 dark:border-neutral-800 shadow-2xs text-xs font-mono tabular-nums font-semibold text-neutral-800 dark:text-neutral-200"
               >
-                <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                <Calendar className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
                 <span>{group.label}</span>
               </div>
             </div>
@@ -100,12 +100,12 @@ export function TimelineLayout<T = any>({
                     className="relative flex flex-col md:flex-row items-center"
                   >
                     {/* Spine Node Dot */}
-                    <div className="absolute left-6 md:left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-neutral-400 dark:bg-neutral-600 border-2 border-white dark:border-neutral-950 z-10" />
+                    <div className="absolute left-4 md:left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-neutral-400 dark:bg-neutral-600 border-2 border-white dark:border-neutral-950 z-10" />
 
                     {/* Card container with alternating margin */}
                     <div
                       data-testid="timeline-item-container"
-                      className={`w-full md:w-[46%] pl-12 md:pl-0 ${
+                      className={`w-full md:w-[46%] pl-9 md:pl-0 ${
                         isLeft ? "md:mr-auto md:pr-6" : "md:ml-auto md:pl-6"
                       }`}
                     >

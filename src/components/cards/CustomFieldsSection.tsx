@@ -6,11 +6,122 @@ import { apiFetch } from "@/lib/apiClient";
 import {
   StatBadge,
   MeterGauge,
-  SpecRow,
   PriceTag,
-  ActionChecklist,
   RelationPill,
 } from "./primitives";
+
+export const INTERNAL_HIDDEN_KEYS = new Set([
+  "source",
+  "purchasehubproductid",
+  "mergedpurchasehubids",
+  "ownerscope",
+  "category",
+  "hasmanual",
+  "manualurl",
+  "wardrobeid",
+  "closetid",
+  "closeturl",
+  "lastsyncedclosetnotes",
+  "hascutout",
+  "cutouturl",
+  "photourl",
+  "rawquery",
+  "wikidatauri",
+  "provenance",
+  "title",
+  "obitext",
+  "goodreadsbookid",
+  "goodreadsshelves",
+  "booksource",
+  "shelf",
+  "readingstatus",
+  "owned",
+  "dateadded",
+  "dateread",
+  "datestarted",
+  "letterboxdid",
+  "letterboxduri",
+  "letterboxdtags",
+  "filmaffinityid",
+  "filmsource",
+  "tmdbid",
+  "imdbid",
+  "watchstatus",
+  "rewatch",
+  "watcheddate",
+  "datewatched",
+  "myrating",
+  "marginquotes",
+  "runnerupcandidates",
+  "aliases",
+  "itunescollectionid",
+  "extractedat",
+  "latitude",
+  "longitude",
+  "googlemapsurl",
+  "colorhex",
+  "availability",
+  "pricecents",
+  "currency",
+  "brandorcreator",
+  "heroimageurl",
+  "summary",
+]);
+
+export function formatAttributeLabel(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+export function isVisibleCustomField(
+  attrKey: string,
+  attrVal: unknown,
+  hiddenKeys: string[] = []
+): boolean {
+  if (attrVal === null || attrVal === undefined) return false;
+  if (typeof attrVal === "object") return false;
+  const strVal = String(attrVal).trim();
+  if (!strVal || strVal === "[object Object]") return false;
+
+  const k = attrKey.toLowerCase();
+  if (INTERNAL_HIDDEN_KEYS.has(k)) return false;
+  if (hiddenKeys.some((hk) => hk.toLowerCase() === k)) return false;
+
+  if (
+    k.endsWith("_url") ||
+    k.endsWith("url") ||
+    k.endsWith("uri") ||
+    k.startsWith("http") ||
+    k.includes("wikidata") ||
+    k === "provenance" ||
+    strVal.startsWith("http://") ||
+    strVal.startsWith("https://")
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export function hasVisibleCustomFields(
+  userCustomValues?: Record<string, unknown> | null,
+  extendedAttributes?: Record<string, unknown> | null,
+  hiddenKeys: string[] = []
+): boolean {
+  const ext = extendedAttributes || {};
+  const usr = userCustomValues || {};
+  for (const [k, v] of Object.entries(ext)) {
+    if (isVisibleCustomField(k, v, hiddenKeys)) return true;
+  }
+  for (const [k, v] of Object.entries(usr)) {
+    if (isVisibleCustomField(k, v, hiddenKeys)) return true;
+  }
+  return false;
+}
 
 export interface CustomFieldsSectionProps {
   saveId: string;
@@ -24,8 +135,8 @@ export interface CustomFieldsSectionProps {
 
 export function CustomFieldsSection({
   saveId,
-  userCustomValues = {},
-  extendedAttributes = {},
+  userCustomValues,
+  extendedAttributes,
   readOnly = false,
   onUpdated,
   hiddenKeys = [],
@@ -34,10 +145,11 @@ export function CustomFieldsSection({
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [localCustomValues, setLocalCustomValues] = useState<Record<string, unknown>>(
-    userCustomValues || {}
-  );
+  const [overridesBySave, setOverridesBySave] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
 
+  const localCustomValues = overridesBySave[saveId] ?? userCustomValues ?? {};
   const cleanExtended = extendedAttributes || {};
 
   const handleAddField = async (e?: React.FormEvent) => {
@@ -67,7 +179,7 @@ export function CustomFieldsSection({
           ...localCustomValues,
           [cleanKey]: cleanVal,
         };
-        setLocalCustomValues(updated);
+        setOverridesBySave((prev) => ({ ...prev, [saveId]: updated }));
         onUpdated?.(updated);
         setKey("");
         setValue("");
@@ -97,16 +209,13 @@ export function CustomFieldsSection({
       if (res.ok) {
         const next = { ...localCustomValues };
         delete next[removeKey];
-        setLocalCustomValues(next);
+        setOverridesBySave((prev) => ({ ...prev, [saveId]: next }));
         onUpdated?.(next);
       }
     } catch (err) {
       console.error("Failed to delete custom attribute:", err);
     }
   };
-
-  const hasAnyFields =
-    Object.keys(localCustomValues).length > 0 || Object.keys(cleanExtended).length > 0;
 
   const renderFieldBadge = (
     attrKey: string,
@@ -115,28 +224,11 @@ export function CustomFieldsSection({
     onRemove?: () => void
   ) => {
     // Sanitize: only render scalar string, number, or boolean values.
-    // Never render objects, arrays, or [object Object]
-    if (attrVal === null || attrVal === undefined) return null;
-    if (hiddenKeys.includes(attrKey.toLowerCase())) return null;
-    if (typeof attrVal === "object") return null;
+    // Never render objects, arrays, internals, or [object Object]
+    if (!isVisibleCustomField(attrKey, attrVal, hiddenKeys)) return null;
     const strVal = String(attrVal).trim();
-    if (!strVal || strVal === "[object Object]") return null;
-
     const k = attrKey.toLowerCase();
-    // Filter out raw URLs or keys ending in _url, url, uri or starting with http
-    if (
-      k.endsWith("_url") ||
-      k.endsWith("url") ||
-      k.endsWith("uri") ||
-      k.startsWith("http") ||
-      k.includes("wikidata") ||
-      k === "provenance" ||
-      strVal.startsWith("http://") ||
-      strVal.startsWith("https://")
-    ) {
-      return null;
-    }
-
+    const displayLabel = formatAttributeLabel(attrKey);
     const numVal = Number(attrVal);
 
     if (
@@ -145,7 +237,7 @@ export function CustomFieldsSection({
     ) {
       return (
         <div key={`${isGlobal ? "global" : "user"}-${attrKey}`} className="flex items-center gap-1">
-          <MeterGauge value={numVal} max={10} label={attrKey} className="min-w-[100px]" />
+          <MeterGauge value={numVal} max={10} label={displayLabel} className="min-w-[100px]" />
           {onRemove && (
             <button type="button" onClick={onRemove} className="text-neutral-400 hover:text-rose-500 ml-1">
               <X className="w-2.5 h-2.5" />
@@ -165,7 +257,7 @@ export function CustomFieldsSection({
     ) {
       return (
         <div key={`${isGlobal ? "global" : "user"}-${attrKey}`} className="flex items-center gap-1">
-          <StatBadge label={attrKey} value={strVal} />
+          <StatBadge label={displayLabel} value={strVal} />
           {onRemove && (
             <button type="button" onClick={onRemove} className="text-neutral-400 hover:text-rose-500 ml-1">
               <X className="w-2.5 h-2.5" />
@@ -211,14 +303,14 @@ export function CustomFieldsSection({
         }`}
       >
         {isGlobal ? <Globe className="w-3.5 h-3.5 text-indigo-500" /> : <Tag className="w-3.5 h-3.5 text-neutral-400" />}
-        <strong className="font-semibold capitalize">{attrKey.replace(/_/g, " ")}:</strong>{" "}
+        <strong className="font-semibold">{displayLabel}:</strong>{" "}
         <span>{strVal}</span>
         {onRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="opacity-0 group-hover/tag:opacity-100 text-neutral-400 hover:text-rose-500 transition cursor-pointer ml-1"
-            title={`Remove ${attrKey}`}
+            className="opacity-0 group-hover/tag:opacity-100 focus-visible:opacity-100 text-neutral-400 hover:text-rose-500 transition cursor-pointer ml-1"
+            title={`Remove ${displayLabel}`}
           >
             <X className="w-3 h-3" />
           </button>

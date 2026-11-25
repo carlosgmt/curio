@@ -84,9 +84,11 @@ import { PhotoCard } from "../cards/silhouettes/PhotoCard";
 import { WebLinkCard } from "../cards/silhouettes/WebLinkCard";
 import { PlaceSpotCard } from "../cards/silhouettes/PlaceSpotCard";
 import { SynapsePill } from "../connections/SynapsePill";
-import { CustomFieldsSection } from "../cards/CustomFieldsSection";
+import { CustomFieldsSection, hasVisibleCustomFields } from "../cards/CustomFieldsSection";
+import { DisambiguationBar } from "../cards/DisambiguationBar";
 import { AddToListPopover } from "../lists/AddToListPopover";
 import type { ConnectedItem } from "@/lib/connections/service";
+import { partitionConnections } from "@/lib/connections/classify";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 
 export interface CardLightboxModalProps {
@@ -315,6 +317,13 @@ export function CardLightboxModal({
     setWished(Boolean(card?.save.wishlist));
   }, [card?.save.id, card?.save.wishlist]);
   const [connections, setConnections] = useState<ConnectedItem[]>([]);
+  const [isWearHistoryOpen, setIsWearHistoryOpen] = useState(false);
+  const [showAllWearLinks, setShowAllWearLinks] = useState(false);
+  const [showAllAutoCoWear, setShowAllAutoCoWear] = useState(false);
+  const { wearLinks, autoCoWearPairs, curatedPairs } = React.useMemo(
+    () => partitionConnections(connections),
+    [connections]
+  );
   const [isMarkBoughtOpen, setIsMarkBoughtOpen] = useState(false);
   const [boughtPrice, setBoughtPrice] = useState("");
   const [boughtCurrency, setBoughtCurrency] = useState("CHF");
@@ -436,6 +445,9 @@ export function CardLightboxModal({
     setIsMarkBoughtOpen(false);
     setMarkBoughtError(null);
     setMarkBoughtResult(null);
+    setIsWearHistoryOpen(false);
+    setShowAllWearLinks(false);
+    setShowAllAutoCoWear(false);
     const ext = card.entity?.extendedAttributes as Record<string, unknown> | null | undefined;
     const primarySource = card.primarySource as Record<string, unknown> | null | undefined;
     setBoughtPrice(
@@ -497,6 +509,78 @@ export function CardLightboxModal({
   }, [isOpen, onClose, suppressEscape, isAddToListOpen]);
 
   if (!isOpen || !card) return null;
+
+  const cardExt = card.entity?.extendedAttributes as Record<string, unknown> | null | undefined;
+  const cardStructured = card.entity?.coreStructuredData as Record<string, unknown> | null | undefined;
+  const isSyncedClosetOrPurchaseHub = Boolean(
+    cardExt?.purchaseHubProductId || cardStructured?.closetId
+  );
+
+  const customFieldHiddenKeys: string[] = [];
+  if (cardExt?.purchaseHubProductId) {
+    customFieldHiddenKeys.push(
+      "retailers",
+      "firstbought",
+      "lastbought",
+      "warrantyuntil",
+      "location",
+      "modelnumber",
+      "collections"
+    );
+  }
+  if (activeArchetype === "garment" || activeArchetype === "outfit") {
+    customFieldHiddenKeys.push(
+      "timesworn",
+      "lastworn",
+      "inlaundry",
+      "isfavorite",
+      "isretired",
+      "iswaterproof",
+      "purchasedate",
+      "datesworn",
+      "weathercondition",
+      "temperature",
+      "subtype",
+      "size",
+      "season"
+    );
+  }
+  if (activeArchetype === "quote") {
+    customFieldHiddenKeys.push(...QUOTE_HIDDEN_KEYS);
+  }
+  if (activeArchetype === "book") {
+    customFieldHiddenKeys.push(
+      "author",
+      "publisher",
+      "isbn",
+      "pagecount",
+      "pages",
+      "numberofpagesmedian",
+      "releaseyear",
+      "firstpublishyear",
+      "rating"
+    );
+  }
+  if (activeArchetype === "cinema") {
+    customFieldHiddenKeys.push(
+      "director",
+      "distributor",
+      "runtimeminutes",
+      "cinematographer",
+      "releaseyear",
+      "year",
+      "rating",
+      "tmdbrating"
+    );
+  }
+  if (activeArchetype === "recipe") {
+    customFieldHiddenKeys.push("time", "complexity", "yieldservings");
+  }
+  const hasVisibleAttributes = hasVisibleCustomFields(
+    card.save.userCustomValues,
+    card.entity?.extendedAttributes,
+    customFieldHiddenKeys
+  );
 
   const allArchetypes: ArchetypeOption[] = [...BUILTIN_ARCHETYPES, ...customTypes];
   const currentArchetypeOption =
@@ -688,6 +772,7 @@ export function CardLightboxModal({
             entity={previewEntity as any}
             primarySource={card.primarySource}
             creatorAffiliateTags={creatorAffiliateTags}
+            wearLinkCount={wearLinks.length}
           />
         ) : (
           <PrivateMemoCard save={card.save} />
@@ -1145,6 +1230,31 @@ export function CardLightboxModal({
             </div>
           </div>
         )}
+        {!readOnly && !card.save.isPrivateMemo && !isSyncedClosetOrPurchaseHub && (
+          <div className="flex justify-start">
+            <DisambiguationBar
+              saveId={card.save.id}
+              candidates={card.save.candidateFallbacks || []}
+              initialQuery={title}
+              alwaysShowTrigger
+              onSwapped={async () => {
+                try {
+                  const res = await apiFetch(`/api/v1/saves/${encodeURIComponent(card.save.id)}`);
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data?.save) {
+                      onCardUpdated?.(data.save, data.entity);
+                      return;
+                    }
+                  }
+                } catch {
+                  // Non-fatal fallback
+                }
+                onCardUpdated?.(card.save);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Editable Personal Notes (owner-only unless explicitly populated) */}
@@ -1211,20 +1321,19 @@ export function CardLightboxModal({
         </div>
       )}
 
-      {/* Synaptic Pairs */}
-      {(connections.length > 0 || (!readOnly && !card.save.isPrivateMemo && Boolean(onConnect))) && (
+      {/* Curated Synaptic Pairs */}
+      {(curatedPairs.length > 0 || (!readOnly && !card.save.isPrivateMemo && Boolean(onConnect))) && (
         <div>
           <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-2">
-            Synaptic Memory Pairs ({connections.length})
+            Synaptic Memory Pairs ({curatedPairs.length})
           </span>
           <div className="flex flex-wrap items-center gap-1.5">
-            {connections.map((conn) => (
+            {curatedPairs.map((conn) => (
               <SynapsePill
                 key={conn.connectionId}
                 connection={conn}
                 onUnlink={!readOnly && (onConnect || onUnlink) ? handleUnlinkConnection : undefined}
                 onClick={() => {
-                  // Close lightbox and jump to connected save
                   onClose();
                   const el = document.getElementById(`save-${conn.saveId}`);
                   if (el) {
@@ -1247,6 +1356,119 @@ export function CardLightboxModal({
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Closet Wear History (collapsed by default to keep Lightbox uncluttered) */}
+      {(wearLinks.length > 0 || autoCoWearPairs.length > 0) && (
+        <div
+          data-testid="closet-wear-history-drawer"
+          className="pt-2 border-t border-neutral-200 dark:border-neutral-800"
+        >
+          <button
+            type="button"
+            data-testid="closet-wear-history-toggle"
+            aria-expanded={isWearHistoryOpen}
+            onClick={() => setIsWearHistoryOpen((prev) => !prev)}
+            className="flex items-center justify-between w-full text-xs font-mono text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors duration-150 cursor-pointer py-1"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Shirt className="w-3.5 h-3.5 text-neutral-400 shrink-0" aria-hidden="true" />
+              <span className="font-semibold">Closet Wear History</span>
+              <span className="text-neutral-400 tabular-nums truncate">
+                ·{" "}
+                {[
+                  wearLinks.length > 0
+                    ? `${wearLinks.length} ${wearLinks.length === 1 ? "outfit" : "outfits"}`
+                    : null,
+                  autoCoWearPairs.length > 0
+                    ? `${autoCoWearPairs.length} co-worn ${
+                        autoCoWearPairs.length === 1 ? "piece" : "pieces"
+                      }`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </div>
+            {isWearHistoryOpen ? (
+              <ChevronUp className="w-3.5 h-3.5 shrink-0 text-neutral-400" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 text-neutral-400" aria-hidden="true" />
+            )}
+          </button>
+
+          {isWearHistoryOpen && (
+            <div className="mt-2.5 space-y-3 pl-1">
+              {wearLinks.length > 0 && (
+                <div>
+                  <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1.5">
+                    Outfits worn in ({wearLinks.length})
+                  </span>
+                  <div className="max-h-48 overflow-y-auto flex flex-wrap gap-1.5 pr-1">
+                    {(showAllWearLinks ? wearLinks : wearLinks.slice(0, 12)).map((conn) => (
+                      <SynapsePill
+                        key={conn.connectionId}
+                        connection={conn}
+                        onClick={() => {
+                          onClose();
+                          const el = document.getElementById(`save-${conn.saveId}`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            el.classList.add("ring-2", "ring-neutral-400");
+                            setTimeout(() => el.classList.remove("ring-2", "ring-neutral-400"), 2000);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                  {wearLinks.length > 12 && !showAllWearLinks && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllWearLinks(true)}
+                      className="mt-1.5 text-[11px] font-mono text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 underline underline-offset-2 cursor-pointer"
+                    >
+                      Show all {wearLinks.length} outfits
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {autoCoWearPairs.length > 0 && (
+                <div>
+                  <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1.5">
+                    Co-worn pieces ({autoCoWearPairs.length})
+                  </span>
+                  <div className="max-h-48 overflow-y-auto flex flex-wrap gap-1.5 pr-1">
+                    {(showAllAutoCoWear ? autoCoWearPairs : autoCoWearPairs.slice(0, 12)).map((conn) => (
+                      <SynapsePill
+                        key={conn.connectionId}
+                        connection={conn}
+                        onClick={() => {
+                          onClose();
+                          const el = document.getElementById(`save-${conn.saveId}`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            el.classList.add("ring-2", "ring-neutral-400");
+                            setTimeout(() => el.classList.remove("ring-2", "ring-neutral-400"), 2000);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                  {autoCoWearPairs.length > 12 && !showAllAutoCoWear && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllAutoCoWear(true)}
+                      className="mt-1.5 text-[11px] font-mono text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 underline underline-offset-2 cursor-pointer"
+                    >
+                      Show all {autoCoWearPairs.length} co-worn pieces
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1343,17 +1565,20 @@ export function CardLightboxModal({
       })()}
 
       {/* Curio Learns: Custom Attributes Grid */}
-      <div>
-        <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
-          Custom Attributes & Specifications
-        </span>
-        <CustomFieldsSection
-          saveId={card.save.id}
-          readOnly={readOnly}
-          userCustomValues={card.save.userCustomValues}
-          extendedAttributes={card.entity?.extendedAttributes}
-        />
-      </div>
+      {(!readOnly || hasVisibleAttributes) && (
+        <div>
+          <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold mb-1">
+            Custom Attributes & Specifications
+          </span>
+          <CustomFieldsSection
+            saveId={card.save.id}
+            readOnly={readOnly}
+            userCustomValues={card.save.userCustomValues}
+            extendedAttributes={card.entity?.extendedAttributes}
+            hiddenKeys={customFieldHiddenKeys}
+          />
+        </div>
+      )}
 
       {/* Collapsible Agent JSON-LD Drawer */}
       <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800">

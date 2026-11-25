@@ -71,7 +71,7 @@ export function MapPassCard({
   return (
     <div className="group relative rounded-2xl bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-sm hover:shadow-xl transition-all duration-300 border border-neutral-300 dark:border-neutral-800 flex flex-col justify-between overflow-hidden">
       {/* Top Header Ticket Band */}
-      <div className="bg-neutral-950 text-white px-5 py-3 flex items-center justify-between">
+      <div className="bg-neutral-950 text-white px-4 sm:px-5 py-3 flex items-center justify-between pr-16 sm:pr-5">
         <div className="flex items-center gap-2">
           <HeaderIcon className={`w-4 h-4 ${iconColor}`} />
           <span className={`font-mono text-[10px] uppercase tracking-widest font-bold ${iconColor}`}>
@@ -86,7 +86,7 @@ export function MapPassCard({
       </div>
 
       {/* Main Ticket Body */}
-      <div className="p-5 flex-1 flex flex-col justify-between relative">
+      <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between relative">
         {/* Ticket Perforation Notch (Left & Right) */}
         <div className="absolute top-1/2 -left-3 w-6 h-6 rounded-full bg-[#fafaf9] dark:bg-[#0c0a09] border border-neutral-300 dark:border-neutral-800 -translate-y-1/2 pointer-events-none" />
         <div className="absolute top-1/2 -right-3 w-6 h-6 rounded-full bg-[#fafaf9] dark:bg-[#0c0a09] border border-neutral-300 dark:border-neutral-800 -translate-y-1/2 pointer-events-none" />
@@ -176,16 +176,13 @@ export function MapPassCard({
         </div>
 
         {/* Perforated Dashed Tear Line */}
-        <div className="my-4 border-b border-dashed border-neutral-300 dark:border-neutral-700" />
+        <div className="my-3.5 border-b border-dashed border-neutral-300 dark:border-neutral-700" />
 
-        {/* Disambiguation Bar */}
-        <div className="mb-2">
-            <DisambiguationBar
-              saveId={save.id}
-              candidates={save.candidateFallbacks || []}
-              onSwapped={() => onSwapped?.(save)}
-            />
-          </div>
+        <DisambiguationBar
+          saveId={save.id}
+          candidates={save.candidateFallbacks || []}
+          onSwapped={() => onSwapped?.(save)}
+        />
 
         {/* Action Footer */}
         <CardFooterWaterfall
@@ -196,6 +193,8 @@ export function MapPassCard({
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Google Maps"
+          isWishlist={Boolean(save.wishlist)}
+          flush
         />
       </div>
     </div>

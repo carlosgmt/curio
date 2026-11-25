@@ -5,11 +5,19 @@ import { BookOpen, Bookmark, Quote, CheckCircle2, Clock, Check, Plus, Trash2, Sh
 import type { CulturalModeProps } from "./CinemaCulturalMode";
 import { buildAffiliateUrl } from "@/lib/commerce/affiliate";
 import { apiFetch } from "@/lib/apiClient";
+import { sanitizeGoodreadsNote } from "@/lib/books/identity";
 import {
   normalizeReadingStatus,
   readingStatusToShelf,
   type ReadingStatus,
 } from "@/lib/books/library";
+
+function cleanBookSummary(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const cleaned = sanitizeGoodreadsNote(raw);
+  if (!cleaned || /^a definitive work by\b/i.test(cleaned)) return null;
+  return cleaned;
+}
 
 export function BookCulturalMode({ save, entity, primarySource, creatorAffiliateTags }: CulturalModeProps) {
   const data = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
@@ -24,11 +32,18 @@ export function BookCulturalMode({ save, entity, primarySource, creatorAffiliate
   const [newQuote, setNewQuote] = useState("");
   const [isAddingQuote, setIsAddingQuote] = useState(false);
 
-  const author = data.author || entity?.brandOrCreator || "Unknown Author";
-  const publisher = data.publisher || "Curio Editions";
-  const isbn = data.isbn ? `ISBN ${data.isbn}` : entity?.canonicalExternalId || "FIRST EDITION";
-  const pages = data.pages || data.numberOfPagesMedian ? `${data.pages || data.numberOfPagesMedian} PAGES` : "320 PAGES";
-  const releaseYear = data.releaseYear || data.firstPublishYear || "2021";
+  const rawAuthor = String(data.author || entity?.brandOrCreator || "").trim();
+  const author = rawAuthor && !/^unknown\s+author$/i.test(rawAuthor) ? rawAuthor : null;
+  const publisher = typeof data.publisher === "string" && data.publisher.trim() ? data.publisher.trim() : null;
+  const isbn = data.isbn
+    ? `ISBN ${data.isbn}`
+    : typeof entity?.canonicalExternalId === "string" && entity.canonicalExternalId.startsWith("isbn:")
+    ? `ISBN ${entity.canonicalExternalId.slice(5)}`
+    : null;
+  const pageNum = data.pages || data.pageCount || data.numberOfPagesMedian;
+  const pages = pageNum ? `${pageNum} PAGES` : null;
+  const releaseYear = data.releaseYear || data.firstPublishYear || null;
+  const summaryText = cleanBookSummary(entity?.summary) || cleanBookSummary(data.obiText);
 
   const handleStatusChange = async (status: ReadingStatus) => {
     setReadingStatus(status);
@@ -112,31 +127,39 @@ export function BookCulturalMode({ save, entity, primarySource, creatorAffiliate
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-between p-8 bg-gradient-to-br from-amber-50 to-orange-100 dark:from-neutral-800 dark:to-neutral-900 text-center">
-            <span className="text-[10px] uppercase font-mono tracking-widest text-neutral-500">
-              {publisher}
-            </span>
+            {publisher ? (
+              <span className="text-[10px] uppercase font-mono tracking-widest text-neutral-500">
+                {publisher}
+              </span>
+            ) : (
+              <span />
+            )}
             <div className="my-auto">
               <h3 className="font-serif text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
                 {entity?.title || "Literary Edition"}
               </h3>
-              <p className="text-base font-serif italic text-neutral-600 dark:text-neutral-400 mt-2">
-                by {author}
-              </p>
+              {author && (
+                <p className="text-base font-serif italic text-neutral-600 dark:text-neutral-400 mt-2">
+                  by {author}
+                </p>
+              )}
             </div>
-            <span className="text-[10px] font-mono text-neutral-400">{isbn}</span>
+            {isbn ? <span className="text-[10px] font-mono text-neutral-400">{isbn}</span> : <span />}
           </div>
         )}
 
         {/* Japanese Obi Belly-Band (帯) */}
-        <div className="absolute inset-x-0 bottom-4 z-10 mx-4 rounded-xl bg-neutral-950/90 dark:bg-amber-100/95 text-white dark:text-neutral-950 p-3.5 shadow-lg backdrop-blur-xs border border-white/10 dark:border-amber-300/50">
-          <div className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-amber-400 dark:text-amber-800 font-bold mb-1">
-            <Bookmark className="w-3.5 h-3.5 fill-current" />
-            <span>Curio Selected Edition • {releaseYear}</span>
+        {summaryText && (
+          <div className="absolute inset-x-0 bottom-4 z-10 mx-4 rounded-xl bg-neutral-950/90 dark:bg-amber-100/95 text-white dark:text-neutral-950 p-3.5 shadow-lg backdrop-blur-xs border border-white/10 dark:border-amber-300/50">
+            <div className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-amber-400 dark:text-amber-800 font-bold mb-1">
+              <Bookmark className="w-3.5 h-3.5 fill-current" />
+              <span>{releaseYear ? `Edition • ${releaseYear}` : "Edition Note"}</span>
+            </div>
+            <p className="font-serif italic text-xs leading-snug line-clamp-2">
+              &ldquo;{summaryText}&rdquo;
+            </p>
           </div>
-          <p className="font-serif italic text-xs leading-snug line-clamp-2">
-            "{entity?.summary || "A resonant cultural work exploring memory and observation."}"
-          </p>
-        </div>
+        )}
       </div>
 
       {/* Reading Progress Selector */}
@@ -250,7 +273,7 @@ export function BookCulturalMode({ save, entity, primarySource, creatorAffiliate
                   <button
                     type="button"
                     onClick={() => handleRemoveQuote(idx)}
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-rose-500 transition cursor-pointer p-0.5"
+                    className="absolute top-2 right-2 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-neutral-400 hover:text-rose-500 transition cursor-pointer p-0.5"
                     title="Delete quote"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -263,11 +286,13 @@ export function BookCulturalMode({ save, entity, primarySource, creatorAffiliate
 
         {/* Telemetry Bar & Creator-Attributed Affiliate CTA */}
         <div className="pt-3 border-t border-neutral-200/60 dark:border-neutral-800 flex items-center justify-between text-[10px] font-mono text-neutral-400">
-          <div className="flex items-center gap-2">
-            <span>{publisher}</span>
-            <span>•</span>
-            <span>{pages}</span>
-          </div>
+          {publisher || pages ? (
+            <div className="flex items-center gap-2">
+              {[publisher, pages].filter(Boolean).join(" • ")}
+            </div>
+          ) : (
+            <div />
+          )}
           <a
             href={buildAffiliateUrl(
               primarySource?.sourceUrl || entity?.canonicalUrl || `https://bookshop.org/books?keywords=${encodeURIComponent(entity?.title || "")}`,

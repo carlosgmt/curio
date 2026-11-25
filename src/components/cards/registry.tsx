@@ -78,29 +78,98 @@ export function DefaultMicroShell(props: any) {
   );
 }
 
+const ARCHETYPE_LABELS: Record<string, string> = {
+  "/product": "Product",
+  "/product/electronics": "Electronics",
+  "/product/garment": "Garment",
+  "/product/furniture": "Furniture",
+  "/product/book": "Book",
+  "/product/cosmetics": "Cosmetics",
+  "/product/art": "Art",
+  "/product/watch": "Watch",
+  "/product/beverage/wine": "Wine",
+  "/style/outfit": "Outfit",
+  "/culinary/recipe": "Recipe",
+  "/media/film": "Film",
+  "/media/music/album": "Album",
+  "/media/music/song": "Song",
+  "/media/videogame": "Game",
+  "/place": "Place",
+  "/quote": "Quote",
+  "/link": "Link",
+};
+
+function humanizeTypePath(typePath?: string | null): string {
+  if (!typePath) return "";
+  const lower = typePath.toLowerCase().trim();
+  if (ARCHETYPE_LABELS[lower]) return ARCHETYPE_LABELS[lower];
+  const last = lower.split("/").filter(Boolean).pop() || "";
+  return last.replace(/[_-]+/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
 export function DefaultCompactShell(props: any) {
   const title = props.entity?.title || props.save?.privateTitle || "Item";
-  const brand = props.entity?.brandOrCreator || props.save?.typePath || "";
+  const structured = (typeof props.entity?.coreStructuredData === "object" && props.entity.coreStructuredData) || {};
+  const custom = (typeof props.save?.userCustomValues === "object" && props.save.userCustomValues) || {};
+  const subtitle =
+    props.entity?.brandOrCreator ||
+    structured.brand ||
+    structured.category ||
+    humanizeTypePath(props.entity?.typePath || props.save?.typePath) ||
+    "";
+  const heroUrl = props.entity?.heroImageUrl || "";
+  const isCutout =
+    Boolean(structured.hasCutout) ||
+    heroUrl.includes("/cutouts/") ||
+    heroUrl.toLowerCase().endsWith(".png");
+
+  const timesWorn = Math.max(
+    Number(custom.timesWorn ?? structured.timesWorn ?? 0),
+    Number(props.wearLinkCount ?? 0)
+  );
+  const priceCents = props.primarySource?.priceCents ?? props.entity?.priceCents;
+  const currency = props.primarySource?.currency || props.entity?.currency || "CHF";
+  const trailingReadout =
+    timesWorn > 0
+      ? `${timesWorn}×`
+      : typeof priceCents === "number" && priceCents > 0
+      ? new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: currency || "CHF",
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        }).format(priceCents / 100)
+      : null;
+
   return (
     <div
       data-testid="compact-shell"
-      className="flex items-center justify-between h-[68px] px-4 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:border-neutral-300 transition"
+      className="flex items-center justify-between gap-3 h-[68px] px-3.5 sm:px-4 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors duration-150"
     >
       <div className="flex items-center gap-3 min-w-0">
-        {props.entity?.heroImageUrl && (
+        {heroUrl && (
           <img
-            src={props.entity.heroImageUrl}
+            src={heroUrl}
             alt={title}
-            className="w-10 h-10 rounded-lg object-cover shrink-0"
+            className={`w-10 h-10 rounded-lg shrink-0 bg-neutral-50 dark:bg-neutral-800/80 ${
+              isCutout ? "object-contain p-1" : "object-cover"
+            }`}
           />
         )}
         <div className="min-w-0">
           <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
             {title}
           </h4>
-          {brand && <p className="text-xs text-neutral-500 font-mono truncate">{brand}</p>}
+          {subtitle && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{subtitle}</p>
+          )}
         </div>
       </div>
+      {trailingReadout && (
+        <span className="text-xs font-mono tabular-nums text-neutral-500 dark:text-neutral-400 shrink-0">
+          {trailingReadout}
+        </span>
+      )}
     </div>
   );
 }

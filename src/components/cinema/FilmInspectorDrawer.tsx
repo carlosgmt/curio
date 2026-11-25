@@ -484,7 +484,15 @@ export function FilmInspectorDrawer({
           rel="noreferrer"
           className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground hover:text-foreground"
         >
-          <span>Letterboxd</span>
+          <span>
+            {film.canonicalUrl?.includes("letterboxd.com")
+              ? "Letterboxd"
+              : film.canonicalUrl?.includes("filmaffinity.com")
+              ? "FilmAffinity"
+              : film.canonicalUrl?.includes("themoviedb.org")
+              ? "TMDB"
+              : "Source"}
+          </span>
           <ExternalLink className="w-3 h-3" />
         </a>
         <div className="flex items-center gap-2">

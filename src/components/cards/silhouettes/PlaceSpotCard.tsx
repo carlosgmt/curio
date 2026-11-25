@@ -57,9 +57,9 @@ export function PlaceSpotCard({
       data-testid="place-spot-card"
       className="group relative rounded-2xl bg-[#fbf9f6] dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm hover:shadow-lg transition-all duration-300 border-2 border-stone-200 dark:border-stone-800 flex flex-col justify-between overflow-hidden"
     >
-      <div className="p-5 flex flex-col">
+      <div className="p-4 sm:p-5 flex flex-col">
         {/* Top Header Location & Category Ribbon */}
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-dashed border-stone-300 dark:border-stone-700">
+        <div className="flex items-center justify-between pb-3 mb-3 border-b border-dashed border-stone-300 dark:border-stone-700 pr-16 sm:pr-0 gap-2">
           <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-400 min-w-0">
             <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
             <span className="text-xs font-mono uppercase font-semibold tracking-wider truncate">
@@ -215,6 +215,7 @@ export function PlaceSpotCard({
           entity={entity}
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
+          isWishlist={Boolean(save.wishlist)}
         />
       )}
     </div>

@@ -8,6 +8,7 @@ mock.module("next/navigation", () => ({
     replace: () => {},
     prefetch: () => {},
   }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const DOM_GLOBALS = [

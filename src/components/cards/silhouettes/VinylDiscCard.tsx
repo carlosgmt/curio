@@ -9,6 +9,7 @@ export interface SilhouetteCardProps {
   save: {
     id: string;
     isPrivateMemo?: boolean;
+    wishlist?: boolean | null;
     personalNotes?: string | null;
     userCustomValues?: any;
     typePath?: string | null;
@@ -32,6 +33,7 @@ export interface SilhouetteCardProps {
   };
   primarySource?: any;
   creatorAffiliateTags?: UserAffiliateTags | null;
+  wearLinkCount?: number;
   onSwapped?: (item: any) => void;
 }
 
@@ -54,7 +56,7 @@ export function VinylDiscCard({
   const hasCover = Boolean(entity.heroImageUrl) && !imgError;
 
   return (
-    <div className="group relative rounded-3xl bg-neutral-900 text-white p-5 sm:p-6 shadow-md hover:shadow-xl transition-all duration-300 border border-neutral-800 flex flex-col justify-between overflow-hidden">
+    <div className="group relative rounded-3xl bg-neutral-900 text-white p-4 sm:p-6 shadow-md hover:shadow-xl transition-shadow duration-200 border border-neutral-800 flex flex-col justify-between overflow-hidden">
       {/* Ambient blurred cover glow */}
       {hasCover && (
         <div
@@ -68,13 +70,13 @@ export function VinylDiscCard({
       )}
 
       {/* Top Header Badge */}
-      <div className="flex items-center justify-between mb-4 z-10">
+      <div className="flex items-center justify-between mb-4 z-10 pr-16 sm:pr-0">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-mono tracking-wider uppercase text-neutral-300 bg-neutral-800/85 px-2.5 py-1 rounded-full border border-neutral-700/60 font-semibold">
-          <Disc3 className="w-3.5 h-3.5 text-amber-400" />
+          <Disc3 className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
           {badgeLabel}
         </span>
         {releaseYear && (
-          <span className="text-[11px] font-mono text-neutral-400 font-medium">
+          <span className="text-[11px] font-mono tabular-nums text-neutral-400 font-medium">
             {releaseYear}
           </span>
         )}
@@ -121,16 +123,18 @@ export function VinylDiscCard({
       </div>
 
       {/* Discreet Wrong Entity Disambiguation */}
-      <div className="mt-2 flex justify-center z-10">
+      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
+        <div className="mt-2 flex justify-center z-10">
           <DisambiguationBar
             saveId={save.id}
-            candidates={save.candidateFallbacks || []}
+            candidates={save.candidateFallbacks}
             onSwapped={() => onSwapped?.(save)}
           />
         </div>
+      )}
 
       {/* Standardized Dual-Slot Waterfall Footer with 3 Actions */}
-      <div className="mt-3 pt-2 border-t border-neutral-800/80 z-10">
+      <div className="z-10">
         <CardFooterWaterfall
           entity={{
             ...entity,
@@ -139,6 +143,9 @@ export function VinylDiscCard({
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Play on Spotify"
+          isWishlist={Boolean(save.wishlist)}
+          tone="dark"
+          flush
         />
       </div>
     </div>

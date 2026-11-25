@@ -21,10 +21,12 @@ export function ViewModeSwitcher({
   onDensityChange,
   className = "",
 }: ViewModeSwitcherProps) {
+  const showDensity = layout !== "shelf" && layout !== "posters";
+
   return (
     <div
       data-testid="view-mode-switcher"
-      className={`inline-flex items-center gap-2 p-1 rounded-2xl bg-neutral-100/80 dark:bg-neutral-800/80 border border-neutral-200/80 dark:border-neutral-700/80 backdrop-blur-md ${className}`}
+      className={`inline-flex items-center gap-1.5 sm:gap-2 p-1 rounded-2xl bg-neutral-100/80 dark:bg-neutral-800/80 border border-neutral-200/80 dark:border-neutral-700/80 backdrop-blur-md ${className}`}
     >
       {/* Layout Engine Switcher */}
       <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-700/60 shadow-2xs">
@@ -104,50 +106,52 @@ export function ViewModeSwitcher({
         </button>
       </div>
 
-      {/* Density Switcher */}
-      <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-700/60 shadow-2xs">
-        <button
-          type="button"
-          onClick={() => onDensityChange("compact")}
-          title="Compact Density (Index Rows)"
-          data-testid="switch-density-compact"
-          className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
-            density === "compact"
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
-          }`}
-        >
-          <Minimize2 className="w-3.5 h-3.5" />
-        </button>
+      {/* Density Switcher (omitted in 3D Shelf & Posters views where density has no effect) */}
+      {showDensity && (
+        <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-700/60 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => onDensityChange("compact")}
+            title="Compact Density (Index Rows)"
+            data-testid="switch-density-compact"
+            className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
+              density === "compact"
+                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
+                : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+            }`}
+          >
+            <Minimize2 className="w-3.5 h-3.5" />
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onDensityChange("standard")}
-          title="Standard Density"
-          data-testid="switch-density-standard"
-          className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
-            density === "standard"
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5" />
-        </button>
+          <button
+            type="button"
+            onClick={() => onDensityChange("standard")}
+            title="Standard Density"
+            data-testid="switch-density-standard"
+            className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
+              density === "standard"
+                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
+                : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onDensityChange("expanded")}
-          title="Expanded In-Situ Density"
-          data-testid="switch-density-expanded"
-          className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
-            density === "expanded"
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
-          }`}
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => onDensityChange("expanded")}
+            title="Expanded In-Situ Density"
+            data-testid="switch-density-expanded"
+            className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
+              density === "expanded"
+                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
+                : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+            }`}
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

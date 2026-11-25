@@ -84,14 +84,16 @@ export function PhotoCard({
       </div>
 
       {/* Disambiguation trigger */}
-      <div className="px-4 pt-1.5 bg-neutral-950">
-        <DisambiguationBar
-          saveId={save.id}
-          candidates={save.candidateFallbacks || []}
-          initialQuery={title}
-          onSwapped={() => onSwapped?.(save)}
-        />
-      </div>
+      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
+        <div className="px-4 pt-1.5 bg-neutral-950">
+          <DisambiguationBar
+            saveId={save.id}
+            candidates={save.candidateFallbacks}
+            initialQuery={title}
+            onSwapped={() => onSwapped?.(save)}
+          />
+        </div>
+      )}
 
       {/* Footer */}
       {entity && (
@@ -99,6 +101,8 @@ export function PhotoCard({
           entity={entity}
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
+          isWishlist={Boolean(save.wishlist)}
+          tone="dark"
         />
       )}
     </div>

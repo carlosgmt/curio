@@ -50,6 +50,10 @@ export interface CardFooterWaterfallProps {
   } | null;
   creatorAffiliateTags?: UserAffiliateTags | null;
   customUtilityLabel?: string;
+  isWishlist?: boolean;
+  hidePrice?: boolean;
+  flush?: boolean;
+  tone?: "auto" | "dark";
   onUtilityClick?: () => void;
 }
 
@@ -58,8 +62,19 @@ export function CardFooterWaterfall({
   primarySource,
   creatorAffiliateTags,
   customUtilityLabel,
+  isWishlist = false,
+  hidePrice = false,
+  flush = false,
+  tone = "auto",
   onUtilityClick,
 }: CardFooterWaterfallProps) {
+  const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
+  const ext = (typeof entity.extendedAttributes === "object" && entity.extendedAttributes) || {};
+  const isClosetItem = Boolean(data.closetId);
+  const isPurchaseHubItem = Boolean(ext.purchaseHubProductId || ext.source === "purchase-hub");
+  const isOwnedSynced = (isClosetItem || isPurchaseHubItem) && !isWishlist;
+  const isDarkSurface = tone === "dark";
+
   const utility = resolveCardUtility({
     entity,
     customUtilityLabel,
@@ -124,15 +139,109 @@ export function CardFooterWaterfall({
     }).format(cents / 100);
   };
 
-  const formattedPrice = formatPrice(priceCents, currency);
+  const formattedPrice = hidePrice ? null : formatPrice(priceCents, currency);
   const isUcp = Boolean(entity.ucpSkuId);
 
   const experienceHref = playAction?.href || utility.href;
   const experienceLabel = customUtilityLabel || playAction?.label || utility.label;
   const experienceIcon = playAction?.iconName || utility.iconName;
 
+  const containerClass = flush
+    ? `w-full pt-2.5 mt-3 border-t flex items-center justify-between gap-2 text-xs ${
+        isDarkSurface ? "border-neutral-800/80" : "border-neutral-100 dark:border-neutral-800/80"
+      }`
+    : `w-full px-4 sm:px-5 py-2.5 border-t flex items-center justify-between gap-2 text-xs ${
+        isDarkSurface ? "border-neutral-800/80" : "border-neutral-100 dark:border-neutral-800/80"
+      }`;
+
+  const mutedLinkClass = isDarkSurface
+    ? "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800/80 font-medium transition-colors duration-150 cursor-pointer shrink-0"
+    : "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition-colors duration-150 cursor-pointer shrink-0";
+
+  if (isOwnedSynced) {
+    const closetTarget =
+      typeof data.closetUrl === "string" && data.closetUrl.trim()
+        ? data.closetUrl.trim()
+        : data.closetId
+        ? `/closet/#garment-${data.closetId}`
+        : "/closet/";
+    const purchaseHubTarget = ext.purchaseHubProductId
+      ? `/my-stuff/#product-${ext.purchaseHubProductId}`
+      : "/my-stuff/";
+    const primaryOwnedHref = isClosetItem ? closetTarget : purchaseHubTarget;
+    const primaryOwnedLabel = isClosetItem ? "Open in Closet" : "Open in My Stuff";
+
+    const rawExternalSource =
+      primarySource?.sourceUrl ||
+      (typeof data.sourceUrl === "string" ? data.sourceUrl : null) ||
+      (entity.canonicalUrl &&
+      /^https?:\/\//i.test(entity.canonicalUrl) &&
+      !entity.canonicalUrl.includes("/closet/#") &&
+      !entity.canonicalUrl.includes("/my-stuff/#")
+        ? entity.canonicalUrl
+        : null);
+
+    const safeExternalSource =
+      rawExternalSource && /^https?:\/\//i.test(rawExternalSource) ? rawExternalSource : null;
+    const manualHref =
+      typeof ext.manualUrl === "string" &&
+      (ext.manualUrl.trim().startsWith("https://") ||
+        ext.manualUrl.trim().startsWith("http://") ||
+        ext.manualUrl.trim().startsWith("/"))
+        ? ext.manualUrl.trim()
+        : null;
+
+    return (
+      <div className={containerClass} data-testid="owned-synced-footer">
+        <div className="flex items-center gap-1 min-w-0">
+          {safeExternalSource && (
+            <a
+              href={safeExternalSource}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={mutedLinkClass}
+              title={primarySource?.sellerName || "Original source"}
+            >
+              <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+              <span className="truncate max-w-[100px]">{primarySource?.sellerName || "Source"}</span>
+            </a>
+          )}
+          {manualHref && (
+            <a
+              href={manualHref}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={mutedLinkClass}
+              title="Open product manual"
+            >
+              <BookOpen className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Manual</span>
+            </a>
+          )}
+        </div>
+
+        <a
+          href={primaryOwnedHref}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className={`inline-flex items-center gap-1 text-[11px] font-mono font-medium transition-colors duration-150 cursor-pointer shrink-0 ${
+            isDarkSurface
+              ? "text-neutral-300 hover:text-white"
+              : "text-neutral-600 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white"
+          }`}
+        >
+          <span>{primaryOwnedLabel}</span>
+          <ExternalLink className="w-3 h-3 opacity-70" aria-hidden="true" />
+        </a>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full pt-3 mt-3 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between gap-1.5 text-xs">
+    <div className={containerClass}>
       {/* Left + Center Slots: 1. More Info & 2. Play/Experience Action */}
       <div className="flex items-center gap-1 min-w-0">
         {infoAction.href !== "#" ? (
@@ -142,13 +251,17 @@ export function CardFooterWaterfall({
             rel="noreferrer"
             title={`${infoAction.label} (${infoAction.providerName})`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition cursor-pointer shrink-0"
+            className={mutedLinkClass}
           >
             {renderSlotIcon("info")}
             <span className="hidden sm:inline">{infoAction.label}</span>
           </a>
         ) : (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 font-medium">
+          <span
+            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium ${
+              isDarkSurface ? "text-neutral-400" : "text-neutral-500 dark:text-neutral-400"
+            }`}
+          >
             {renderSlotIcon(infoAction.iconName)}
             <span>{infoAction.label}</span>
           </span>
@@ -163,7 +276,11 @@ export function CardFooterWaterfall({
                 onUtilityClick();
               }}
               title={`${experienceLabel} (${playAction.providerName})`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition cursor-pointer min-w-0"
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium transition-colors duration-150 cursor-pointer min-w-0 ${
+                isDarkSurface
+                  ? "text-neutral-300 hover:text-white hover:bg-neutral-800/80"
+                  : "text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80"
+              }`}
             >
               {renderSlotIcon(experienceIcon)}
               <span className="truncate max-w-[115px]">{experienceLabel}</span>
@@ -175,7 +292,11 @@ export function CardFooterWaterfall({
               rel="noreferrer"
               title={`${experienceLabel} (${playAction.providerName})`}
               onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition cursor-pointer min-w-0"
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium transition-colors duration-150 cursor-pointer min-w-0 ${
+                isDarkSurface
+                  ? "text-neutral-300 hover:text-white hover:bg-neutral-800/80"
+                  : "text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80"
+              }`}
             >
               {renderSlotIcon(experienceIcon)}
               <span className="truncate max-w-[115px]">{experienceLabel}</span>
@@ -191,9 +312,11 @@ export function CardFooterWaterfall({
           rel="noreferrer"
           title={`${buyAction.label} via ${sellerName}`}
           onClick={(e) => e.stopPropagation()}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-medium shadow-2xs transition active:scale-95 cursor-pointer text-xs shrink-0 ${
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-medium shadow-2xs transition-colors duration-150 active:scale-95 cursor-pointer text-xs shrink-0 ${
             isUcp
               ? "bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600"
+              : isDarkSurface
+              ? "bg-white hover:bg-neutral-200 text-neutral-950"
               : "bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
           }`}
         >
@@ -202,7 +325,7 @@ export function CardFooterWaterfall({
           ) : (
             renderSlotIcon(buyAction.iconName)
           )}
-          <span>
+          <span className="tabular-nums">
             {isUcp
               ? formattedPrice
                 ? `1-Click ${formattedPrice}`

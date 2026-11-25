@@ -14,11 +14,18 @@ export function MoviePosterCard({
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
-  const director = data.director;
+  const rawDirector = typeof data.director === "string" ? data.director.trim() : "";
+  const director =
+    rawDirector && !/^(?:unknown|visionary)\s+director$/i.test(rawDirector) ? rawDirector : null;
   const releaseYear = data.releaseYear || data.year;
   const runtime = data.runtimeMinutes ? `${data.runtimeMinutes} MIN` : null;
-  const cinematographer = data.cinematographer;
-  const distributor = data.distributor;
+  const rawCinematographer =
+    typeof data.cinematographer === "string" ? data.cinematographer.trim() : "";
+  const cinematographer =
+    rawCinematographer && !/^35mm\s+color$/i.test(rawCinematographer) ? rawCinematographer : null;
+  const rawDistributor = typeof data.distributor === "string" ? data.distributor.trim() : "";
+  const distributor =
+    rawDistributor && !/^(?:curio\s+)?cinematheque$/i.test(rawDistributor) ? rawDistributor : null;
 
   const hasBillingBlock = Boolean(director || runtime || cinematographer || distributor);
 
@@ -82,26 +89,28 @@ export function MoviePosterCard({
       </div>
 
       {/* Disambiguation fallback bar if candidate runner-ups exist */}
-      <div className="px-4 pt-2">
+      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
+        <div className="px-4 pt-2">
           <DisambiguationBar
             saveId={save.id}
-            candidates={save.candidateFallbacks || []}
+            candidates={save.candidateFallbacks}
             onSwapped={() => onSwapped?.(save)}
           />
         </div>
+      )}
 
       {/* Action Footer */}
-      <div className="p-3 bg-neutral-950 border-t border-neutral-900">
-        <CardFooterWaterfall
-          entity={{
-            ...entity,
-            typePath: entity.typePath || "/media/film",
-          }}
-          primarySource={primarySource}
-          creatorAffiliateTags={creatorAffiliateTags}
-          customUtilityLabel="Watch Film"
-        />
-      </div>
+      <CardFooterWaterfall
+        entity={{
+          ...entity,
+          typePath: entity.typePath || "/media/film",
+        }}
+        primarySource={primarySource}
+        creatorAffiliateTags={creatorAffiliateTags}
+        customUtilityLabel="Watch Film"
+        isWishlist={Boolean(save.wishlist)}
+        tone="dark"
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Shirt, Sparkles, Droplets, Wind, Scissors, ExternalLink } from "lucide-react";
+import { Shirt, Droplets } from "lucide-react";
 import { CardFooterWaterfall } from "../CardFooterWaterfall";
 import { DisambiguationBar } from "../DisambiguationBar";
 import type { SilhouetteCardProps } from "./VinylDiscCard";
@@ -11,74 +11,95 @@ export function GarmentCard({
   entity,
   primarySource,
   creatorAffiliateTags,
+  wearLinkCount = 0,
   onSwapped,
 }: SilhouetteCardProps) {
   const data = (typeof entity.coreStructuredData === "object" && entity.coreStructuredData) || {};
-  const brand = entity.brandOrCreator || data.brand || "Atelier Curio";
+  const brand = entity.brandOrCreator || data.brand || "Wardrobe";
   const garmentName = entity.title;
-  const material = data.material || data.fabric || (data.closetId ? null : "100% Organic Cotton");
-  const weight = data.weight || (data.closetId ? null : "320 GSM Heavyweight");
-  const activeFit = (data.fit || "Regular").toLowerCase();
-  const swatchHex = data.colorHex || "#2b2b2b";
-  const careInstructions = data.care || (data.closetId ? null : ["Wash 30°C", "Hang Dry", "Low Iron"]);
+  const material = data.material || data.fabric || null;
+  const weight = data.weight || null;
+  const swatchHex = data.colorHex || null;
+  const colorLabel = data.color || null;
 
   const custom = (typeof save.userCustomValues === "object" && save.userCustomValues) || {};
   const autoTags = ((save as any).autoTags || []) as string[];
-  const category = data.category || custom.category || autoTags.find((t: string) => ["footwear", "tops", "bottoms", "outerwear", "accessories"].includes(t.toLowerCase()));
+  const category =
+    data.category ||
+    custom.category ||
+    autoTags.find((t: string) =>
+      ["footwear", "tops", "bottoms", "outerwear", "accessories"].includes(t.toLowerCase())
+    );
   const subtype = data.subtype || custom.subtype;
   const size = data.size || custom.size;
   const season = data.season || custom.season;
-  const timesWorn = custom.timesWorn ?? data.timesWorn;
+  const rawTimesWorn = Number(custom.timesWorn ?? data.timesWorn ?? 0);
+  const totalWears = Math.max(Number.isFinite(rawTimesWorn) ? rawTimesWorn : 0, wearLinkCount || 0);
   const isWaterproof = Boolean(custom.isWaterproof ?? data.isWaterproof);
   const inLaundry = Boolean(custom.inLaundry ?? data.inLaundry);
-  const closetUrl = typeof data.closetUrl === "string" ? data.closetUrl : null;
   const heroUrl = entity.heroImageUrl || "";
   const isCutoutImage =
     Boolean(data.hasCutout) ||
     heroUrl.includes("/cutouts/") ||
     heroUrl.toLowerCase().endsWith(".png");
 
+  const metaParts = [
+    category,
+    subtype && String(subtype).toLowerCase() !== String(category || "").toLowerCase()
+      ? subtype
+      : null,
+    size ? `Size ${size}` : null,
+  ].filter(Boolean);
+
+  const statusPills: Array<{ key: string; label: string; tone: string }> = [];
+  if (inLaundry) {
+    statusPills.push({
+      key: "laundry",
+      label: "In Laundry",
+      tone: "text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/40 border-sky-200/60 dark:border-sky-800/60",
+    });
+  }
+  if (isWaterproof) {
+    statusPills.push({
+      key: "waterproof",
+      label: "Waterproof",
+      tone: "text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 border-blue-200/60 dark:border-blue-800/60",
+    });
+  }
+
   return (
     <div
       data-testid="garment-card"
-      className="group relative rounded-2xl bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-sm hover:shadow-lg transition-all duration-300 border border-neutral-200 dark:border-neutral-800 flex flex-col justify-between overflow-hidden"
+      className="group relative rounded-2xl bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-sm hover:shadow-lg transition-shadow duration-200 border border-neutral-200 dark:border-neutral-800 flex flex-col justify-between overflow-hidden"
     >
       {/* Visual Header / Garment Canvas */}
-      <div className="p-5 flex flex-col">
-        {/* Brand & Fabric Crest */}
-        <div className="flex items-center justify-between mb-3 gap-2">
-          <span className="text-[11px] font-mono uppercase tracking-widest text-neutral-400 truncate">
+      <div className="p-4 sm:p-5 flex flex-col flex-1">
+        {/* Brand & Color Swatch */}
+        <div className="flex items-center justify-between mb-2.5 gap-2 pr-16 sm:pr-0">
+          <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-500 dark:text-neutral-400 truncate">
             {brand}
           </span>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {closetUrl && (
-              <a
-                href={closetUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono uppercase text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 bg-neutral-100 dark:bg-neutral-800 transition"
-                title="Open in Closet"
-              >
-                <span>Closet</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            )}
-            {/* Color Swatch Square */}
-            <div
-              data-testid="garment-swatch"
-              className="w-4 h-4 rounded-md border border-neutral-300 dark:border-neutral-700 shadow-2xs"
-              style={{ backgroundColor: swatchHex }}
-              title={`Swatch: ${swatchHex}`}
-            />
-            <span className="text-[10px] font-mono text-neutral-400 uppercase">
-              {data.color || "Noir"}
-            </span>
-          </div>
+          {(swatchHex || colorLabel) && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {swatchHex && (
+                <div
+                  data-testid="garment-swatch"
+                  className="w-3.5 h-3.5 rounded-sm border border-neutral-300 dark:border-neutral-700 shadow-2xs"
+                  style={{ backgroundColor: swatchHex }}
+                  title={`Swatch: ${swatchHex}`}
+                />
+              )}
+              {colorLabel && (
+                <span className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400">
+                  {colorLabel}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Hero Image if available */}
-        {entity.heroImageUrl ? (
+        {/* Hero Image */}
+        {heroUrl ? (
           <div
             className={`relative aspect-4/3 w-full rounded-xl overflow-hidden mb-3 ${
               isCutoutImage
@@ -87,7 +108,7 @@ export function GarmentCard({
             }`}
           >
             <img
-              src={entity.heroImageUrl}
+              src={heroUrl}
               alt={garmentName}
               referrerPolicy="no-referrer"
               className={`w-full h-full group-hover:scale-102 transition-transform duration-500 ${
@@ -102,107 +123,61 @@ export function GarmentCard({
         )}
 
         {/* Garment Title */}
-        <h3 className="font-serif text-lg font-bold text-neutral-900 dark:text-neutral-50 mb-1 leading-snug">
+        <h3 className="font-serif text-base sm:text-lg font-bold text-neutral-900 dark:text-neutral-50 mb-1 leading-snug">
           {garmentName}
         </h3>
 
-        {/* Characteristics Badges */}
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          {category && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono uppercase font-semibold bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-200/60 dark:border-neutral-700">
-              {category}
-            </span>
-          )}
-          {subtype && subtype.toLowerCase() !== (category || "").toLowerCase() && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono uppercase bg-neutral-50 dark:bg-neutral-800/60 text-neutral-600 dark:text-neutral-400 border border-neutral-200/50 dark:border-neutral-700">
-              {subtype}
-            </span>
-          )}
-          {size && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/60">
-              Size: {size}
-            </span>
-          )}
-          {season && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800/60 border border-neutral-200/50 dark:border-neutral-700">
-              {season}
-            </span>
-          )}
-          {timesWorn !== undefined && timesWorn > 0 && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono text-neutral-500 dark:text-neutral-400 bg-neutral-50 dark:bg-neutral-800/30">
-              Worn {timesWorn}x
-            </span>
-          )}
-          {inLaundry && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/40 border border-sky-200/60 dark:border-sky-800/60">
-              In Laundry
-            </span>
-          )}
-          {isWaterproof && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-800/60 flex items-center gap-1">
-              <Droplets className="w-2.5 h-2.5" /> Waterproof
-            </span>
-          )}
-        </div>
-
-        {/* Fabric & Weave Spec */}
-        {(material || weight) && (
-          <div className="flex items-center gap-2 text-xs font-mono text-neutral-600 dark:text-neutral-400 mb-3">
-            <Scissors className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-            <span className="truncate">{[material, weight].filter(Boolean).join(" • ")}</span>
-          </div>
+        {/* Single Metadata Line */}
+        {metaParts.length > 0 && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 tabular-nums mb-1.5 truncate">
+            {metaParts.join(" · ")}
+          </p>
         )}
 
-        {/* Garment Fit Matrix */}
-        <div className="flex items-center gap-1.5 pt-2 border-t border-neutral-100 dark:border-neutral-800 mb-3">
-          <span className="text-[10px] font-mono text-neutral-400 uppercase mr-1">Fit:</span>
-          {["slim", "regular", "oversized"].map((fit) => {
-            const isCurrentFit = activeFit.includes(fit);
-            return (
+        {/* Wear Count, Season & High-Signal Status (max 2 pills) */}
+        {(totalWears > 0 || season || statusPills.length > 0) && (
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] font-mono tabular-nums text-neutral-500 dark:text-neutral-400">
+            {totalWears > 0 && (
               <span
-                key={fit}
-                data-testid={`fit-${fit}`}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-semibold transition ${
-                  isCurrentFit
-                    ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-                    : "bg-neutral-100 dark:bg-neutral-800 text-neutral-400"
-                }`}
+                data-testid="garment-wear-count"
+                className="font-semibold text-neutral-700 dark:text-neutral-300"
               >
-                {fit}
+                Worn {totalWears}×
               </span>
-            );
-          })}
-        </div>
-
-        {/* Care Instruction Glyphs */}
-        {careInstructions && (
-          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-neutral-500 dark:text-neutral-400">
-            <Droplets className="w-3 h-3 text-neutral-400" />
-            {Array.isArray(careInstructions) ? (
-              careInstructions.map((care: string, idx: number) => (
-                <span key={idx} className="after:content-['•'] last:after:content-[''] after:ml-1.5">
-                  {care}
-                </span>
-              ))
-            ) : (
-              <span>{String(careInstructions)}</span>
             )}
+            {season && <span className="truncate max-w-[160px]">{season}</span>}
+            {statusPills.slice(0, 2).map((pill) => (
+              <span
+                key={pill.key}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border ${pill.tone}`}
+              >
+                {pill.key === "waterproof" && <Droplets className="w-2.5 h-2.5" aria-hidden="true" />}
+                <span>{pill.label}</span>
+              </span>
+            ))}
           </div>
         )}
-      </div>
 
-      {/* Disambiguation Swapper Bar */}
-      <DisambiguationBar
+        {/* Real Material Spec (only when present) */}
+        {(material || weight) && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5 truncate">
+            {[material, weight].filter(Boolean).join(" · ")}
+          </p>
+        )}
+
+        <DisambiguationBar
           saveId={save.id}
           candidates={save.candidateFallbacks || []}
           onSwapped={onSwapped}
         />
+      </div>
 
       {/* Footer Waterfall */}
       <CardFooterWaterfall
         entity={entity}
         primarySource={primarySource}
         creatorAffiliateTags={creatorAffiliateTags}
+        isWishlist={Boolean(save.wishlist)}
       />
     </div>
   );

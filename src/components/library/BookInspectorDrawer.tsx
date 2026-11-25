@@ -469,7 +469,7 @@ export function BookInspectorDrawer({
                     type="button"
                     onClick={() => handleRemoveQuote(idx)}
                     aria-label="Remove passage"
-                    className="absolute top-2 right-1.5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive cursor-pointer"
+                    className="absolute top-2 right-1.5 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-destructive cursor-pointer"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>

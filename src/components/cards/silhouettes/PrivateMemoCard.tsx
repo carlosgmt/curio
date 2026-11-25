@@ -32,10 +32,10 @@ export function PrivateMemoCard({ save }: PrivateMemoCardProps) {
   });
 
   return (
-    <div className="group relative rounded-2xl bg-amber-50/60 dark:bg-amber-950/25 text-amber-950 dark:text-amber-100 shadow-sm hover:shadow-md transition-all duration-300 border-2 border-amber-200/80 dark:border-amber-900/50 p-5 flex flex-col justify-between overflow-hidden">
+    <div className="group relative rounded-2xl bg-amber-50/60 dark:bg-amber-950/25 text-amber-950 dark:text-amber-100 shadow-sm hover:shadow-md transition-shadow duration-200 border-2 border-amber-200/80 dark:border-amber-900/50 p-4 sm:p-5 flex flex-col justify-between overflow-hidden">
       {/* Top Header Vault Badge */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 pr-10 sm:pr-0 gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/60 px-2.5 py-1 rounded-full border border-amber-300/60 dark:border-amber-800/60">
             <Lock className="w-3.5 h-3.5" />
             Text note

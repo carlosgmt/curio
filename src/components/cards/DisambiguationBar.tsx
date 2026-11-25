@@ -20,6 +20,7 @@ interface DisambiguationBarProps {
   saveId: string;
   candidates?: CandidateFallback[] | null;
   initialQuery?: string;
+  alwaysShowTrigger?: boolean;
   onSwapped?: (chosenCandidate: CandidateFallback) => void;
 }
 
@@ -110,6 +111,7 @@ export function DisambiguationBar({
   saveId,
   candidates,
   initialQuery,
+  alwaysShowTrigger = false,
   onSwapped,
 }: DisambiguationBarProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -248,18 +250,21 @@ export function DisambiguationBar({
   };
 
   if (!isOpen) {
+    if (!alwaysShowTrigger && staticCandidates.length === 0) {
+      return null;
+    }
     return (
-      <div className="flex items-center justify-center pt-1">
+      <div className="flex items-center justify-center pt-1.5">
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             setIsOpen(true);
           }}
-          className="inline-flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 hover:text-neutral-200 dark:text-neutral-500 dark:hover:text-neutral-300 py-0.5 px-2.5 rounded-full hover:bg-white/5 transition cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-[11px] font-mono text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 py-0.5 px-2.5 rounded-full hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors duration-150 cursor-pointer"
           title="Wrong entity? Click to search, disambiguate, or save as note"
         >
-          <Sparkles className="w-3 h-3 text-amber-500/80" />
+          <Sparkles className="w-3 h-3 text-amber-500/80" aria-hidden="true" />
           <span>Wrong entity?</span>
         </button>
       </div>

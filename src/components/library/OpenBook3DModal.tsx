@@ -918,7 +918,7 @@ export function OpenBook3DModal({
                                 type="button"
                                 onClick={() => handleRemoveQuote(idx)}
                                 aria-label="Delete quote"
-                                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-[#7A6F5E] hover:text-rose-700 transition cursor-pointer"
+                                className="absolute top-2 right-2 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-[#7A6F5E] hover:text-rose-700 transition cursor-pointer"
                               >
                                 <Trash2 className="w-3 h-3" />
                               </button>

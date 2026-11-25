@@ -44,9 +44,9 @@ export function WebLinkCard({
       data-testid="weblink-card"
       className="group relative rounded-2xl bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm hover:shadow-lg transition-all duration-300 border border-stone-200 dark:border-stone-800 flex flex-col justify-between overflow-hidden"
     >
-      <div className="p-5 flex flex-col">
+      <div className="p-4 sm:p-5 flex flex-col">
         {/* Top Domain & Favicon Ribbon */}
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-stone-100 dark:border-stone-800">
+        <div className="flex items-center justify-between pb-3 mb-3 border-b border-stone-100 dark:border-stone-800 pr-16 sm:pr-0 gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <img
               src={faviconUrl}
@@ -115,12 +115,11 @@ export function WebLinkCard({
         </a>
       </div>
 
-      {/* Disambiguation Bar */}
       <DisambiguationBar
-          saveId={save.id}
-          candidates={save.candidateFallbacks || []}
-          onSwapped={onSwapped}
-        />
+        saveId={save.id}
+        candidates={save.candidateFallbacks || []}
+        onSwapped={onSwapped}
+      />
 
       {/* Footer */}
       {entity && (
@@ -128,6 +127,7 @@ export function WebLinkCard({
           entity={entity}
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
+          isWishlist={Boolean(save.wishlist)}
         />
       )}
     </div>

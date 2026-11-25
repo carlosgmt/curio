@@ -49,15 +49,19 @@ export function SynapsePill({ connection, onUnlink, onClick }: SynapsePillProps)
   const { label, icon } = getSynapseLabel(connection.connectionType, connection.title);
 
   return (
-    <div className="group/pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-100/90 dark:bg-neutral-800/90 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700/80 shadow-2xs transition hover:border-neutral-400 dark:hover:border-neutral-500 max-w-full">
-      <div
-        className="flex items-center gap-1.5 cursor-pointer truncate"
-        onClick={() => onClick?.(connection.saveId)}
+    <div className="group/pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-neutral-100/90 dark:bg-neutral-800/90 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700/80 shadow-2xs transition-colors duration-150 hover:border-neutral-400 dark:hover:border-neutral-500 max-w-full">
+      <button
+        type="button"
+        className="flex items-center gap-1.5 cursor-pointer truncate focus-visible:outline-2 focus-visible:outline-[var(--ring)] focus-visible:outline-offset-1 rounded-full"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick?.(connection.saveId);
+        }}
         title={connection.contextNote ? `${label} (${connection.contextNote})` : label}
       >
-        {icon}
-        <span className="truncate max-w-[200px]">{label}</span>
-      </div>
+        <span className="shrink-0" aria-hidden="true">{icon}</span>
+        <span className="truncate max-w-[140px] sm:max-w-[180px]">{label}</span>
+      </button>
 
       {onUnlink && (
         <button
@@ -66,7 +70,7 @@ export function SynapsePill({ connection, onUnlink, onClick }: SynapsePillProps)
             e.stopPropagation();
             onUnlink(connection.connectionId);
           }}
-          className="opacity-0 group-hover/pill:opacity-100 text-neutral-400 hover:text-rose-500 rounded-full p-0.5 transition cursor-pointer"
+          className="opacity-0 group-hover/pill:opacity-100 focus-visible:opacity-100 text-neutral-400 hover:text-rose-500 rounded-full p-0.5 transition-opacity duration-150 cursor-pointer shrink-0"
           title="Unlink connection"
           aria-label={`Unlink ${connection.title}`}
         >

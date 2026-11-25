@@ -59,9 +59,9 @@ export function ChecklistCard({
       data-testid="checklist-card"
       className="group relative rounded-2xl bg-[#fdfbf7] dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm hover:shadow-md transition-all duration-300 border-2 border-stone-200/90 dark:border-stone-800 flex flex-col justify-between overflow-hidden"
     >
-      <div className="p-5 flex flex-col">
+      <div className="p-4 sm:p-5 flex flex-col">
         {/* Header bar */}
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-stone-200 dark:border-stone-800">
+        <div className="flex items-center justify-between pb-3 mb-3 border-b border-stone-200 dark:border-stone-800 pr-16 sm:pr-0 gap-2">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300">
               <ListTodo className="w-4 h-4" />
@@ -147,6 +147,7 @@ export function ChecklistCard({
           entity={entity}
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
+          isWishlist={Boolean(save.wishlist)}
         />
       )}
     </div>

@@ -16,16 +16,32 @@ export function CinemaCulturalMode({ save, entity, primarySource, creatorAffilia
   const [showTrailer, setShowTrailer] = useState(false);
   const data = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
 
-  const director = data.director || entity?.brandOrCreator || "Visionary Director";
-  const cinematographer = data.cinematographer || "35mm Color";
-  const releaseYear = data.releaseYear || data.year || "2024";
-  const runtime = data.runtimeMinutes ? `${data.runtimeMinutes} MIN` : "118 MIN";
-  const distributor = data.distributor || "CURIO CINEMATHEQUE";
-  const rating = data.tmdbRating || data.rating || "8.4";
-  const trailerUrl = data.trailerUrl || "https://www.youtube.com/embed/dQw4w9WgXcQ";
+  const rawDirector = String(data.director || entity?.brandOrCreator || "").trim();
+  const director =
+    rawDirector && !/^(?:unknown|visionary)\s+director$/i.test(rawDirector) ? rawDirector : null;
+  const rawCinematographer =
+    typeof data.cinematographer === "string" ? data.cinematographer.trim() : "";
+  const cinematographer =
+    rawCinematographer && !/^35mm\s+color$/i.test(rawCinematographer) ? rawCinematographer : null;
+  const releaseYear = data.releaseYear || data.year || null;
+  const runtime = data.runtimeMinutes ? `${data.runtimeMinutes} MIN` : null;
+  const rawDistributor = typeof data.distributor === "string" ? data.distributor.trim() : "";
+  const distributor =
+    rawDistributor && !/^(?:curio\s+)?cinematheque$/i.test(rawDistributor) ? rawDistributor : null;
+  const rating = data.tmdbRating || data.rating || null;
+  const trailerUrl = typeof data.trailerUrl === "string" && data.trailerUrl.trim() ? data.trailerUrl.trim() : null;
 
   const filmTitle = entity?.title || "Film";
   const searchLinks = getCinemaSearchLinks(filmTitle);
+  const posterSubtitle = [distributor, runtime].filter(Boolean).join(" • ");
+  const billingSecondLine = [
+    cinematographer ? `CINEMATOGRAPHY BY ${cinematographer.toUpperCase()}` : null,
+    releaseYear ? `RELEASED IN ${releaseYear}` : null,
+    runtime ? `RUNTIME ${runtime}` : null,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+  const hasBilling = Boolean(director || distributor || billingSecondLine);
 
   const streamPlatforms = [
     { name: "MUBI", url: searchLinks.mubi, color: "bg-blue-600" },
@@ -50,9 +66,11 @@ export function CinemaCulturalMode({ save, entity, primarySource, creatorAffilia
             <h2 className="font-serif text-3xl font-bold tracking-tight text-white mb-2">
               {entity?.title || "Untitled Film"}
             </h2>
-            <p className="text-xs font-mono tracking-widest uppercase text-neutral-400">
-              Directed by {director}
-            </p>
+            {director && (
+              <p className="text-xs font-mono tracking-widest uppercase text-neutral-400">
+                Directed by {director}
+              </p>
+            )}
           </div>
         )}
 
@@ -60,27 +78,37 @@ export function CinemaCulturalMode({ save, entity, primarySource, creatorAffilia
         <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/30 to-transparent pointer-events-none" />
 
         {/* Rating and Trailer Badge */}
-        <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-black/70 backdrop-blur-md border border-white/10 text-amber-400">
-            <Star className="w-3.5 h-3.5 fill-current" />
-            <span>{rating} TMDB</span>
-          </span>
+        {(rating || trailerUrl) && (
+          <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
+            {rating ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-black/70 backdrop-blur-md border border-white/10 text-amber-400">
+                <Star className="w-3.5 h-3.5 fill-current" />
+                <span>{rating} TMDB</span>
+              </span>
+            ) : (
+              <span />
+            )}
 
-          <button
-            type="button"
-            onClick={() => setShowTrailer(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white/90 hover:bg-white text-neutral-950 backdrop-blur-md shadow-lg transition active:scale-95 cursor-pointer"
-          >
-            <Play className="w-3.5 h-3.5 fill-current text-neutral-950" />
-            <span>Watch Trailer</span>
-          </button>
-        </div>
+            {trailerUrl && (
+              <button
+                type="button"
+                onClick={() => setShowTrailer(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white/90 hover:bg-white text-neutral-950 backdrop-blur-md shadow-lg transition active:scale-95 cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 fill-current text-neutral-950" />
+                <span>Watch Trailer</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Bottom Poster Title Overlay */}
         <div className="absolute bottom-4 left-5 right-5 z-10">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400">
-            {distributor} • {runtime}
-          </span>
+          {posterSubtitle && (
+            <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400">
+              {posterSubtitle}
+            </span>
+          )}
           <h2 className="text-2xl sm:text-3xl font-bold font-serif tracking-tight text-white mt-0.5 leading-tight">
             {entity?.title}
           </h2>
@@ -89,10 +117,17 @@ export function CinemaCulturalMode({ save, entity, primarySource, creatorAffilia
 
       {/* Criterion-Style Condensed Billing Block */}
       <div className="p-5 bg-neutral-950 border-t border-neutral-800/80 space-y-4">
-        <div className="text-center font-mono text-[9px] uppercase tracking-widest text-neutral-400 leading-relaxed border border-neutral-800/60 p-2.5 rounded-xl bg-neutral-900/40">
-          <p className="font-bold text-neutral-200">{distributor} PRESENTS A FILM DIRECTED BY {director.toUpperCase()}</p>
-          <p>CINEMATOGRAPHY BY {cinematographer.toUpperCase()} • RELEASED IN {releaseYear} • RUNTIME {runtime}</p>
-        </div>
+        {hasBilling && (
+          <div className="text-center font-mono text-[9px] uppercase tracking-widest text-neutral-400 leading-relaxed border border-neutral-800/60 p-2.5 rounded-xl bg-neutral-900/40">
+            {(distributor || director) && (
+              <p className="font-bold text-neutral-200">
+                {distributor ? `${distributor} PRESENTS ` : ""}
+                {director ? `A FILM DIRECTED BY ${director.toUpperCase()}` : ""}
+              </p>
+            )}
+            {billingSecondLine && <p>{billingSecondLine}</p>}
+          </div>
+        )}
 
         {/* Streaming Availability & CTAs */}
         <div>

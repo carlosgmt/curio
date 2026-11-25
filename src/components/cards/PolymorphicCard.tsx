@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link2, FolderPlus, Heart, Loader2 } from "lucide-react";
 import { wishLabel } from "@/lib/wishlist";
 import { VinylDiscCard } from "./silhouettes/VinylDiscCard";
@@ -29,8 +29,11 @@ import { SynapsePill } from "../connections/SynapsePill";
 import { AddToListPopover } from "../lists/AddToListPopover";
 import type { CandidateFallback } from "./DisambiguationBar";
 import type { ConnectedItem } from "@/lib/connections/service";
+import { partitionConnections } from "@/lib/connections/classify";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
 import { apiFetch } from "@/lib/apiClient";
+
+const MAX_INLINE_PILLS = 2;
 
 export interface CardData {
   save: {
@@ -99,8 +102,10 @@ export function PolymorphicCard({
   const effectiveTags = item.creatorAffiliateTags || propCreatorTags;
   const [internalConnections, setInternalConnections] = useState<ConnectedItem[]>(item.connections || []);
   const [isAddToListOpen, setIsAddToListOpen] = useState(false);
+  const [showAllInlinePills, setShowAllInlinePills] = useState(false);
   const [wished, setWished] = useState(Boolean(item.save.wishlist));
   useEffect(() => setWished(Boolean(item.save.wishlist)), [item.save.wishlist]);
+  useEffect(() => setShowAllInlinePills(false), [save.id]);
 
   const toggleWish = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -149,6 +154,11 @@ export function PolymorphicCard({
   }, [save.id, save.isPrivateMemo, isOptimistic, item.connections, propConnections]);
 
   const displayedConnections = propConnections !== undefined ? propConnections : internalConnections;
+  const { wearLinks, curatedPairs } = useMemo(
+    () => partitionConnections(displayedConnections),
+    [displayedConnections]
+  );
+  const isCompactOrMicro = density === "compact" || density === "micro";
 
   const handleUnlink = async (connectionId: string) => {
     try {
@@ -191,6 +201,7 @@ export function PolymorphicCard({
           }
           primarySource={primarySource}
           creatorAffiliateTags={effectiveTags}
+          wearLinkCount={wearLinks.length}
           onSwapped={onSwapped}
         />
       );
@@ -354,6 +365,7 @@ export function PolymorphicCard({
           entity={entity}
           primarySource={primarySource}
           creatorAffiliateTags={effectiveTags}
+          wearLinkCount={wearLinks.length}
           onSwapped={onSwapped}
         />
       );
@@ -621,36 +633,56 @@ export function PolymorphicCard({
       )}
 
       {/* Quick Action Toolbar (Wish + Board) */}
-      {!isOptimistic && !readOnly && (
-        <div className={`absolute top-3 right-3 z-30 flex items-center gap-1.5 transition ${wished ? "opacity-100" : "sm:opacity-0 sm:group-hover/curio-card:opacity-100 opacity-90"}`}>
+      {!isOptimistic && !readOnly && !isCompactOrMicro && (
+        <div
+          className={`absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5 transition-opacity duration-150 ${
+            wished
+              ? "opacity-100"
+              : "opacity-95 sm:opacity-0 sm:group-hover/curio-card:opacity-100 sm:group-focus-within/curio-card:opacity-100"
+          }`}
+        >
           <button
             type="button"
             data-testid="wish-toggle"
             aria-pressed={wished}
+            aria-label={
+              wished
+                ? "On your wishlist (click to remove)"
+                : wishLabel(entity?.typePath || save.typePath, entity?.coreType)
+            }
             onClick={toggleWish}
-            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium backdrop-blur-md shadow-md border transition cursor-pointer ${
+            className={`inline-flex items-center justify-center sm:justify-start gap-1 w-8 h-8 sm:w-auto sm:h-auto sm:px-2 sm:py-1 rounded-full text-[11px] font-medium backdrop-blur-md shadow-sm border transition-colors duration-150 cursor-pointer ${
               wished
                 ? "bg-rose-500 text-white border-rose-400"
-                : "bg-neutral-900/80 text-white border-white/20 dark:bg-neutral-100/90 dark:text-neutral-950"
+                : "bg-neutral-900/75 text-white border-white/20 dark:bg-neutral-100/90 dark:text-neutral-950"
             }`}
-            title={wished ? "On your wishlist (click to remove)" : wishLabel(entity?.typePath || save.typePath, entity?.coreType)}
+            title={
+              wished
+                ? "On your wishlist (click to remove)"
+                : wishLabel(entity?.typePath || save.typePath, entity?.coreType)
+            }
           >
-            <Heart className={`w-3 h-3 ${wished ? "fill-current" : ""}`} aria-hidden="true" />
-            <span>{wished ? "Wished" : "Wish"}</span>
+            <Heart className={`w-3.5 h-3.5 sm:w-3 sm:h-3 ${wished ? "fill-current" : ""}`} aria-hidden="true" />
+            <span className="hidden sm:inline">{wished ? "Wished" : "Wish"}</span>
           </button>
           {!save.isPrivateMemo && (
             <button
               type="button"
               data-testid="add-to-board-btn"
+              aria-label="Add to Curated Board"
               onClick={(e) => {
                 e.stopPropagation();
                 setIsAddToListOpen(true);
               }}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-neutral-900/80 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-md border border-white/20 dark:border-neutral-800 transition cursor-pointer"
+              className={`inline-flex items-center justify-center sm:justify-start gap-1 w-8 h-8 sm:w-auto sm:h-auto sm:px-2.5 sm:py-1 rounded-full text-[11px] font-medium bg-neutral-900/75 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-sm border border-white/20 dark:border-neutral-800 transition-all duration-150 cursor-pointer ${
+                wished
+                  ? "sm:opacity-0 sm:group-hover/curio-card:opacity-100 sm:group-focus-within/curio-card:opacity-100"
+                  : ""
+              }`}
               title="Add to Curated Board"
             >
-              <FolderPlus className="w-3 h-3 text-neutral-300 dark:text-neutral-700" aria-hidden="true" />
-              <span>Board</span>
+              <FolderPlus className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-neutral-300 dark:text-neutral-700" aria-hidden="true" />
+              <span className="hidden sm:inline">Board</span>
             </button>
           )}
         </div>
@@ -665,43 +697,84 @@ export function PolymorphicCard({
         {renderSilhouette()}
       </div>
 
-      {/* Synaptic Memory Edge Connections */}
-      {!isOptimistic && (displayedConnections.length > 0 || (!readOnly && !save.isPrivateMemo && Boolean(onConnect))) && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5 items-center px-1">
-          {displayedConnections.map((conn) => (
-            <SynapsePill
-              key={conn.connectionId}
-              connection={conn}
-              onUnlink={!readOnly && (onConnect || onUnlink) ? handleUnlink : undefined}
-              onClick={(targetSaveId) => {
-                const el = document.getElementById(`save-${targetSaveId}`);
-                if (el) {
-                  el.scrollIntoView({ behavior: "smooth", block: "center" });
-                  el.classList.add("ring-2", "ring-neutral-400", "dark:ring-neutral-500", "rounded-2xl");
-                  setTimeout(() => {
-                    el.classList.remove("ring-2", "ring-neutral-400", "dark:ring-neutral-500", "rounded-2xl");
-                  }, 2500);
-                }
-              }}
-            />
-          ))}
-          {!readOnly && !save.isPrivateMemo && onConnect && (
-            <button
-              type="button"
-              data-testid="pair-card-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onConnect(item);
-              }}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200 border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 transition cursor-pointer"
-              title={displayedConnections.length > 0 ? "Add another synaptic connection" : "Pair with another save"}
-            >
-              <Link2 className="w-2.5 h-2.5" aria-hidden="true" />
-              <span>+ Pair</span>
-            </button>
-          )}
-        </div>
-      )}
+      {/* Curated Synaptic Pairs (structural WORN_ON & auto co-wear links fold into card wear count & Lightbox drawer) */}
+      {!isOptimistic &&
+        !isCompactOrMicro &&
+        (curatedPairs.length > 0 || (!readOnly && !save.isPrivateMemo && Boolean(onConnect))) &&
+        (() => {
+          const visibleCurated = showAllInlinePills
+            ? curatedPairs
+            : curatedPairs.slice(0, MAX_INLINE_PILLS);
+          const overflowCount = curatedPairs.length - visibleCurated.length;
+          return (
+            <div className="mt-2 flex flex-wrap gap-1.5 items-center px-1">
+              {visibleCurated.map((conn) => (
+                <SynapsePill
+                  key={conn.connectionId}
+                  connection={conn}
+                  onUnlink={!readOnly && (onConnect || onUnlink) ? handleUnlink : undefined}
+                  onClick={(targetSaveId) => {
+                    const el = document.getElementById(`save-${targetSaveId}`);
+                    if (el) {
+                      el.scrollIntoView({ behavior: "smooth", block: "center" });
+                      el.classList.add(
+                        "ring-2",
+                        "ring-neutral-400",
+                        "dark:ring-neutral-500",
+                        "rounded-2xl"
+                      );
+                      setTimeout(() => {
+                        el.classList.remove(
+                          "ring-2",
+                          "ring-neutral-400",
+                          "dark:ring-neutral-500",
+                          "rounded-2xl"
+                        );
+                      }, 2500);
+                    }
+                  }}
+                />
+              ))}
+              {overflowCount > 0 && (
+                <button
+                  type="button"
+                  data-testid="synapse-overflow-pill"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onCardClick) {
+                      onCardClick(item);
+                    } else {
+                      setShowAllInlinePills(true);
+                    }
+                  }}
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono tabular-nums font-medium text-neutral-600 dark:text-neutral-300 bg-neutral-100/80 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 transition-colors duration-150 cursor-pointer"
+                  title={`Show ${overflowCount} more synaptic pairs`}
+                >
+                  +{overflowCount} more
+                </button>
+              )}
+              {!readOnly && !save.isPrivateMemo && onConnect && (
+                <button
+                  type="button"
+                  data-testid="pair-card-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConnect(item);
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200 border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 transition-colors duration-150 cursor-pointer"
+                  title={
+                    curatedPairs.length > 0
+                      ? "Add another synaptic connection"
+                      : "Pair with another save"
+                  }
+                >
+                  <Link2 className="w-2.5 h-2.5" aria-hidden="true" />
+                  <span>+ Pair</span>
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
       {/* Add To List / Curated Board Popover */}
       {!readOnly && (

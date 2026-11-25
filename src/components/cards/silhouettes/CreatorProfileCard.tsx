@@ -48,9 +48,9 @@ export function CreatorProfileCard({
       data-testid="creator-profile-card"
       className="group relative rounded-2xl bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm hover:shadow-lg transition-all duration-300 border border-stone-200 dark:border-stone-800 flex flex-col justify-between overflow-hidden"
     >
-      <div className="p-5 flex flex-col">
+      <div className="p-4 sm:p-5 flex flex-col">
         {/* Top Header Badge */}
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-stone-100 dark:border-stone-800">
+        <div className="flex items-center justify-between pb-3 mb-3 border-b border-stone-100 dark:border-stone-800 pr-16 sm:pr-0 gap-2">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-[11px] font-mono font-medium">
             {getRoleIcon()}
             <span>{role}</span>
@@ -129,6 +129,7 @@ export function CreatorProfileCard({
           entity={entity}
           primarySource={primarySource}
           creatorAffiliateTags={creatorAffiliateTags}
+          isWishlist={Boolean(save.wishlist)}
         />
       )}
     </div>

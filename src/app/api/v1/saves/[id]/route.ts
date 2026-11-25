@@ -4,6 +4,7 @@ import { getSaveDetails, updateSaveDetails, deleteSave } from "@/lib/saves/servi
 import { requireAuth, AuthError } from "@/lib/auth/service";
 import { syncCurioSaveEditToCloset } from "@/lib/sync/closet";
 import { syncCurioSaveEditToPurchaseHub } from "@/lib/sync/purchaseHub";
+import { syncCurioSaveEditToChef } from "@/lib/sync/chef";
 
 const updateSaveSchema = z.object({
   privateTitle: z.string().optional().nullable(),
@@ -116,6 +117,19 @@ export async function PATCH(
             : undefined,
       }
     ).catch(() => {});
+
+    // Best-effort write-through to Chef UI if linked to a synced recipe
+    if (entityKey && entityKey.startsWith("recipe:")) {
+      await syncCurioSaveEditToChef(entityKey, {
+        title: parsed.data.title ?? parsed.data.privateTitle,
+        summary: parsed.data.summary,
+        personalNotes:
+          parsed.data.personalNotes !== undefined
+            ? parsed.data.personalNotes ?? ""
+            : undefined,
+        autoTags: parsed.data.autoTags,
+      }).catch(() => {});
+    }
 
     return NextResponse.json({ success: true, ...updated });
   } catch (error: any) {

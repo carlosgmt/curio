@@ -9,6 +9,7 @@ import "@/lib/sync/closet";
 import "@/lib/sync/letterboxdRss";
 import "@/lib/sync/goodreadsRss";
 import "@/lib/sync/purchaseHub";
+import "@/lib/sync/chef";
 
 export async function GET(req: NextRequest) {
   try {

@@ -393,6 +393,50 @@ export async function GET(
       }
     }
 
+    // Read-through cache & proxy for Chef UI media (/api/v1/media/chef/<filename>)
+    if (
+      !fs.existsSync(/*turbopackIgnore: true*/ targetPath) &&
+      sanitizedSlug.length === 2 &&
+      sanitizedSlug[0] === "chef"
+    ) {
+      const filename = sanitizedSlug[1];
+      const chefApiBase = (process.env.CHEF_API_URL || "http://host.docker.internal:8720").replace(
+        /\/+$/,
+        ""
+      );
+      const upstreamUrl = `${chefApiBase}/api/images/${encodeURIComponent(filename)}`;
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const upstreamRes = await fetch(upstreamUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (upstreamRes.ok) {
+          const bytes = Buffer.from(await upstreamRes.arrayBuffer());
+          try {
+            await fs.promises.mkdir(/*turbopackIgnore: true*/ path.dirname(targetPath), {
+              recursive: true,
+            });
+            await fs.promises.writeFile(/*turbopackIgnore: true*/ targetPath, bytes);
+          } catch {
+            const ext = path.extname(filename).toLowerCase();
+            return new NextResponse(bytes, {
+              status: 200,
+              headers: {
+                "Content-Type":
+                  upstreamRes.headers.get("content-type") || MIME_MAP[ext] || "image/jpeg",
+                "Content-Length": bytes.length.toString(),
+                "Cache-Control": cacheControl,
+              },
+            });
+          }
+        }
+      } catch {
+        // Chef UI temporarily unreachable; fall through to 404 if uncached
+      }
+    }
+
     // Legacy single-filename fallback to public/uploads
     if (!fs.existsSync(/*turbopackIgnore: true*/ targetPath) && sanitizedSlug.length === 1) {
       const legacyDir = path.join(process.cwd(), "public", "uploads");

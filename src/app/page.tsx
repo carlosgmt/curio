@@ -171,6 +171,7 @@ export default function Home() {
   const [garmentSeasonFilter, setGarmentSeasonFilter] = useState<string>("ALL");
   const [isSyncingCloset, setIsSyncingCloset] = useState(false);
   const [isSyncingPurchaseHub, setIsSyncingPurchaseHub] = useState(false);
+  const [isSyncingChef, setIsSyncingChef] = useState(false);
   const [isLogBookOpen, setIsLogBookOpen] = useState(false);
   const [isGoodreadsSyncOpen, setIsGoodreadsSyncOpen] = useState(false);
   const [goodreadsStatus, setGoodreadsStatus] =
@@ -504,6 +505,34 @@ export default function Home() {
     [fetchItems, fetchLists, refreshActiveBoard, wishOnly]
   );
 
+  const triggerChefSync = useCallback(
+    async (force: boolean = false) => {
+      if (force) setIsSyncingChef(true);
+      try {
+        const res = await apiFetch("/api/v1/sync/chef", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force, ifStaleMs: 300_000 }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const didChange = Boolean(data?.synced);
+        if (didChange) {
+          await Promise.all([
+            fetchItems({ reset: true, wishlist: wishOnly }),
+            fetchLists(),
+            refreshActiveBoard(),
+          ]);
+        }
+      } catch {
+        // Non-fatal if chef-ui is offline
+      } finally {
+        if (force) setIsSyncingChef(false);
+      }
+    },
+    [fetchItems, fetchLists, refreshActiveBoard, wishOnly]
+  );
+
   const triggerBackgroundFeedSyncIfStale = async (force: boolean = false) => {
     try {
       const statusRes = await apiFetch("/api/v1/sync/feeds");
@@ -536,20 +565,22 @@ export default function Home() {
     fetchItems({ reset: true, wishlist: wishOnly });
   }, [prefsHydrated, wishOnly, fetchItems]);
 
-  // Automatic Closet & Purchase Hub <-> Curio background sync on session start + tab focus
+  // Automatic Closet, Purchase Hub & Chef <-> Curio background sync on session start + tab focus
   useEffect(() => {
     if (!user) return;
     triggerClosetSync(false);
     triggerPurchaseHubSync(false);
+    triggerChefSync(false);
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         triggerClosetSync(false);
         triggerPurchaseHubSync(false);
+        triggerChefSync(false);
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [user, triggerClosetSync, triggerPurchaseHubSync]);
+  }, [user, triggerClosetSync, triggerPurchaseHubSync, triggerChefSync]);
 
   // Infinite scroll observer for main feed
   useEffect(() => {
@@ -608,6 +639,14 @@ export default function Home() {
         activeListSlug.startsWith("my-stuff-") ||
         (activeListDetails?.list.slug === activeListSlug &&
           activeListDetails.ancestors?.some((a) => a.slug === "my-stuff")))
+  );
+
+  const isRecipesDescendant = Boolean(
+    activeListSlug &&
+      (activeListSlug === "recipes" ||
+        activeListSlug.startsWith("recipes-") ||
+        (activeListDetails?.list.slug === activeListSlug &&
+          activeListDetails.ancestors?.some((a) => a.slug === "recipes")))
   );
 
   const activeDbDefaultLayout =
@@ -1351,6 +1390,7 @@ export default function Home() {
           refreshActiveBoard(),
           triggerClosetSync(false),
           triggerPurchaseHubSync(false),
+          triggerChefSync(false),
           triggerBackgroundFeedSyncIfStale(false),
         ])
       }
@@ -1825,6 +1865,28 @@ export default function Home() {
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
                         >
                           <span>Open Purchase Hub ↗</span>
+                        </a>
+                      </>
+                    )}
+                    {isRecipesDescendant && (
+                      <>
+                        <button
+                          type="button"
+                          data-testid="sync-chef-btn"
+                          onClick={() => triggerChefSync(true)}
+                          disabled={isSyncingChef}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isSyncingChef ? "animate-spin" : ""}`} />
+                          <span>{isSyncingChef ? "Syncing Chef..." : "Sync Chef"}</span>
+                        </button>
+                        <a
+                          href="/chef/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
+                        >
+                          <span>Open Chef ↗</span>
                         </a>
                       </>
                     )}

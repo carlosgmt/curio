@@ -17,8 +17,9 @@ services:
       - CURIO_ALLOW_ANON=false
       - CLOSET_API_URL=http://host.docker.internal:8710
       - PURCHASE_HUB_API_URL=http://host.docker.internal:8760
+      - CHEF_API_URL=http://host.docker.internal:8720
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-      - REBUILD_VERSION=10
+      - REBUILD_VERSION=11
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

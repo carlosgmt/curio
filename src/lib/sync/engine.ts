@@ -23,6 +23,7 @@ import { areSameBook, extractBookProbe } from "@/lib/books/identity";
 export type SyncSourceId =
   | "closet"
   | "purchase-hub"
+  | "chef"
   | "letterboxd"
   | "goodreads"
   | (string & {});
@@ -577,7 +578,9 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
             b.slug.startsWith("my-stuff-") ||
             b.slug === "closet" ||
             b.slug === "wardrobe" ||
-            b.slug === "outfits"
+            b.slug === "outfits" ||
+            b.slug === "recipes" ||
+            b.slug === "recipes-ideas"
         )
         .map((b) => b.id)
     );
@@ -671,8 +674,13 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
         resolvedEntityId = entity.id;
         if (entity.entityKey) liveEntityKeys.add(entity.entityKey);
         if (entity.canonicalExternalId) liveEntityKeys.add(entity.canonicalExternalId);
+        const isChefManaged = rec.entityKey.startsWith("recipe:");
+        const wishlistFlipped =
+          Boolean(save.wishlist) !== Boolean(rec.wishlist ?? save.wishlist);
         wasReclassified =
-          entity.coreType !== rec.coreType || (entity.typePath || "") !== rec.typePath;
+          entity.coreType !== rec.coreType ||
+          (entity.typePath || "") !== rec.typePath ||
+          (isChefManaged && wishlistFlipped);
 
         const existingExt =
           entity.extendedAttributes && typeof entity.extendedAttributes === "object"

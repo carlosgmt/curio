@@ -304,6 +304,20 @@ export async function upsertLetterboxdFilms(
       return false;
     });
 
+    const { urlHash, entityKey } = generateEntityKey(item.canonicalFilmUrl, item.filmTitle);
+
+    if (!matchedEntity) {
+      const [byEntityKey] = await db
+        .select()
+        .from(globalEntities)
+        .where(eq(globalEntities.entityKey, entityKey))
+        .limit(1);
+      if (byEntityKey) {
+        matchedEntity = byEntityKey;
+        prioritizedFilms.unshift(byEntityKey);
+      }
+    }
+
     if (!matchedEntity) {
       let posterUrl = item.posterUrl;
       let director: string | undefined;
@@ -338,7 +352,6 @@ export async function upsertLetterboxdFilms(
         }
       }
 
-      const { urlHash, entityKey } = generateEntityKey(item.canonicalFilmUrl, item.filmTitle);
       const [inserted] = await db
         .insert(globalEntities)
         .values({
@@ -367,18 +380,47 @@ export async function upsertLetterboxdFilms(
           priceCents: 399,
           currency: "USD",
         })
+        .onConflictDoNothing({ target: globalEntities.entityKey })
         .returning();
 
-      matchedEntity = inserted;
-      existingFilms.push(inserted);
-      prioritizedFilms.unshift(inserted);
-      createdEntities++;
-    } else if (!matchedEntity.heroImageUrl && item.posterUrl) {
-      await db
-        .update(globalEntities)
-        .set({ heroImageUrl: item.posterUrl })
-        .where(eq(globalEntities.id, matchedEntity.id));
-      matchedEntity.heroImageUrl = item.posterUrl;
+      if (inserted) {
+        matchedEntity = inserted;
+        existingFilms.push(inserted);
+        prioritizedFilms.unshift(inserted);
+        createdEntities++;
+      } else {
+        const [existingOnConflict] = await db
+          .select()
+          .from(globalEntities)
+          .where(eq(globalEntities.entityKey, entityKey))
+          .limit(1);
+        if (!existingOnConflict) {
+          throw new Error(`Failed to resolve entity for ${item.filmTitle} (${entityKey})`);
+        }
+        matchedEntity = existingOnConflict;
+        prioritizedFilms.unshift(existingOnConflict);
+      }
+    }
+
+    if (matchedEntity) {
+      const entityPatch: Record<string, unknown> = {};
+      if (matchedEntity.typePath !== "/media/film") {
+        entityPatch.typePath = "/media/film";
+        entityPatch.coreType = "MEDIA";
+        matchedEntity.typePath = "/media/film";
+        matchedEntity.coreType = "MEDIA";
+      }
+      if (!matchedEntity.heroImageUrl && item.posterUrl) {
+        entityPatch.heroImageUrl = item.posterUrl;
+        matchedEntity.heroImageUrl = item.posterUrl;
+      }
+      if (Object.keys(entityPatch).length > 0) {
+        entityPatch.updatedAt = new Date().toISOString();
+        await db
+          .update(globalEntities)
+          .set(entityPatch)
+          .where(eq(globalEntities.id, matchedEntity.id));
+      }
     }
 
     const [existingSave] = await db

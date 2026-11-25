@@ -15,6 +15,7 @@ import {
   syncLetterboxdRss,
   upsertLetterboxdFilms,
 } from "@/lib/sync/letterboxdRss";
+import { generateEntityKey } from "@/lib/ingest/cascade";
 
 function makeFilmSave(overrides: Partial<UserSave> = {}): UserSave {
   return {
@@ -396,5 +397,96 @@ describe("Personal Cinema helpers & Letterboxd import", () => {
     expect(volverView.sources).toContain("FILMAFFINITY");
     expect(volverView.genres).toEqual(["Drama", "Comedy"]);
     expect(volverView.rating).toBe(4.5);
+  });
+
+  it("reuses existing global_entities rows colliding on entity_key across non-film type_path", async () => {
+    const ts = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({ email: `ekey-${ts}@curio.local`, username: `ekey_${ts}` })
+      .returning();
+
+    const lbUrl = `https://letterboxd.com/film/dune-part-two-${ts}/`;
+    const lbTitle = `Dune Part Two ${ts}`;
+    const lbKey = generateEntityKey(lbUrl, lbTitle);
+    const [preExistingLb] = await db
+      .insert(globalEntities)
+      .values({
+        urlHash: lbKey.urlHash,
+        entityKey: lbKey.entityKey,
+        canonicalUrl: lbUrl,
+        coreType: "PRODUCT",
+        typePath: "/media",
+        title: lbTitle,
+        coreStructuredData: {},
+        extendedAttributes: {},
+      })
+      .returning();
+
+    const lbRes = await upsertLetterboxdFilms(
+      user.id,
+      [
+        {
+          title: lbTitle,
+          filmTitle: lbTitle,
+          filmYear: 2024,
+          memberRating: 4.5,
+          isWatchlist: false,
+          link: lbUrl,
+          canonicalFilmUrl: lbUrl,
+          slug: `dune-part-two-${ts}`,
+        },
+      ],
+      { hydrateMissingDirectors: false }
+    );
+    expect(lbRes.createdEntities).toBe(0);
+    expect(lbRes.createdSaves).toBe(1);
+
+    const [upgradedLb] = await db
+      .select()
+      .from(globalEntities)
+      .where(eq(globalEntities.id, preExistingLb.id));
+    expect(upgradedLb.typePath).toBe("/media/film");
+
+    const faUrl = `https://www.filmaffinity.com/en/film${ts}.html`;
+    const faTitle = `Anatomy of a Fall ${ts}`;
+    const faKey = generateEntityKey(faUrl, faTitle);
+    const [preExistingFa] = await db
+      .insert(globalEntities)
+      .values({
+        urlHash: faKey.urlHash,
+        entityKey: faKey.entityKey,
+        canonicalUrl: faUrl,
+        coreType: "MEDIA",
+        typePath: "/media",
+        title: faTitle,
+        coreStructuredData: {},
+        extendedAttributes: {},
+      })
+      .returning();
+
+    const faRes = await upsertFilmAffinityFilms(
+      user.id,
+      [
+        {
+          filmaffinityId: String(ts),
+          title: faTitle,
+          releaseYear: 2023,
+          director: "Justine Triet",
+          rating: 4.5,
+          isWatchlist: false,
+          canonicalUrl: faUrl,
+        },
+      ],
+      { hydrateMissingMetadata: false }
+    );
+    expect(faRes.createdEntities).toBe(0);
+    expect(faRes.createdSaves).toBe(1);
+
+    const [upgradedFa] = await db
+      .select()
+      .from(globalEntities)
+      .where(eq(globalEntities.id, preExistingFa.id));
+    expect(upgradedFa.typePath).toBe("/media/film");
   });
 });

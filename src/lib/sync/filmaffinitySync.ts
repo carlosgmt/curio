@@ -93,6 +93,20 @@ export async function upsertFilmAffinityFilms(
       return false;
     });
 
+    const { urlHash, entityKey } = generateEntityKey(item.canonicalUrl, item.title);
+
+    if (!matchedEntity) {
+      const [byEntityKey] = await db
+        .select()
+        .from(globalEntities)
+        .where(eq(globalEntities.entityKey, entityKey))
+        .limit(1);
+      if (byEntityKey) {
+        matchedEntity = byEntityKey;
+        prioritizedFilms.unshift(byEntityKey);
+      }
+    }
+
     if (!matchedEntity) {
       let posterUrl = item.posterUrl;
       let director = item.director;
@@ -123,7 +137,6 @@ export async function upsertFilmAffinityFilms(
         }
       }
 
-      const { urlHash, entityKey } = generateEntityKey(item.canonicalUrl, item.title);
       const [inserted] = await db
         .insert(globalEntities)
         .values({
@@ -152,13 +165,29 @@ export async function upsertFilmAffinityFilms(
           priceCents: 399,
           currency: "USD",
         })
+        .onConflictDoNothing({ target: globalEntities.entityKey })
         .returning();
 
-      matchedEntity = inserted;
-      existingFilms.push(inserted);
-      prioritizedFilms.unshift(inserted);
-      createdEntities++;
-    } else if (item.genres?.length || item.filmaffinityId) {
+      if (inserted) {
+        matchedEntity = inserted;
+        existingFilms.push(inserted);
+        prioritizedFilms.unshift(inserted);
+        createdEntities++;
+      } else {
+        const [existingOnConflict] = await db
+          .select()
+          .from(globalEntities)
+          .where(eq(globalEntities.entityKey, entityKey))
+          .limit(1);
+        if (!existingOnConflict) {
+          throw new Error(`Failed to resolve entity for ${item.title} (${entityKey})`);
+        }
+        matchedEntity = existingOnConflict;
+        prioritizedFilms.unshift(existingOnConflict);
+      }
+    }
+
+    if (matchedEntity && (matchedEntity.typePath !== "/media/film" || item.genres?.length || item.filmaffinityId || (!matchedEntity.heroImageUrl && item.posterUrl) || (!matchedEntity.brandOrCreator && item.director))) {
       const existingCsd =
         matchedEntity.coreStructuredData && typeof matchedEntity.coreStructuredData === "object"
           ? (matchedEntity.coreStructuredData as Record<string, any>)
@@ -169,7 +198,8 @@ export async function upsertFilmAffinityFilms(
       await db
         .update(globalEntities)
         .set({
-          ...( !matchedEntity.heroImageUrl && item.posterUrl ? { heroImageUrl: item.posterUrl } : {}),
+          ...(matchedEntity.typePath !== "/media/film" ? { typePath: "/media/film", coreType: "MEDIA" } : {}),
+          ...(!matchedEntity.heroImageUrl && item.posterUrl ? { heroImageUrl: item.posterUrl } : {}),
           ...(!matchedEntity.brandOrCreator && item.director ? { brandOrCreator: item.director } : {}),
           coreStructuredData: {
             ...existingCsd,

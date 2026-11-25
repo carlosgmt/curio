@@ -25,11 +25,14 @@ export interface LetterboxdRssItem {
   reviewText?: string;
   pubDate?: string;
   letterboxdTags?: string[];
+  genres?: string[];
 }
 
 export interface LetterboxdSyncResult {
   username: string;
   fetchedCount: number;
+  watchedCount: number;
+  watchlistCount: number;
   createdEntities: number;
   createdSaves: number;
   updatedSaves: number;
@@ -154,6 +157,86 @@ export function parseLetterboxdRssXml(xmlText: string): LetterboxdRssItem[] {
   return items;
 }
 
+function decodeHtmlAttr(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .trim();
+}
+
+/**
+ * Parses Letterboxd public HTML grid pages (`/<username>/films/` and `/<username>/watchlist/`)
+ * which expose every watched film (with half-star rating `rated-1..10`) and watchlist item.
+ */
+export function parseLetterboxdFilmGridHtml(
+  html: string,
+  options?: { isWatchlist?: boolean }
+): { items: LetterboxdRssItem[]; nextPath: string | null } {
+  const items: LetterboxdRssItem[] = [];
+  const seenSlugs = new Set<string>();
+  const liRegex = /<li[^>]*class=["'][^"']*(?:griditem|poster-container)[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi;
+
+  for (const match of html.matchAll(liRegex)) {
+    const block = match[1];
+    const slugMatch =
+      block.match(/data-item-slug=["']([^"']+)["']/i) ||
+      block.match(/data-film-slug=["']([^"']+)["']/i) ||
+      block.match(/data-target-link=["']\/(?:[^/]+\/)?film\/([^/"']+)/i);
+    if (!slugMatch) continue;
+    const slug = slugMatch[1].trim().toLowerCase();
+    if (!slug || seenSlugs.has(slug)) continue;
+    seenSlugs.add(slug);
+
+    const rawNameMatch =
+      block.match(/data-item-name=["']([^"']+)["']/i) ||
+      block.match(/data-film-name=["']([^"']+)["']/i) ||
+      block.match(/alt=["']([^"']+)["']/i);
+    const rawName = rawNameMatch ? decodeHtmlAttr(rawNameMatch[1]) : slug.replace(/-/g, " ");
+    let filmTitle = rawName;
+    let filmYear: number | undefined;
+    const yearParen = rawName.match(/^(.+?)\s*\((\d{4})\)\s*$/);
+    if (yearParen) {
+      filmTitle = yearParen[1].trim();
+      const y = parseInt(yearParen[2], 10);
+      if (y > 1880 && y < 2100) filmYear = y;
+    } else {
+      const yearAttr = block.match(/data-film-release-year=["'](\d{4})["']/i);
+      if (yearAttr) filmYear = parseInt(yearAttr[1], 10);
+    }
+
+    const ratedMatch = block.match(/\brated-(\d{1,2})\b/i);
+    const memberRating = ratedMatch
+      ? Math.max(0.5, Math.min(5, parseInt(ratedMatch[1], 10) / 2))
+      : undefined;
+
+    const imgMatch = block.match(/<img[^>]+src=["']([^"']+)["']/i);
+    const rawPoster = imgMatch ? decodeHtmlAttr(imgMatch[1]) : undefined;
+    const posterUrl =
+      rawPoster && !/empty-poster/i.test(rawPoster) ? rawPoster : undefined;
+
+    const canonicalFilmUrl = `https://letterboxd.com/film/${slug}/`;
+    items.push({
+      title: rawName,
+      filmTitle,
+      filmYear,
+      memberRating,
+      isWatchlist: Boolean(options?.isWatchlist),
+      link: canonicalFilmUrl,
+      canonicalFilmUrl,
+      slug,
+      posterUrl,
+    });
+  }
+
+  const nextMatch = html.match(/<a[^>]+class=["'][^"']*\bnext\b[^"']*["'][^>]+href=["']([^"']+)["']/i);
+  const nextPath = nextMatch ? decodeHtmlAttr(nextMatch[1]) : null;
+  return { items, nextPath };
+}
+
 export async function upsertLetterboxdFilms(
   userId: string,
   parsedItems: LetterboxdRssItem[],
@@ -192,6 +275,9 @@ export async function upsertLetterboxdFilms(
     ...existingFilms.filter((e) => !userFilmIds.has(e.id)),
   ];
 
+  let resolvedEntityCount = 0;
+  const maxInlineHydrations = 25;
+
   for (const item of parsedItems) {
     const tmdbExtId = item.tmdbId ? `tmdb:movie:${item.tmdbId}` : null;
     const lbExtId = `letterboxd:${item.slug}${item.filmYear ? `-${item.filmYear}` : ""}`;
@@ -222,11 +308,16 @@ export async function upsertLetterboxdFilms(
       let posterUrl = item.posterUrl;
       let director: string | undefined;
       let runtimeMinutes: number | undefined;
+      let genres: string[] = Array.isArray(item.genres) ? item.genres : [];
       let summary = item.reviewText
         ? item.reviewText.slice(0, 240)
         : `Feature film (${item.filmYear || "Cinema"})`;
 
-      if (!posterUrl || options?.hydrateMissingDirectors !== false) {
+      if (
+        (!posterUrl || options?.hydrateMissingDirectors !== false) &&
+        resolvedEntityCount < maxInlineHydrations
+      ) {
+        resolvedEntityCount++;
         const resolved = await resolveFilm(item.filmTitle, {
           yearHint: item.filmYear,
           tmdbId: item.tmdbId,
@@ -238,6 +329,9 @@ export async function upsertLetterboxdFilms(
           posterUrl = posterUrl || resolved.posterUrl;
           director = resolved.director;
           runtimeMinutes = resolved.runtimeMinutes;
+          if (Array.isArray(resolved.genres) && resolved.genres.length > 0) {
+            genres = resolved.genres;
+          }
           if (resolved.summary && !resolved.summary.startsWith("Feature film:")) {
             summary = resolved.summary;
           }
@@ -264,6 +358,7 @@ export async function upsertLetterboxdFilms(
             ...(director ? { director } : {}),
             ...(item.filmYear ? { releaseYear: item.filmYear } : {}),
             ...(runtimeMinutes ? { runtimeMinutes } : {}),
+            ...(genres.length > 0 ? { genres } : {}),
             ...(item.tmdbId ? { tmdbId: item.tmdbId } : {}),
             letterboxdUrl: item.canonicalFilmUrl,
             aliases: [item.filmTitle],
@@ -401,7 +496,7 @@ export async function syncLetterboxdRss(
   const cleanUsername = usernameInput
     .trim()
     .replace(/^https?:\/\/(?:www\.)?letterboxd\.com\//i, "")
-    .replace(/\/rss\/?$/i, "")
+    .replace(/\/(?:rss|films|watchlist)\/?$/i, "")
     .replace(/^@+/, "")
     .split("/")[0]
     .trim();
@@ -410,26 +505,97 @@ export async function syncLetterboxdRss(
     throw new Error("Valid Letterboxd username is required");
   }
 
-  const rssUrl = `https://letterboxd.com/${encodeURIComponent(cleanUsername)}/rss/`;
-  const res = await fetchFn(rssUrl, {
-    headers: {
-      "User-Agent": "Curio/3.2 (https://curio.local; live-rss-sync)",
-      Accept: "application/rss+xml, application/xml, text/xml, */*",
-    },
-  });
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (compatible; Curio/3.2; +https://curio.local)",
+    Accept: "application/rss+xml, application/xml, text/xml, text/html, */*",
+  };
 
-  if (!res.ok) {
-    throw new Error(`Letterboxd RSS returned HTTP ${res.status} for @${cleanUsername}`);
+  // 1. Recent diary/reviews RSS
+  const rssUrl = `https://letterboxd.com/${encodeURIComponent(cleanUsername)}/rss/`;
+  const rssRes = await fetchFn(rssUrl, { headers });
+  if (!rssRes.ok) {
+    if (rssRes.status === 404) {
+      throw new Error(`Letterboxd user @${cleanUsername} was not found (HTTP 404).`);
+    }
+    throw new Error(`Letterboxd RSS returned HTTP ${rssRes.status} for @${cleanUsername}`);
+  }
+  const xmlText = await rssRes.text();
+  const rssItems = parseLetterboxdRssXml(xmlText);
+
+  // 2. Full public watched films grid (/films/ + pagination up to 5 pages)
+  const fetchPagedGrid = async (
+    startPath: string,
+    maxPages: number,
+    isWatchlist: boolean
+  ): Promise<LetterboxdRssItem[]> => {
+    const collected: LetterboxdRssItem[] = [];
+    let currentPath: string | null = startPath;
+    for (let page = 0; page < maxPages && currentPath; page++) {
+      const targetUrl = currentPath.startsWith("http")
+        ? currentPath
+        : `https://letterboxd.com${currentPath.startsWith("/") ? "" : "/"}${currentPath}`;
+      try {
+        const pageRes = await fetchFn(targetUrl, { headers });
+        if (!pageRes.ok) break;
+        const html = await pageRes.text();
+        const parsed = parseLetterboxdFilmGridHtml(html, { isWatchlist });
+        collected.push(...parsed.items);
+        currentPath = parsed.nextPath;
+      } catch {
+        break;
+      }
+    }
+    return collected;
+  };
+
+  const [watchedGridItems, watchlistGridItems] = await Promise.all([
+    fetchPagedGrid(`/${encodeURIComponent(cleanUsername)}/films/`, 5, false),
+    fetchPagedGrid(`/${encodeURIComponent(cleanUsername)}/watchlist/`, 3, true),
+  ]);
+
+  // Merge RSS diary entries + watched films + watchlist by slug (watched overrides watchlist)
+  const mergedBySlug = new Map<string, LetterboxdRssItem>();
+  for (const wl of watchlistGridItems) {
+    mergedBySlug.set(wl.slug, wl);
+  }
+  for (const wf of watchedGridItems) {
+    const prev = mergedBySlug.get(wf.slug);
+    mergedBySlug.set(wf.slug, {
+      ...(prev || wf),
+      ...wf,
+      isWatchlist: false,
+      memberRating: wf.memberRating ?? prev?.memberRating,
+      posterUrl: wf.posterUrl || prev?.posterUrl,
+    });
+  }
+  for (const r of rssItems) {
+    const prev = mergedBySlug.get(r.slug);
+    mergedBySlug.set(r.slug, {
+      ...(prev || r),
+      ...r,
+      isWatchlist: prev && !prev.isWatchlist ? false : r.isWatchlist,
+      memberRating: r.memberRating ?? prev?.memberRating,
+      posterUrl: r.posterUrl || prev?.posterUrl,
+      filmYear: r.filmYear ?? prev?.filmYear,
+    });
   }
 
-  const xmlText = await res.text();
-  const parsedItems = parseLetterboxdRssXml(xmlText);
+  const parsedItems = [...mergedBySlug.values()];
+  if (parsedItems.length === 0) {
+    throw new Error(
+      `Connected to @${cleanUsername}, but no public films, diary entries, or watchlist items were found. Check that your Letterboxd profile is public, or use Import History CSV.`
+    );
+  }
 
   const upsertRes = await upsertLetterboxdFilms(userId, parsedItems, options);
+  const watchedCount = parsedItems.filter((i) => !i.isWatchlist).length;
+  const watchlistCount = parsedItems.filter((i) => i.isWatchlist).length;
 
   return {
     username: cleanUsername,
     fetchedCount: upsertRes.fetchedCount,
+    watchedCount,
+    watchlistCount,
     createdEntities: upsertRes.createdEntities,
     createdSaves: upsertRes.createdSaves,
     updatedSaves: upsertRes.updatedSaves,
@@ -513,7 +679,11 @@ export const letterboxdSyncAdapter: SyncAdapter<
         boardsCreated: 0,
         digest: `lb-${res.username}-${res.fetchedCount}`,
         syncedAt,
-        meta: { username: res.username },
+        meta: {
+          username: res.username,
+          watchedCount: res.watchedCount,
+          watchlistCount: res.watchlistCount,
+        },
       };
     } catch (err: any) {
       await db

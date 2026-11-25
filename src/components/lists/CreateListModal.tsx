@@ -30,7 +30,7 @@ export function CreateListModal({
   const [description, setDescription] = useState("");
   const [parentId, setParentId] = useState<string | null>(defaultParentId);
   const [boardsList, setBoardsList] = useState<Array<{ id: string; title: string }>>(availableBoards || []);
-  const [visibility, setVisibility] = useState<"PUBLIC" | "UNLISTED" | "PRIVATE">("PUBLIC");
+  const [visibility, setVisibility] = useState<"PUBLIC" | "UNLISTED" | "PRIVATE">("PRIVATE");
   const [isSmartRuleEnabled, setIsSmartRuleEnabled] = useState(false);
   const [ruleTypePathPrefix, setRuleTypePathPrefix] = useState<string>("");
   const [ruleCoreType, setRuleCoreType] = useState<string>("");
@@ -66,7 +66,7 @@ export function CreateListModal({
       setTitle("");
       setDescription("");
       setParentId(defaultParentId || null);
-      setVisibility("PUBLIC");
+      setVisibility("PRIVATE");
       setIsSmartRuleEnabled(false);
       setRuleTypePathPrefix("");
       setRuleCoreType("");

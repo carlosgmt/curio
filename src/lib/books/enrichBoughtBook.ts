@@ -170,10 +170,15 @@ export async function enrichBookEntity(
       : {};
 
   const cleaned = cleanCommercialBookTitle(entity.title);
+  const csdAuthor =
+    typeof csd.author === "string" &&
+    !/^(unknown|varios autores)/i.test(csd.author.trim())
+      ? csd.author.trim()
+      : "";
   const authorHint =
-    (typeof csd.author === "string" && csd.author.trim()) ||
+    csdAuthor ||
     (typeof entity.brandOrCreator === "string" &&
-      !/^(amazon|galaxus|provini|google_play|buchhandlung|unknown)/i.test(
+      !/^(amazon|galaxus|provini|google_play|buchhandlung|unknown|varios autores)/i.test(
         entity.brandOrCreator.trim()
       ) &&
       entity.brandOrCreator.trim()) ||
@@ -241,10 +246,12 @@ export async function enrichBookEntity(
   }
   const existingCreator = (entity.brandOrCreator || "").trim();
   const looksLastFirst = /^[A-ZÀ-Ü][^,]+,\s*[A-ZÀ-Ü]/.test(existingCreator);
+  const hasWeakAuthor =
+    !existingCreator ||
+    looksLastFirst ||
+    /^(amazon|galaxus|provini|google_play|unknown|varios autores|buchhandlung)/i.test(existingCreator);
   if (
-    (!existingCreator ||
-      looksLastFirst ||
-      /^(amazon|galaxus|provini|google_play|unknown)/i.test(existingCreator)) &&
+    hasWeakAuthor &&
     resolved.author &&
     resolved.author !== "Unknown Author"
   ) {
@@ -257,7 +264,11 @@ export async function enrichBookEntity(
     changed = true;
   }
 
-  if (!nextCsd.author && resolved.author) {
+  if (
+    (!nextCsd.author || String(nextCsd.author).toLowerCase() === "unknown author") &&
+    resolved.author &&
+    resolved.author !== "Unknown Author"
+  ) {
     nextCsd.author = resolved.author;
     changed = true;
   }

@@ -24,6 +24,8 @@ const VirtualPosterWall3D = dynamic(() => import("./VirtualPosterWall3D"), {
 export interface PosterWallLayoutProps {
   items: CardData[];
   onOpenObject: (card: CardData, presentation?: "standard" | "press") => void;
+  onSelectDirector?: (director: string) => void;
+  onSelectGenre?: (genre: string) => void;
   galleryLabel?: string;
   compact?: boolean;
 }
@@ -91,6 +93,8 @@ function toPosterItem(
 export function PosterWallLayout({
   items,
   onOpenObject,
+  onSelectDirector,
+  onSelectGenre,
   galleryLabel = "CURIO CINEMA POSTERS",
   compact = false,
 }: PosterWallLayoutProps) {
@@ -422,13 +426,59 @@ export function PosterWallLayout({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em]">
-              <span style={{ color: activePalette.accent }}>
-                {activePoster.director}
-                {activePoster.year ? ` · ${activePoster.year}` : ""}
-                {activePoster.runtimeMinutes
-                  ? ` · ${activePoster.runtimeMinutes} min`
-                  : ""}
-              </span>
+              {onSelectDirector &&
+              activePoster.director &&
+              activePoster.director.toLowerCase() !== "unknown director" &&
+              activePoster.director.toLowerCase() !== "director unknown" ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectDirector(activePoster.director)}
+                  className="underline underline-offset-4 decoration-dotted hover:opacity-80 cursor-pointer"
+                  style={{ color: activePalette.accent }}
+                  title={`Filter films by ${activePoster.director}`}
+                >
+                  {activePoster.director}
+                </button>
+              ) : (
+                <span style={{ color: activePalette.accent }}>{activePoster.director}</span>
+              )}
+              {(activePoster.year || activePoster.runtimeMinutes) && (
+                <span style={{ color: activePalette.muted }}>
+                  {activePoster.year ? `${activePoster.year}` : ""}
+                  {activePoster.year && activePoster.runtimeMinutes ? " · " : ""}
+                  {activePoster.runtimeMinutes ? `${activePoster.runtimeMinutes} min` : ""}
+                </span>
+              )}
+              {Array.isArray((activeCard.entity?.coreStructuredData as any)?.genres) &&
+                ((activeCard.entity?.coreStructuredData as any).genres as string[])
+                  .slice(0, 3)
+                  .map((g) =>
+                    onSelectGenre ? (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => onSelectGenre(g)}
+                        className="px-1.5 py-0.5 rounded border text-[9px] hover:opacity-80 cursor-pointer"
+                        style={{
+                          borderColor: activePalette.rule,
+                          color: activePalette.muted,
+                        }}
+                      >
+                        {g}
+                      </button>
+                    ) : (
+                      <span
+                        key={g}
+                        className="px-1.5 py-0.5 rounded border text-[9px]"
+                        style={{
+                          borderColor: activePalette.rule,
+                          color: activePalette.muted,
+                        }}
+                      >
+                        {g}
+                      </span>
+                    )
+                  )}
               {activePoster.rating && (
                 <span className="inline-flex items-center gap-0.5 text-amber-400">
                   <Star className="w-2.5 h-2.5 fill-current" />

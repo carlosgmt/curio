@@ -16,6 +16,12 @@ export interface SectionGroupViewProps {
   layout?: LayoutEngineType;
   density?: SilhouetteDensity;
   readOnly?: boolean;
+  hideShelfBuckets?: boolean;
+  shelfLabelOverride?: string;
+  galleryLabelOverride?: string;
+  onSelectCreator?: (creator: string) => void;
+  onSelectDirector?: (director: string) => void;
+  onSelectGenre?: (genre: string) => void;
   onConnect?: (card: CardData) => void;
   onSwapped?: (card: CardData) => void;
   onUnlink?: (connectionId: string) => void;
@@ -34,6 +40,12 @@ export function SectionGroupView({
   layout = "masonry",
   density = "standard",
   readOnly = false,
+  hideShelfBuckets = false,
+  shelfLabelOverride,
+  galleryLabelOverride,
+  onSelectCreator,
+  onSelectDirector,
+  onSelectGenre,
   onConnect,
   onSwapped,
   onUnlink,
@@ -208,9 +220,10 @@ export function SectionGroupView({
   };
 
   if (layout === "shelf" || layout === "posters") {
+    const showBucketBar = !hideShelfBuckets && (shelfBuckets.length > 1 || Boolean(onAddSubBoard));
     return (
       <div className="space-y-6">
-        {(shelfBuckets.length > 1 || onAddSubBoard) && (
+        {showBucketBar && (
           <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
             <div className="flex flex-wrap items-center gap-1.5">
               {shelfBuckets.length > 1 && (
@@ -281,22 +294,27 @@ export function SectionGroupView({
           <PosterWallLayout
             items={unifiedShelfItems}
             galleryLabel={
-              effectiveShelfBucketKey === "ALL"
+              galleryLabelOverride ||
+              (effectiveShelfBucketKey === "ALL"
                 ? "CURIO CINEMA POSTERS"
                 : shelfBuckets.find((b) => b.key === effectiveShelfBucketKey)?.label ||
-                  "Poster Gallery"
+                  "Poster Gallery")
             }
+            onSelectDirector={onSelectDirector}
+            onSelectGenre={onSelectGenre}
             onOpenObject={(card, presentation) => onCardClick?.(card, presentation)}
           />
         ) : (
           <ShelfLayout
             items={unifiedShelfItems}
             shelfLabel={
-              effectiveShelfBucketKey === "ALL"
+              shelfLabelOverride ||
+              (effectiveShelfBucketKey === "ALL"
                 ? "CURIO PRESS ARCHIVE"
                 : shelfBuckets.find((b) => b.key === effectiveShelfBucketKey)?.label ||
-                  "Board Shelf"
+                  "Board Shelf")
             }
+            onSelectCreator={onSelectCreator}
             onOpenObject={(card, presentation) => onCardClick?.(card, presentation)}
           />
         )}

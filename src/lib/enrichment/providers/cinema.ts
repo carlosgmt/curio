@@ -5,6 +5,7 @@ export interface ResolvedFilm {
   director?: string;
   releaseYear?: number;
   runtimeMinutes?: number;
+  genres?: string[];
   posterUrl?: string;
   summary?: string;
   typePath: "/media/film";
@@ -17,11 +18,25 @@ export interface ResolvedFilm {
     director?: string;
     releaseYear?: number;
     runtimeMinutes?: number;
+    genres?: string[];
     cinematographer?: string;
     distributor?: string;
     tmdbId?: number | string;
     imdbId?: string;
   };
+}
+
+function normalizeGenresList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Map<string, string>();
+  for (const g of raw) {
+    const clean = String(g || "").trim().replace(/\s*film$/i, "").trim();
+    if (!clean || clean.length > 40) continue;
+    const key = clean.toLowerCase();
+    if (key === "movies" || key === "films" || key === "cinema") continue;
+    if (!seen.has(key)) seen.set(key, clean.charAt(0).toUpperCase() + clean.slice(1));
+  }
+  return [...seen.values()].slice(0, 5);
 }
 
 function extractDirectorFromProse(text: string): string | undefined {
@@ -37,16 +52,16 @@ function extractDirectorFromProse(text: string): string | undefined {
     .trim() || undefined;
 }
 
-async function fetchWikidataDirectorP57(
+async function fetchWikidataFilmClaims(
   qid: string | undefined,
   fetchFn: typeof fetch,
   timeoutMs: number
-): Promise<string | undefined> {
-  if (!qid || !/^Q\d+$/i.test(qid.trim())) return undefined;
+): Promise<{ director?: string; genres: string[] }> {
+  if (!qid || !/^Q\d+$/i.test(qid.trim())) return { genres: [] };
   try {
     const cleanQid = qid.trim().toUpperCase();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, 2500));
+    const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, 2800));
     const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(
       cleanQid
     )}&props=claims&format=json&origin=*`;
@@ -56,47 +71,58 @@ async function fetchWikidataDirectorP57(
     });
     if (!claimsRes.ok) {
       clearTimeout(timer);
-      return undefined;
+      return { genres: [] };
     }
     const claimsJson = await claimsRes.json();
-    const p57Claims: any[] = claimsJson?.entities?.[cleanQid]?.claims?.P57 || [];
+    const claims = claimsJson?.entities?.[cleanQid]?.claims || {};
+    const p57Claims: any[] = claims.P57 || [];
+    const p136Claims: any[] = claims.P136 || [];
     const directorQids = p57Claims
       .map((c: any) => c?.mainsnak?.datavalue?.value?.id)
       .filter((id: any): id is string => typeof id === "string" && /^Q\d+$/i.test(id))
       .slice(0, 2);
+    const genreQids = p136Claims
+      .map((c: any) => c?.mainsnak?.datavalue?.value?.id)
+      .filter((id: any): id is string => typeof id === "string" && /^Q\d+$/i.test(id))
+      .slice(0, 4);
 
-    if (directorQids.length === 0) {
+    const allQids = [...new Set([...directorQids, ...genreQids])];
+    if (allQids.length === 0) {
       clearTimeout(timer);
-      return undefined;
+      return { genres: [] };
     }
 
     const labelsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(
-      directorQids.join("|")
+      allQids.join("|")
     )}&props=labels&languages=en|es|fr|it|de&format=json&origin=*`;
     const labelsRes = await fetchFn(labelsUrl, {
       signal: controller.signal,
       headers: { "User-Agent": "Curio/1.0 (https://curio.local; hello@curio.local)" },
     });
     clearTimeout(timer);
-    if (!labelsRes.ok) return undefined;
+    if (!labelsRes.ok) return { genres: [] };
 
     const labelsJson = await labelsRes.json();
-    const names = directorQids
-      .map((id) => {
-        const labels = labelsJson?.entities?.[id]?.labels || {};
-        return (
-          labels.en?.value ||
-          labels.es?.value ||
-          labels.fr?.value ||
-          labels.it?.value ||
-          labels.de?.value
-        );
-      })
-      .filter(Boolean);
+    const pickLabel = (id: string) => {
+      const labels = labelsJson?.entities?.[id]?.labels || {};
+      return (
+        labels.en?.value ||
+        labels.es?.value ||
+        labels.fr?.value ||
+        labels.it?.value ||
+        labels.de?.value
+      );
+    };
 
-    return names.length > 0 ? names.join(", ") : undefined;
+    const directorNames = directorQids.map(pickLabel).filter(Boolean);
+    const genres = normalizeGenresList(genreQids.map(pickLabel).filter(Boolean));
+
+    return {
+      director: directorNames.length > 0 ? directorNames.join(", ") : undefined,
+      genres,
+    };
   } catch {
-    return undefined;
+    return { genres: [] };
   }
 }
 
@@ -208,6 +234,11 @@ export async function resolveFilm(
         const director = directorObj?.name || options?.creatorHint || undefined;
         const cinematographer = dopObj?.name || undefined;
         const distributor = movieData.production_companies?.[0]?.name || undefined;
+        const genres = normalizeGenresList(
+          Array.isArray(movieData.genres)
+            ? movieData.genres.map((g: any) => g?.name)
+            : []
+        );
         const summary = movieData.overview || undefined;
         const resolvedTmdbId = movieData.id || movieId;
 
@@ -216,6 +247,7 @@ export async function resolveFilm(
           director,
           releaseYear,
           runtimeMinutes,
+          ...(genres.length > 0 ? { genres } : {}),
           posterUrl,
           summary,
           typePath: "/media/film",
@@ -228,6 +260,7 @@ export async function resolveFilm(
             director,
             releaseYear,
             runtimeMinutes,
+            ...(genres.length > 0 ? { genres } : {}),
             cinematographer,
             distributor,
             tmdbId: resolvedTmdbId,
@@ -248,6 +281,7 @@ export async function resolveFilm(
     director?: string;
     releaseYear?: number;
     runtimeMinutes?: number;
+    genres?: string[];
     posterUrl?: string;
     summary?: string;
     trackViewUrl?: string;
@@ -350,12 +384,17 @@ export async function resolveFilm(
         typeof bestItem.trackTimeMillis === "number" && bestItem.trackTimeMillis > 0
           ? Math.round(bestItem.trackTimeMillis / 60000)
           : undefined;
+      const primaryGenre =
+        typeof bestItem.primaryGenreName === "string" && bestItem.primaryGenreName.trim()
+          ? normalizeGenresList(bestItem.primaryGenreName.split(/[&,/]/))
+          : [];
 
       return {
         title: String(bestItem.trackName || cleanTitle).replace(/\s*\((?:19\d\d|20[0-2]\d)\)\s*$/, ""),
         director: bestItem.artistName || undefined,
         releaseYear: Number.isFinite(releaseYear) ? releaseYear : undefined,
         runtimeMinutes,
+        ...(primaryGenre.length > 0 ? { genres: primaryGenre } : {}),
         posterUrl,
         summary: bestItem.longDescription || bestItem.shortDescription || undefined,
         trackViewUrl: bestItem.trackViewUrl || undefined,
@@ -370,6 +409,7 @@ export async function resolveFilm(
     title: string;
     director?: string;
     releaseYear?: number;
+    genres?: string[];
     posterUrl?: string;
     summary?: string;
     canonicalExternalId: string;
@@ -446,13 +486,13 @@ export async function resolveFilm(
             const yearMatch = (data.description || summary).match(/\b(19\d\d|20[0-2]\d)\b/);
             const releaseYear = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
 
-            const wikidataDirector = await fetchWikidataDirectorP57(
+            const wikidataClaims = await fetchWikidataFilmClaims(
               data.wikibase_item,
               fetchFn,
               timeoutMs
             );
             const director =
-              wikidataDirector ||
+              wikidataClaims.director ||
               extractDirectorFromProse(summary) ||
               extractDirectorFromProse(data.description || "");
 
@@ -460,6 +500,7 @@ export async function resolveFilm(
               title: displayTitle,
               director,
               releaseYear,
+              ...(wikidataClaims.genres.length > 0 ? { genres: wikidataClaims.genres } : {}),
               posterUrl,
               summary: summary.length > 260 ? summary.slice(0, 257) + "..." : summary,
               canonicalExternalId: `wiki:${data.titles?.canonical || cand.pageTitle}`,
@@ -482,9 +523,17 @@ export async function resolveFilm(
     const title = wikiFilm?.title || itunesFilm?.title || cleanTitle;
     let director =
       itunesFilm?.director || wikiFilm?.director || options?.creatorHint || undefined;
-    if (!director && options?.wikidataId) {
-      director = await fetchWikidataDirectorP57(options.wikidataId, fetchFn, timeoutMs);
+    let extraGenres: string[] = [];
+    if ((!director || !(wikiFilm?.genres?.length || itunesFilm?.genres?.length)) && options?.wikidataId) {
+      const wdClaims = await fetchWikidataFilmClaims(options.wikidataId, fetchFn, timeoutMs);
+      if (!director && wdClaims.director) director = wdClaims.director;
+      extraGenres = wdClaims.genres;
     }
+    const genres = normalizeGenresList([
+      ...(wikiFilm?.genres || []),
+      ...(itunesFilm?.genres || []),
+      ...extraGenres,
+    ]);
     const releaseYear =
       itunesFilm?.releaseYear ||
       wikiFilm?.releaseYear ||
@@ -518,6 +567,7 @@ export async function resolveFilm(
       director,
       releaseYear,
       runtimeMinutes,
+      ...(genres.length > 0 ? { genres } : {}),
       posterUrl,
       summary,
       typePath: "/media/film",
@@ -530,6 +580,7 @@ export async function resolveFilm(
         ...(director ? { director } : {}),
         ...(releaseYear ? { releaseYear } : {}),
         ...(runtimeMinutes ? { runtimeMinutes } : {}),
+        ...(genres.length > 0 ? { genres } : {}),
         ...(options?.tmdbId ? { tmdbId: options.tmdbId } : {}),
         ...(options?.imdbId ? { imdbId: options.imdbId } : {}),
       },

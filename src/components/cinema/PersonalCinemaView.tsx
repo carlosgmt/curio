@@ -35,6 +35,11 @@ import {
   LetterboxdSyncModal,
   type LetterboxdSyncStatusInfo,
 } from "./LetterboxdSyncModal";
+import {
+  FilmAffinitySyncModal,
+  type FilmAffinitySyncStatusInfo,
+} from "./FilmAffinitySyncModal";
+import { FilmDetailModal } from "./FilmDetailModal";
 import { FilmInspectorDrawer } from "./FilmInspectorDrawer";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { AuthModal } from "@/components/auth/AuthModal";
@@ -76,6 +81,8 @@ export function PersonalCinemaView() {
   // Catalog Filters
   const [statusFilter, setStatusFilter] = useState<"ALL" | WatchStatus>("ALL");
   const [ownedOnlyFilter, setOwnedOnlyFilter] = useState(false);
+  const [directorFilter, setDirectorFilter] = useState<string | null>(null);
+  const [genreFilter, setGenreFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<CatalogSort>("recent");
@@ -84,6 +91,9 @@ export function PersonalCinemaView() {
   // Modals & Actions
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isFaModalOpen, setIsFaModalOpen] = useState(false);
+  const [faStatus, setFaStatus] = useState<FilmAffinitySyncStatusInfo | null>(null);
+  const [openFilmSaveId, setOpenFilmSaveId] = useState<string | null>(null);
   const [isQuickSyncing, setIsQuickSyncing] = useState(false);
   const [bannerNotice, setBannerNotice] = useState<string | null>(null);
   const [lightboxCard, setLightboxCard] = useState<CardData | null>(null);
@@ -235,9 +245,21 @@ export function PersonalCinemaView() {
 
   const filteredCatalog = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const dirNorm = directorFilter?.trim().toLowerCase() || null;
+    const genreNorm = genreFilter?.trim().toLowerCase() || null;
     const list = films.filter((f) => {
       if (statusFilter !== "ALL" && f.watchStatus !== statusFilter) return false;
       if (ownedOnlyFilter && !f.isOwned) return false;
+      if (
+        dirNorm &&
+        f.director.toLowerCase() !== dirNorm &&
+        !f.director.toLowerCase().includes(dirNorm)
+      ) {
+        return false;
+      }
+      if (genreNorm && !f.genres.some((g) => g.toLowerCase() === genreNorm)) {
+        return false;
+      }
       if (
         tagFilter &&
         !f.tags.some((t) => t.toLowerCase() === tagFilter.toLowerCase())
@@ -245,7 +267,7 @@ export function PersonalCinemaView() {
         return false;
       }
       if (q) {
-        const hay = `${f.title} ${f.director} ${f.personalNotes || ""} ${f.tags.join(
+        const hay = `${f.title} ${f.director} ${f.genres.join(" ")} ${f.personalNotes || ""} ${f.tags.join(
           " "
         )}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -264,7 +286,7 @@ export function PersonalCinemaView() {
       return b.createdAt.localeCompare(a.createdAt);
     });
     return sorted;
-  }, [films, statusFilter, ownedOnlyFilter, tagFilter, searchQuery, sortBy]);
+  }, [films, statusFilter, ownedOnlyFilter, directorFilter, genreFilter, tagFilter, searchQuery, sortBy]);
 
   const handleQuickLetterboxdSync = async () => {
     if (!lbStatus?.configured) {
@@ -425,6 +447,23 @@ export function PersonalCinemaView() {
                 className={`w-3.5 h-3.5 ${isQuickSyncing ? "animate-spin" : ""}`}
               />
               <span>{isQuickSyncing ? "Syncing..." : "Sync Letterboxd"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                apiFetch("/api/v1/cinema/filmaffinity-sync")
+                  .then((r) => (r.ok ? r.json() : null))
+                  .then((d) => {
+                    if (d) setFaStatus(d);
+                  })
+                  .catch(() => {});
+                setIsFaModalOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-full border border-border bg-card text-xs font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              title="FilmAffinity Connector"
+            >
+              FilmAffinity
             </button>
 
             <button
@@ -618,8 +657,7 @@ export function PersonalCinemaView() {
                 }}
                 onActivateActiveItem={() => {
                   if (activeFilm) {
-                    setLightboxPresentation("standard");
-                    setLightboxCard(activeFilm.card);
+                    setOpenFilmSaveId(activeFilm.saveId);
                   }
                 }}
                 onWebglUnavailable={() => setWebglUnavailable(true)}
@@ -679,7 +717,21 @@ export function PersonalCinemaView() {
                       className="font-mono text-[10px] uppercase tracking-[0.12em] truncate"
                       style={{ color: activePalette.accent }}
                     >
-                      {activeFilm.director}
+                      {activeFilm.director &&
+                      activeFilm.director.toLowerCase() !== "unknown director" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDirectorFilter(activeFilm.director);
+                            setStatusFilter("ALL");
+                          }}
+                          className="underline underline-offset-4 decoration-dotted hover:opacity-80 cursor-pointer"
+                        >
+                          {activeFilm.director}
+                        </button>
+                      ) : (
+                        activeFilm.director
+                      )}
                       {activeFilm.releaseYear ? ` · ${activeFilm.releaseYear}` : ""}
                       {activeFilm.runtimeMinutes
                         ? ` · ${activeFilm.runtimeMinutes} min`
@@ -744,12 +796,24 @@ export function PersonalCinemaView() {
           {/* Right: Live Film Inspector & Comments */}
           <FilmInspectorDrawer
             film={activeFilm}
+            onSelectDirector={(dir) => {
+              setDirectorFilter(dir);
+              setStatusFilter("ALL");
+            }}
+            onSelectGenre={(g) => {
+              setGenreFilter(g);
+              setStatusFilter("ALL");
+            }}
             onUpdated={() => {
               void loadCinema();
             }}
             onOpenFullModal={(film, presentation) => {
-              setLightboxPresentation(presentation || "standard");
-              setLightboxCard(film.card);
+              if (presentation === "press") {
+                setLightboxPresentation("press");
+                setLightboxCard(film.card);
+              } else {
+                setOpenFilmSaveId(film.saveId);
+              }
             }}
           />
         </section>
@@ -827,6 +891,24 @@ export function PersonalCinemaView() {
                 <ShoppingBag className="w-3 h-3" />
                 <span>Owned Only</span>
               </button>
+              {directorFilter && (
+                <button
+                  type="button"
+                  onClick={() => setDirectorFilter(null)}
+                  className="px-3 py-1.5 rounded-full text-xs font-mono bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 cursor-pointer"
+                >
+                  Director: {directorFilter} ×
+                </button>
+              )}
+              {genreFilter && (
+                <button
+                  type="button"
+                  onClick={() => setGenreFilter(null)}
+                  className="px-3 py-1.5 rounded-full text-xs font-mono bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 cursor-pointer"
+                >
+                  Genre: {genreFilter} ×
+                </button>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -882,6 +964,40 @@ export function PersonalCinemaView() {
             </div>
           </div>
 
+          {/* Genres Strip */}
+          {stats && stats.genreCounts.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              <button
+                type="button"
+                onClick={() => setGenreFilter(null)}
+                className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-mono border transition-colors cursor-pointer ${
+                  genreFilter === null
+                    ? "bg-foreground text-background border-foreground"
+                    : "bg-card border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                All Genres
+              </button>
+              {stats.genreCounts.map((g) => (
+                <button
+                  key={g.genre}
+                  type="button"
+                  onClick={() =>
+                    setGenreFilter((cur) => (cur === g.genre ? null : g.genre))
+                  }
+                  className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono border transition-colors cursor-pointer ${
+                    genreFilter?.toLowerCase() === g.genre.toLowerCase()
+                      ? "bg-foreground text-background border-foreground"
+                      : "bg-card border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span>{g.genre}</span>
+                  <span className="opacity-65 tabular-nums">{g.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Letterboxd & Custom Tag Filter Pills */}
           {stats && stats.tagCounts.length > 0 && (
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -923,6 +1039,8 @@ export function PersonalCinemaView() {
                 No films match the current filters.
               </p>
               {(tagFilter ||
+                directorFilter ||
+                genreFilter ||
                 searchQuery ||
                 statusFilter !== "ALL" ||
                 ownedOnlyFilter) && (
@@ -930,6 +1048,8 @@ export function PersonalCinemaView() {
                   type="button"
                   onClick={() => {
                     setTagFilter(null);
+                    setDirectorFilter(null);
+                    setGenreFilter(null);
                     setSearchQuery("");
                     setStatusFilter("ALL");
                     setOwnedOnlyFilter(false);
@@ -1141,6 +1261,39 @@ export function PersonalCinemaView() {
         onClose={() => setIsSyncModalOpen(false)}
         onSynced={() => {
           void loadCinema();
+        }}
+      />
+
+      {/* FilmAffinity Sync Modal */}
+      <FilmAffinitySyncModal
+        isOpen={isFaModalOpen}
+        status={faStatus}
+        onClose={() => setIsFaModalOpen(false)}
+        onSynced={() => {
+          void loadCinema();
+        }}
+      />
+
+      {/* Film Detail Modal */}
+      <FilmDetailModal
+        film={films.find((f) => f.saveId === openFilmSaveId) || null}
+        isOpen={Boolean(openFilmSaveId)}
+        onSelectDirector={(dir) => {
+          setDirectorFilter(dir);
+          setStatusFilter("ALL");
+        }}
+        onSelectGenre={(g) => {
+          setGenreFilter(g);
+          setStatusFilter("ALL");
+        }}
+        onClose={() => setOpenFilmSaveId(null)}
+        onUpdated={() => {
+          void loadCinema();
+        }}
+        onOpenFullDossier={(film) => {
+          setOpenFilmSaveId(null);
+          setLightboxPresentation("standard");
+          setLightboxCard(film.card);
         }}
       />
 

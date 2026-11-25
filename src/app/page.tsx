@@ -60,6 +60,11 @@ import {
   type LetterboxdSyncStatusInfo,
 } from "@/components/cinema/LetterboxdSyncModal";
 import {
+  FilmAffinitySyncModal,
+  type FilmAffinitySyncStatusInfo,
+} from "@/components/cinema/FilmAffinitySyncModal";
+import { FilmDetailModal } from "@/components/cinema/FilmDetailModal";
+import {
   compareLibraryBooks,
   computeLibraryStats,
   formatBookSourceLabel,
@@ -174,9 +179,13 @@ export default function Home() {
   const [isLetterboxdSyncOpen, setIsLetterboxdSyncOpen] = useState(false);
   const [letterboxdStatus, setLetterboxdStatus] =
     useState<LetterboxdSyncStatusInfo | null>(null);
+  const [isFilmAffinitySyncOpen, setIsFilmAffinitySyncOpen] = useState(false);
+  const [filmaffinityStatus, setFilmaffinityStatus] =
+    useState<FilmAffinitySyncStatusInfo | null>(null);
   const [bookSubFilter, setBookSubFilter] = useState<
-    "ALL" | "MY_STUFF" | "GOODREADS" | "MANUAL" | "FINISHED" | "READING" | "WANT_TO_READ"
+    "ALL" | "MY_STUFF" | "GOODREADS" | "MANUAL" | "FINISHED" | "NOT_READ" | "READING" | "WANT_TO_READ"
   >("ALL");
+  const [bookAuthorFilter, setBookAuthorFilter] = useState<string | null>(null);
   const [bookTagFilter, setBookTagFilter] = useState<string | null>(null);
   const [bookSearchQuery, setBookSearchQuery] = useState("");
   const [bookSortBy, setBookSortBy] = useState<BookSortKey>("dateAdded");
@@ -185,11 +194,16 @@ export default function Home() {
   const [booksBannerMsg, setBooksBannerMsg] = useState<string | null>(null);
   const [openBookSaveId, setOpenBookSaveId] = useState<string | null>(null);
   const [filmSubFilter, setFilmSubFilter] = useState<
-    "ALL" | "LETTERBOXD" | "WATCHED" | "WATCHLIST" | "REWATCH" | "OWNED"
+    "ALL" | "LETTERBOXD" | "FILMAFFINITY" | "WATCHED" | "WATCHLIST" | "REWATCH" | "OWNED"
   >("ALL");
+  const [filmDirectorFilter, setFilmDirectorFilter] = useState<string | null>(null);
+  const [filmGenreFilter, setFilmGenreFilter] = useState<string | null>(null);
   const [filmTagFilter, setFilmTagFilter] = useState<string | null>(null);
   const [filmSearchQuery, setFilmSearchQuery] = useState("");
   const [filmSortBy, setFilmSortBy] = useState<"recent" | "dateWatched" | "rating" | "title" | "year">("recent");
+  const [isEnrichingFilms, setIsEnrichingFilms] = useState(false);
+  const [filmsBannerMsg, setFilmsBannerMsg] = useState<string | null>(null);
+  const [openFilmSaveId, setOpenFilmSaveId] = useState<string | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const fetchSeqRef = useRef(0);
 
@@ -863,6 +877,12 @@ export default function Home() {
         setOpenBookSaveId(card.save.id);
         return;
       }
+      const isFilmCard =
+        card.save.typePath === "/media/film" || card.entity?.typePath === "/media/film";
+      if (isFilmCard && presentation !== "press") {
+        setOpenFilmSaveId(card.save.id);
+        return;
+      }
       setLightboxPresentation(presentation || "standard");
       setSelectedCard(card);
     },
@@ -943,14 +963,25 @@ export default function Home() {
     }
     const stats = computeCinemaStats(views);
     const letterboxdCount = views.filter(isLetterboxdFilmView).length;
+    const filmaffinityCount = views.filter((f) => f.sources.includes("FILMAFFINITY")).length;
     const rewatchCount = views.filter((f) => f.rewatch).length;
+    const missingFilmMetadataCount = views.filter(
+      (f) =>
+        !f.posterUrl ||
+        !f.director ||
+        f.director === "Unknown Director" ||
+        /\band\s+(?:written|produced|edited|starring)\b/i.test(f.director) ||
+        f.genres.length === 0
+    ).length;
 
     return {
       views,
       bySaveId,
       stats,
       letterboxdCount,
+      filmaffinityCount,
       rewatchCount,
+      missingFilmMetadataCount,
     };
   }, [activeListSlug, activeListDetails]);
 
@@ -958,6 +989,7 @@ export default function Home() {
     if (!activeListDetails?.sections) return [];
     if (activeListSlug === "books" && booksBoardData) {
       const q = bookSearchQuery.trim().toLowerCase();
+      const authorNorm = bookAuthorFilter?.trim().toLowerCase() || null;
       return activeListDetails.sections
         .map((section) => {
           const filtered = section.items.filter((item) => {
@@ -967,8 +999,16 @@ export default function Home() {
             if (bookSubFilter === "GOODREADS" && !view.sources.includes("GOODREADS")) return false;
             if (bookSubFilter === "MANUAL" && !view.sources.includes("MANUAL")) return false;
             if (bookSubFilter === "FINISHED" && view.readingStatus !== "FINISHED") return false;
+            if (bookSubFilter === "NOT_READ" && view.readingStatus === "FINISHED") return false;
             if (bookSubFilter === "READING" && view.readingStatus !== "READING") return false;
             if (bookSubFilter === "WANT_TO_READ" && view.readingStatus !== "WANT_TO_READ") return false;
+            if (
+              authorNorm &&
+              view.author.toLowerCase() !== authorNorm &&
+              !view.author.toLowerCase().includes(authorNorm)
+            ) {
+              return false;
+            }
             if (
               bookTagFilter &&
               !view.tags.some((t) => t.toLowerCase() === bookTagFilter.toLowerCase())
@@ -997,16 +1037,32 @@ export default function Home() {
 
     if (activeListSlug === "films" && filmsBoardData) {
       const q = filmSearchQuery.trim().toLowerCase();
+      const dirNorm = filmDirectorFilter?.trim().toLowerCase() || null;
+      const genreNorm = filmGenreFilter?.trim().toLowerCase() || null;
       return activeListDetails.sections
         .map((section) => {
           const filtered = section.items.filter((item) => {
             const view = filmsBoardData.bySaveId.get(item.save.id);
             if (!view) return false;
             if (filmSubFilter === "LETTERBOXD" && !isLetterboxdFilmView(view)) return false;
+            if (filmSubFilter === "FILMAFFINITY" && !view.sources.includes("FILMAFFINITY")) return false;
             if (filmSubFilter === "WATCHED" && view.watchStatus !== "WATCHED") return false;
             if (filmSubFilter === "WATCHLIST" && view.watchStatus !== "WATCHLIST") return false;
             if (filmSubFilter === "REWATCH" && !view.rewatch) return false;
             if (filmSubFilter === "OWNED" && !view.isOwned) return false;
+            if (
+              dirNorm &&
+              view.director.toLowerCase() !== dirNorm &&
+              !view.director.toLowerCase().includes(dirNorm)
+            ) {
+              return false;
+            }
+            if (
+              genreNorm &&
+              !view.genres.some((g) => g.toLowerCase() === genreNorm)
+            ) {
+              return false;
+            }
             if (
               filmTagFilter &&
               !view.tags.some((t) => t.toLowerCase() === filmTagFilter.toLowerCase())
@@ -1014,7 +1070,7 @@ export default function Home() {
               return false;
             }
             if (q) {
-              const hay = `${view.title} ${view.director} ${view.personalNotes || ""} ${view.tags.join(
+              const hay = `${view.title} ${view.director} ${view.genres.join(" ")} ${view.personalNotes || ""} ${view.tags.join(
                 " "
               )}`.toLowerCase();
               if (!hay.includes(q)) return false;
@@ -1094,11 +1150,14 @@ export default function Home() {
     garmentSeasonFilter,
     booksBoardData,
     bookSubFilter,
+    bookAuthorFilter,
     bookTagFilter,
     bookSearchQuery,
     bookSortBy,
     filmsBoardData,
     filmSubFilter,
+    filmDirectorFilter,
+    filmGenreFilter,
     filmTagFilter,
     filmSearchQuery,
     filmSortBy,
@@ -1138,6 +1197,41 @@ export default function Home() {
     }
     return null;
   }, [openBookSaveId, openBookIdx, orderedBookViews, booksBoardData, items]);
+
+  const orderedFilmViews = useMemo(() => {
+    if (activeListSlug === "films" && filmsBoardData) {
+      return displayedBoardSections.flatMap((sec) =>
+        sec.items
+          .map((it) => filmsBoardData.bySaveId.get(it.save.id))
+          .filter((v): v is FilmView => Boolean(v))
+      );
+    }
+    return items
+      .filter((it) => it.save.typePath === "/media/film" || it.entity?.typePath === "/media/film")
+      .map((it) => toFilmView(it.save as any, it.entity as any));
+  }, [activeListSlug, filmsBoardData, displayedBoardSections, items]);
+
+  const openFilmIdx = useMemo(
+    () =>
+      openFilmSaveId
+        ? orderedFilmViews.findIndex((f) => f.saveId === openFilmSaveId)
+        : -1,
+    [orderedFilmViews, openFilmSaveId]
+  );
+
+  const openFilmView = useMemo(() => {
+    if (!openFilmSaveId) return null;
+    if (openFilmIdx >= 0) return orderedFilmViews[openFilmIdx];
+    const fromFilms = filmsBoardData?.bySaveId.get(openFilmSaveId);
+    if (fromFilms) return fromFilms;
+    const fromFeed = items.find((it) => it.save.id === openFilmSaveId);
+    if (fromFeed) {
+      const v = toFilmView(fromFeed.save as any, fromFeed.entity as any);
+      v.card = fromFeed;
+      return v;
+    }
+    return null;
+  }, [openFilmSaveId, openFilmIdx, orderedFilmViews, filmsBoardData, items]);
 
   if (authLoading) {
     return (
@@ -1249,7 +1343,7 @@ export default function Home() {
 
   return (
     <PullToRefresh
-      disabled={Boolean(selectedCard) || Boolean(openBookView) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen || isLogBookOpen || isGoodreadsSyncOpen || isLogFilmOpen || isLetterboxdSyncOpen}
+      disabled={Boolean(selectedCard) || Boolean(openBookView) || Boolean(openFilmView) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen || isLogBookOpen || isGoodreadsSyncOpen || isLogFilmOpen || isLetterboxdSyncOpen || isFilmAffinitySyncOpen}
       onRefresh={() =>
         Promise.all([
           fetchItems({ reset: true, wishlist: wishOnly }),
@@ -1636,6 +1730,40 @@ export default function Home() {
                     )}
                     {activeListSlug === "films" && (
                       <>
+                        {filmsBoardData && filmsBoardData.missingFilmMetadataCount > 0 && (
+                          <button
+                            type="button"
+                            disabled={isEnrichingFilms}
+                            onClick={async () => {
+                              setIsEnrichingFilms(true);
+                              setFilmsBannerMsg(null);
+                              try {
+                                const res = await apiFetch("/api/v1/cinema/enrich", { method: "POST" });
+                                const d = await res.json().catch(() => ({}));
+                                if (res.ok) {
+                                  setFilmsBannerMsg(
+                                    `Enriched ${d.enrichedCount ?? 0} of ${d.totalChecked ?? 0} films with directors, genres, and posters.`
+                                  );
+                                  await Promise.all([
+                                    fetchItems({ reset: true }),
+                                    fetchLists(),
+                                    refreshActiveBoard("films"),
+                                  ]);
+                                }
+                              } finally {
+                                setIsEnrichingFilms(false);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
+                          >
+                            {isEnrichingFilms ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            )}
+                            <span>Enrich Films ({filmsBoardData.missingFilmMetadataCount})</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setIsLogFilmOpen(true)}
@@ -1659,6 +1787,22 @@ export default function Home() {
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
                           <span>Sync Letterboxd</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            apiFetch("/api/v1/cinema/filmaffinity-sync")
+                              .then((r) => (r.ok ? r.json() : null))
+                              .then((d) => {
+                                if (d) setFilmaffinityStatus(d);
+                              })
+                              .catch(() => {});
+                            setIsFilmAffinitySyncOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                        >
+                          <Film className="w-3.5 h-3.5" />
+                          <span>Sync FilmAffinity</span>
                         </button>
                       </>
                     )}
@@ -1706,14 +1850,16 @@ export default function Home() {
                     >
                       <span>+ Sub-Board</span>
                     </button>
-                    <a
-                      href={getApiUrl(`/list/${activeListDetails.list.slug}`)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
-                    >
-                      <span>View Public Board ↗</span>
-                    </a>
+                    {activeListDetails.list.visibility === "PUBLIC" && (
+                      <a
+                        href={getApiUrl(`/list/${activeListDetails.list.slug}`)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
+                      >
+                        <span>View Public Board ↗</span>
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1740,16 +1886,28 @@ export default function Home() {
                     {(
                       [
                         { id: "ALL", label: "All", count: booksBoardData.stats.total },
-                        { id: "MY_STUFF", label: "My Stuff", count: booksBoardData.myStuffBookCount, icon: ShoppingBag },
-                        { id: "GOODREADS", label: "Goodreads", count: booksBoardData.goodreadsCount },
-                        { id: "MANUAL", label: "Manual", count: booksBoardData.manualCount },
                         { id: "FINISHED", label: "Read", count: booksBoardData.stats.finishedCount, icon: CheckCircle2 },
+                        {
+                          id: "NOT_READ",
+                          label: "Not Read",
+                          count: Math.max(0, booksBoardData.stats.total - booksBoardData.stats.finishedCount),
+                        },
                         { id: "READING", label: "Reading", count: booksBoardData.stats.readingCount, icon: BookOpen },
                         { id: "WANT_TO_READ", label: "Want to Read", count: booksBoardData.stats.wantToReadCount, icon: Clock },
-                      ] as const
+                        { id: "GOODREADS", label: "Goodreads", count: booksBoardData.goodreadsCount },
+                        { id: "MY_STUFF", label: "My Stuff", count: booksBoardData.myStuffBookCount, icon: ShoppingBag },
+                        ...(booksBoardData.manualCount > 0
+                          ? [{ id: "MANUAL" as const, label: "Manual", count: booksBoardData.manualCount }]
+                          : []),
+                      ] as Array<{
+                        id: typeof bookSubFilter;
+                        label: string;
+                        count: number;
+                        icon?: React.ComponentType<{ className?: string }>;
+                      }>
                     ).map((f) => {
                       const active = bookSubFilter === f.id;
-                      const Icon = "icon" in f ? f.icon : null;
+                      const Icon = f.icon ?? null;
                       return (
                         <button
                           key={f.id}
@@ -1768,6 +1926,16 @@ export default function Home() {
                         </button>
                       );
                     })}
+                    {bookAuthorFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setBookAuthorFilter(null)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 cursor-pointer"
+                      >
+                        <span>Author: {bookAuthorFilter}</span>
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -1860,15 +2028,29 @@ export default function Home() {
             {/* Films Sub-Board Filter Bar & Telemetry (when on Films board) */}
             {activeListSlug === "films" && filmsBoardData && (
               <div className="mb-6 space-y-3" data-testid="films-subboard-filters">
+                {filmsBannerMsg && (
+                  <div className="flex items-center justify-between gap-2 px-4 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs font-mono text-neutral-800 dark:text-neutral-200">
+                    <span>{filmsBannerMsg}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilmsBannerMsg(null)}
+                      className="text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {(
                       [
                         { id: "ALL", label: "All", count: filmsBoardData.stats.total },
-                        { id: "LETTERBOXD", label: "Letterboxd", count: filmsBoardData.letterboxdCount },
                         { id: "WATCHED", label: "Watched", count: filmsBoardData.stats.watchedCount, icon: CheckCircle2 },
-                        { id: "WATCHLIST", label: "Watchlist", count: filmsBoardData.stats.watchlistCount, icon: Clock },
+                        { id: "WATCHLIST", label: "Want to Watch", count: filmsBoardData.stats.watchlistCount, icon: Clock },
                         { id: "REWATCH", label: "Rewatches", count: filmsBoardData.rewatchCount, icon: Repeat },
+                        { id: "LETTERBOXD", label: "Letterboxd", count: filmsBoardData.letterboxdCount },
+                        { id: "FILMAFFINITY", label: "FilmAffinity", count: filmsBoardData.filmaffinityCount },
                         { id: "OWNED", label: "Owned", count: filmsBoardData.stats.ownedCount, icon: ShoppingBag },
                       ] as const
                     ).map((f) => {
@@ -1892,6 +2074,26 @@ export default function Home() {
                         </button>
                       );
                     })}
+                    {filmDirectorFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setFilmDirectorFilter(null)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 cursor-pointer"
+                      >
+                        <span>Director: {filmDirectorFilter}</span>
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                    {filmGenreFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setFilmGenreFilter(null)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 cursor-pointer"
+                      >
+                        <span>Genre: {filmGenreFilter}</span>
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -1918,6 +2120,39 @@ export default function Home() {
                     </select>
                   </div>
                 </div>
+
+                {filmsBoardData.stats.genreCounts.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilmGenreFilter(null)}
+                      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer ${
+                        filmGenreFilter === null
+                          ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white"
+                          : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                      }`}
+                    >
+                      All Genres
+                    </button>
+                    {filmsBoardData.stats.genreCounts.map((g) => (
+                      <button
+                        key={g.genre}
+                        type="button"
+                        onClick={() =>
+                          setFilmGenreFilter((cur) => (cur === g.genre ? null : g.genre))
+                        }
+                        className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer ${
+                          filmGenreFilter?.toLowerCase() === g.genre.toLowerCase()
+                            ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white"
+                            : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                        }`}
+                      >
+                        <span>{g.genre}</span>
+                        <span className="opacity-65 tabular-nums">{g.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {filmsBoardData.stats.tagCounts.length > 0 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -1951,6 +2186,29 @@ export default function Home() {
                     ))}
                   </div>
                 )}
+
+                {/* Compact Flush Cinema Metrics Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 border-y border-neutral-200 dark:border-neutral-800 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200 dark:divide-neutral-800 text-left">
+                  {[
+                    { label: "Films", value: filmsBoardData.stats.total },
+                    { label: "Watched", value: filmsBoardData.stats.watchedCount },
+                    { label: "Want to Watch", value: filmsBoardData.stats.watchlistCount },
+                    { label: "Hours", value: filmsBoardData.stats.totalHoursWatched },
+                    {
+                      label: "Avg Rating",
+                      value: filmsBoardData.stats.avgRating !== null ? `${filmsBoardData.stats.avgRating} ★` : "—",
+                    },
+                  ].map((m) => (
+                    <div key={m.label} className="py-2.5 px-3.5">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-neutral-400">
+                        {m.label}
+                      </div>
+                      <div className="font-mono text-base sm:text-lg tabular-nums font-medium text-neutral-900 dark:text-neutral-100">
+                        {m.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -2011,6 +2269,50 @@ export default function Home() {
                   childrenBoards={activeListDetails.children}
                   layout={layoutEngine}
                   density={cardDensity}
+                  hideShelfBuckets={
+                    (activeListSlug === "books" || activeListSlug === "films") &&
+                    !(activeListDetails.children && activeListDetails.children.length > 0)
+                  }
+                  shelfLabelOverride={
+                    activeListSlug === "books" && bookAuthorFilter
+                      ? `AUTHOR · ${bookAuthorFilter.toUpperCase()}`
+                      : activeListSlug === "books"
+                      ? "PERSONAL LIBRARY"
+                      : undefined
+                  }
+                  galleryLabelOverride={
+                    activeListSlug === "films" && filmDirectorFilter
+                      ? `DIRECTOR · ${filmDirectorFilter.toUpperCase()}`
+                      : activeListSlug === "films" && filmGenreFilter
+                      ? `GENRE · ${filmGenreFilter.toUpperCase()}`
+                      : activeListSlug === "films"
+                      ? "PERSONAL CINEMA POSTERS"
+                      : undefined
+                  }
+                  onSelectCreator={
+                    activeListSlug === "books"
+                      ? (creator) => {
+                          setBookAuthorFilter(creator);
+                          setBookSubFilter("ALL");
+                        }
+                      : undefined
+                  }
+                  onSelectDirector={
+                    activeListSlug === "films"
+                      ? (director) => {
+                          setFilmDirectorFilter(director);
+                          setFilmSubFilter("ALL");
+                        }
+                      : undefined
+                  }
+                  onSelectGenre={
+                    activeListSlug === "films"
+                      ? (genre) => {
+                          setFilmGenreFilter(genre);
+                          setFilmSubFilter("ALL");
+                        }
+                      : undefined
+                  }
                   onSelectBoard={(slug) => {
                     setWishOnly(false);
                     setActiveListSlug(slug);
@@ -2048,17 +2350,17 @@ export default function Home() {
                   <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
                     {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL")
                       ? "No garments match the selected filters."
-                      : activeListSlug === "books" && (bookSubFilter !== "ALL" || bookTagFilter || bookSearchQuery.trim())
+                      : activeListSlug === "books" && (bookSubFilter !== "ALL" || bookAuthorFilter || bookTagFilter || bookSearchQuery.trim())
                       ? "No books match the selected filters."
-                      : activeListSlug === "films" && (filmSubFilter !== "ALL" || filmTagFilter || filmSearchQuery.trim())
+                      : activeListSlug === "films" && (filmSubFilter !== "ALL" || filmDirectorFilter || filmGenreFilter || filmTagFilter || filmSearchQuery.trim())
                       ? "No films match the selected filters."
                       : "This board is currently empty."}
                   </p>
                   <p className="text-neutral-400 text-xs max-w-sm mx-auto mb-4">
                     {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL")
                       ? "Try selecting a different category or season combination."
-                      : (activeListSlug === "books" && (bookSubFilter !== "ALL" || bookTagFilter || bookSearchQuery.trim())) ||
-                        (activeListSlug === "films" && (filmSubFilter !== "ALL" || filmTagFilter || filmSearchQuery.trim()))
+                      : (activeListSlug === "books" && (bookSubFilter !== "ALL" || bookAuthorFilter || bookTagFilter || bookSearchQuery.trim())) ||
+                        (activeListSlug === "films" && (filmSubFilter !== "ALL" || filmDirectorFilter || filmGenreFilter || filmTagFilter || filmSearchQuery.trim()))
                       ? "Clear the active sub-board filters to view the full board."
                       : "Capture an item above while viewing this board, or click Board on any card."}
                   </p>
@@ -2073,10 +2375,11 @@ export default function Home() {
                       Clear Filters
                     </button>
                   )}
-                  {activeListSlug === "books" && (bookSubFilter !== "ALL" || bookTagFilter || bookSearchQuery.trim()) && (
+                  {activeListSlug === "books" && (bookSubFilter !== "ALL" || bookAuthorFilter || bookTagFilter || bookSearchQuery.trim()) && (
                     <button
                       onClick={() => {
                         setBookSubFilter("ALL");
+                        setBookAuthorFilter(null);
                         setBookTagFilter(null);
                         setBookSearchQuery("");
                       }}
@@ -2085,10 +2388,12 @@ export default function Home() {
                       Clear Book Filters
                     </button>
                   )}
-                  {activeListSlug === "films" && (filmSubFilter !== "ALL" || filmTagFilter || filmSearchQuery.trim()) && (
+                  {activeListSlug === "films" && (filmSubFilter !== "ALL" || filmDirectorFilter || filmGenreFilter || filmTagFilter || filmSearchQuery.trim()) && (
                     <button
                       onClick={() => {
                         setFilmSubFilter("ALL");
+                        setFilmDirectorFilter(null);
+                        setFilmGenreFilter(null);
                         setFilmTagFilter(null);
                         setFilmSearchQuery("");
                       }}
@@ -2219,6 +2524,11 @@ export default function Home() {
         isOpen={Boolean(openBookView)}
         hasPrev={openBookIdx > 0}
         hasNext={openBookIdx >= 0 && openBookIdx < orderedBookViews.length - 1}
+        onSelectAuthor={(author) => {
+          setBookAuthorFilter(author);
+          setBookSubFilter("ALL");
+          setActiveListSlug("books");
+        }}
         onPrev={() => {
           if (openBookIdx > 0) setOpenBookSaveId(orderedBookViews[openBookIdx - 1].saveId);
         }}
@@ -2237,6 +2547,42 @@ export default function Home() {
           setOpenBookSaveId(null);
           setLightboxPresentation("standard");
           setSelectedCard(book.card);
+        }}
+      />
+
+      <FilmDetailModal
+        film={openFilmView}
+        isOpen={Boolean(openFilmView)}
+        hasPrev={openFilmIdx > 0}
+        hasNext={openFilmIdx >= 0 && openFilmIdx < orderedFilmViews.length - 1}
+        onSelectDirector={(dir) => {
+          setFilmDirectorFilter(dir);
+          setFilmSubFilter("ALL");
+          setActiveListSlug("films");
+        }}
+        onSelectGenre={(genre) => {
+          setFilmGenreFilter(genre);
+          setFilmSubFilter("ALL");
+          setActiveListSlug("films");
+        }}
+        onPrev={() => {
+          if (openFilmIdx > 0) setOpenFilmSaveId(orderedFilmViews[openFilmIdx - 1].saveId);
+        }}
+        onNext={() => {
+          if (openFilmIdx >= 0 && openFilmIdx < orderedFilmViews.length - 1) {
+            setOpenFilmSaveId(orderedFilmViews[openFilmIdx + 1].saveId);
+          }
+        }}
+        onClose={() => setOpenFilmSaveId(null)}
+        onUpdated={() => {
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
+        onOpenFullDossier={(film) => {
+          setOpenFilmSaveId(null);
+          setLightboxPresentation("standard");
+          setSelectedCard(film.card);
         }}
       />
 
@@ -2275,6 +2621,17 @@ export default function Home() {
         isOpen={isLetterboxdSyncOpen}
         status={letterboxdStatus}
         onClose={() => setIsLetterboxdSyncOpen(false)}
+        onSynced={() => {
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
+      />
+
+      <FilmAffinitySyncModal
+        isOpen={isFilmAffinitySyncOpen}
+        status={filmaffinityStatus}
+        onClose={() => setIsFilmAffinitySyncOpen(false)}
         onSynced={() => {
           fetchItems({ reset: true });
           fetchLists();

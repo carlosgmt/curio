@@ -556,21 +556,27 @@ export async function deduplicateUserBooks(
         eq(userSaves.isPrivateMemo, false),
         or(
           eq(globalEntities.coreType, "BOOK"),
-          eq(userSaves.typePath, "/product/book")
+          eq(userSaves.typePath, "/product/book"),
+          eq(userSaves.typePath, "/media/film"),
+          eq(globalEntities.typePath, "/media/film")
         )
       )
     );
 
   const booksBoardRows = await db
     .query.smartLists.findMany({
-      where: (sl, { and: a, eq: e }) => a(e(sl.userId, userId), e(sl.slug, "books")),
+      where: (sl, { and: a, eq: e }) =>
+        a(e(sl.userId, userId), or(e(sl.slug, "books"), e(sl.slug, "films"))),
     })
     .catch(() => []);
-  const booksBoardId = booksBoardRows[0]?.id || null;
+  const booksBoardId = booksBoardRows.find((b) => b.slug === "books")?.id || null;
+  const filmsBoardId = booksBoardRows.find((b) => b.slug === "films")?.id || null;
 
   let travelStudyBoardId: string | null = null;
   for (const row of remainingRows) {
     const ent = row.entity;
+    const isFilmRow =
+      row.save.typePath === "/media/film" || ent?.typePath === "/media/film";
     const rawTitle = (row.save.privateTitle || ent?.title || "").trim();
     const probe = `${rawTitle} ${ent?.brandOrCreator || ""} ${(row.save.autoTags || []).join(" ")}`.trim();
 
@@ -611,6 +617,11 @@ export async function deduplicateUserBooks(
             .where(and(eq(listItems.listId, booksBoardId), eq(listItems.saveId, row.save.id)))
             .run();
         }
+        if (filmsBoardId) {
+          tx.delete(listItems)
+            .where(and(eq(listItems.listId, filmsBoardId), eq(listItems.saveId, row.save.id)))
+            .run();
+        }
         if (travelStudyBoardId) {
           const [exists] = tx
             .select({ id: listItems.id })
@@ -635,6 +646,10 @@ export async function deduplicateUserBooks(
         }
       });
       reclassifiedReferenceCount++;
+      continue;
+    }
+
+    if (isFilmRow) {
       continue;
     }
 

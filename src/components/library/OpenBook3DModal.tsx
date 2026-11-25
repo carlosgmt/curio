@@ -33,6 +33,7 @@ export interface OpenBook3DModalProps {
   onClose: () => void;
   onUpdated: (updatedSave?: any, updatedEntity?: any) => void;
   onOpenFullDossier?: (book: LibraryBookView) => void;
+  onSelectAuthor?: (author: string) => void;
   onPrev?: () => void;
   onNext?: () => void;
   hasPrev?: boolean;
@@ -45,6 +46,7 @@ export function OpenBook3DModal({
   onClose,
   onUpdated,
   onOpenFullDossier,
+  onSelectAuthor,
   onPrev,
   onNext,
   hasPrev = false,
@@ -59,7 +61,9 @@ export function OpenBook3DModal({
   const [coverMode, setCoverMode] = useState(false);
   const [mobilePage, setMobilePage] = useState<"left" | "right">("left");
   const [tilt, setTilt] = useState<{ rx: number; ry: number }>({ rx: 0, ry: 0 });
+  const [bookPhase, setBookPhase] = useState<"closed" | "opening" | "open" | "closing">("closed");
   const reducedMotionRef = useRef(false);
+  const closeTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
@@ -67,6 +71,51 @@ export function OpenBook3DModal({
         "(prefers-reduced-motion: reduce)"
       ).matches;
     }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || !book) {
+      setBookPhase("closed");
+      return;
+    }
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    if (reducedMotionRef.current) {
+      setBookPhase("open");
+      return;
+    }
+    setBookPhase("closed");
+    let timerId: number | null = null;
+    const rafId = window.requestAnimationFrame(() => {
+      setBookPhase("opening");
+      timerId = window.setTimeout(() => {
+        setBookPhase("open");
+      }, 560);
+    });
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [isOpen, book?.saveId]);
+
+  const handleAnimatedClose = React.useCallback(() => {
+    if (reducedMotionRef.current || coverMode) {
+      onClose();
+      return;
+    }
+    setBookPhase("closing");
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => {
+      onClose();
+    }, 300);
+  }, [onClose, coverMode]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -83,7 +132,7 @@ export function OpenBook3DModal({
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose();
+        handleAnimatedClose();
         return;
       }
       if (
@@ -102,7 +151,7 @@ export function OpenBook3DModal({
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [isOpen, onClose, hasPrev, hasNext, onPrev, onNext]);
+  }, [isOpen, handleAnimatedClose, hasPrev, hasNext, onPrev, onNext]);
 
   const palette = useMemo(
     () =>
@@ -268,10 +317,12 @@ export function OpenBook3DModal({
     book.goodreadsShelves.length > 0 ||
     Boolean(book.canonicalUrl?.includes("goodreads.com"));
 
+  const isSpreadExpanded = bookPhase === "opening" || bookPhase === "open";
+
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto"
-      onClick={onClose}
+      onClick={handleAnimatedClose}
     >
       <div
         role="dialog"
@@ -321,7 +372,7 @@ export function OpenBook3DModal({
             </button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleAnimatedClose}
               aria-label="Close book"
               data-testid="close-open-book-btn"
               className="p-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white transition cursor-pointer"
@@ -335,7 +386,7 @@ export function OpenBook3DModal({
         <div
           onMouseMove={handleStageMouseMove}
           onMouseLeave={() => setTilt({ rx: 0, ry: 0 })}
-          style={{ perspective: "1800px" }}
+          style={{ perspective: "2000px" }}
           className="w-full"
         >
           {coverMode ? (
@@ -395,16 +446,75 @@ export function OpenBook3DModal({
               </div>
             </div>
           ) : (
-            /* Open Two-Page Book Spread */
+            /* Open Two-Page Book Spread with 3D Hinged Cover Leaf */
             <div
-              className="relative rounded-2xl p-2 sm:p-3.5 shadow-[0_32px_80px_rgba(0,0,0,0.68)] transition-transform duration-200 ease-out"
+              className="relative rounded-2xl p-2 sm:p-3.5 shadow-[0_32px_80px_rgba(0,0,0,0.68)]"
               style={{
                 backgroundColor: palette.coverBg,
-                transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`,
+                transformStyle: "preserve-3d",
+                transform: isSpreadExpanded
+                  ? `scale(1) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`
+                  : `scale(0.86) rotateX(8deg) rotateY(-8deg)`,
+                opacity: bookPhase === "closing" ? 0.15 : 1,
+                transition:
+                  bookPhase === "open"
+                    ? "transform 200ms ease-out"
+                    : "transform 520ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease",
                 boxShadow:
                   "0 30px 75px rgba(0,0,0,0.68), inset 0 0 0 1px rgba(255,255,255,0.12)",
               }}
             >
+              {/* Animated 3D Hardcover Door swinging open from center spine (desktop) */}
+              {bookPhase !== "open" && (
+                <div
+                  aria-hidden="true"
+                  className="hidden md:block absolute inset-y-2 right-2 w-[calc(50%-0.5rem)] rounded-r-xl pointer-events-none z-40"
+                  style={{
+                    transformStyle: "preserve-3d",
+                    transformOrigin: "left center",
+                    transform: isSpreadExpanded ? "rotateY(-180deg)" : "rotateY(0deg)",
+                    transition: "transform 540ms cubic-bezier(0.22, 1, 0.36, 1)",
+                  }}
+                >
+                  {/* Front Outer Jacket */}
+                  <div
+                    className="absolute inset-0 rounded-r-xl overflow-hidden flex flex-col justify-between p-6 shadow-2xl border border-white/15"
+                    style={{
+                      backgroundColor: palette.coverBg,
+                      color: palette.coverInk,
+                      backfaceVisibility: "hidden",
+                    }}
+                  >
+                    <div className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-75">
+                      {book.isOwned ? "Owned Volume" : "Library Edition"}
+                    </div>
+                    <div className="my-auto flex flex-col items-center text-center gap-3">
+                      {book.coverUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={book.coverUrl}
+                          alt=""
+                          className="w-40 h-60 object-cover rounded-r-md shadow-xl border border-black/25"
+                        />
+                      )}
+                      <div className="font-serif-editorial text-xl leading-snug line-clamp-2">
+                        {book.title}
+                      </div>
+                    </div>
+                    <div className="font-mono text-[10px] opacity-70 truncate text-center">
+                      {book.author}
+                    </div>
+                  </div>
+                  {/* Inner Endpaper Face */}
+                  <div
+                    className="absolute inset-0 rounded-l-xl bg-[#F3ECD8] border border-[#DED2BC]"
+                    style={{
+                      transform: "rotateY(180deg)",
+                      backfaceVisibility: "hidden",
+                    }}
+                  />
+                </div>
+              )}
               {/* Stacked Paper Edges (Left/Right/Bottom thickness illusion) */}
               <div
                 aria-hidden="true"
@@ -530,7 +640,24 @@ export function OpenBook3DModal({
                           {book.title}
                         </h2>
                         <p className="text-sm font-serif italic text-[#4F473B]">
-                          by {book.author}
+                          by{" "}
+                          {onSelectAuthor &&
+                          book.author &&
+                          book.author.toLowerCase() !== "unknown author" ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onSelectAuthor(book.author);
+                                onClose();
+                              }}
+                              className="underline underline-offset-4 decoration-[#9A8E7B] hover:text-[#181410] cursor-pointer"
+                              title={`Filter shelf to books by ${book.author}`}
+                            >
+                              {book.author}
+                            </button>
+                          ) : (
+                            book.author
+                          )}
                         </p>
                         <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 pt-1 font-mono text-[10px] text-[#7A6F5E]">
                           {book.year && <span>{book.year}</span>}

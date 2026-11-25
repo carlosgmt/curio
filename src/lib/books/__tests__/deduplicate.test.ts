@@ -4,6 +4,7 @@ import { db, globalEntities, listItems, smartLists, users, userSaves } from "@/d
 import { areSameBook, isTravelGuideOrStudyBook, normalizeBookTitleKey, sanitizeGoodreadsNote } from "../identity";
 import { deduplicateUserBooks } from "../deduplicate";
 import { resolveBookSources } from "../library";
+import { parseBookQueryHints, resolveBook } from "@/lib/enrichment/providers/books";
 import { syncPurchaseHubWithCurio } from "@/lib/sync/purchaseHub";
 import { clearAdapterSyncCache } from "@/lib/sync/engine";
 
@@ -367,5 +368,72 @@ describe("Canonical Book Deduplication", () => {
       .where(eq(userSaves.id, junkSave.id));
     expect(cleanedBook.personalNotes).toBeNull();
     expect(cleanedBook.autoTags).not.toContain("[edit]");
+  });
+
+  it("resolves subtitled Spanish titles (e.g. Punki: Una historia de amor) via ES storefront and Goodreads fallback", async () => {
+    const hints = parseBookQueryHints("Punki: Una historia de amor");
+    expect(hints.mainTitle).toBe("Punki");
+
+    // 1. Subtitled book matched via country=es after default US returns empty
+    const appleEsFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("itunes.apple.com") && url.includes("country=es") && url.includes("Punki")) {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                trackName: "Punki",
+                artistName: "Juarma",
+                releaseDate: "2023-03-01T00:00:00Z",
+                artworkUrl100: "https://example.com/100x100bb.jpg",
+                description: "Una historia de amor salvaje en un pueblo de Granada.",
+                trackViewUrl: "https://books.apple.com/es/book/punki/id123",
+              },
+            ],
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ results: [], docs: [], items: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    const resolvedEs = await resolveBook("Punki: Una historia de amor", {
+      fetchFn: appleEsFetch,
+      requireStrongMatch: true,
+    });
+    expect(resolvedEs?.author).toBe("Juarma");
+    expect(resolvedEs?.title).toBe("Punki");
+
+    // 2. Goodreads public autocomplete fallback when Apple Books misses
+    const grFallbackFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("goodreads.com/book/auto_complete") && url.includes("Punki")) {
+        return new Response(
+          JSON.stringify([
+            {
+              bookId: "122232469",
+              title: "Punki",
+              bookTitleBare: "Punki",
+              bookUrl: "/book/show/122232469-punki",
+              numPages: 344,
+              ratingsCount: 1870,
+              imageUrl: "https://i.gr-assets.com/books/123._SX50_.jpg",
+              author: { name: "Juarma" },
+              description: { html: "Álex y Paula viven una historia de amor." },
+            },
+          ]),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ results: [], docs: [], items: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    const resolvedGr = await resolveBook("Punki: Una historia de amor", {
+      fetchFn: grFallbackFetch,
+      requireStrongMatch: true,
+    });
+    expect(resolvedGr?.author).toBe("Juarma");
+    expect(resolvedGr?.pageCount).toBe(344);
+    expect(resolvedGr?.coverUrl).toContain("._SX400_.");
   });
 });

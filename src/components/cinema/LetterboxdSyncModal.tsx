@@ -73,12 +73,14 @@ export function LetterboxdSyncModal({
       }
 
       const processed = data.recordsProcessed ?? data.fetchedCount ?? 0;
+      const watched = data.meta?.watchedCount ?? data.watchedCount ?? processed;
+      const watchlist = data.meta?.watchlistCount ?? data.watchlistCount ?? 0;
       const created = data.createdSaves ?? 0;
       const updated = data.updatedSaves ?? 0;
       const tagsCount = data.meta?.tagsImportedCount ?? data.tagsImportedCount ?? 0;
 
       setResultMsg(
-        `Synced ${processed} Letterboxd diary entries (${created} added, ${updated} updated, ${tagsCount} tags merged).`
+        `Synced ${processed} Letterboxd films (${watched} watched, ${watchlist} watchlist · ${created} added, ${updated} updated, ${tagsCount} tags merged).`
       );
       onSynced();
     } catch (err: any) {
@@ -224,7 +226,7 @@ export function LetterboxdSyncModal({
               <div className="p-3.5 rounded-2xl bg-secondary/60 border border-border text-xs space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-foreground">
-                    Public Diary RSS Sync (No Cookie Needed)
+                    Public Library &amp; Diary Sync (No Cookie Needed)
                   </span>
                   <span
                     className={`px-2 py-0.5 rounded-full font-mono text-[10px] uppercase tracking-wider ${
@@ -237,12 +239,9 @@ export function LetterboxdSyncModal({
                   </span>
                 </div>
                 <p className="text-muted-foreground leading-relaxed">
-                  Letterboxd exposes a live public RSS feed at{" "}
-                  <span className="font-mono text-foreground">
-                    letterboxd.com/&lt;username&gt;/rss/
-                  </span>
-                  . Curio checks it automatically every 2 hours on mini to import new watches,
-                  half-star ratings, rewatch flags, and reviews.
+                  Curio syncs your recent Letterboxd diary RSS plus your full public{" "}
+                  <span className="font-mono text-foreground">/films/</span> ratings and{" "}
+                  <span className="font-mono text-foreground">/watchlist/</span> pages automatically.
                 </p>
                 {status?.lastSyncedAt && (
                   <p className="font-mono text-[10px] text-muted-foreground">

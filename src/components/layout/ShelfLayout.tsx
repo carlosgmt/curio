@@ -27,6 +27,7 @@ import { formatBookSourceLabel, resolveBookSources } from "@/lib/books/library";
 export interface ShelfLayoutProps {
   items: CardData[];
   onOpenObject: (card: CardData, presentation?: "standard" | "press") => void;
+  onSelectCreator?: (creator: string) => void;
   shelfLabel?: string;
   compact?: boolean;
 }
@@ -36,6 +37,7 @@ const VIRTUAL_WINDOW = 12;
 export function ShelfLayout({
   items,
   onOpenObject,
+  onSelectCreator,
   shelfLabel = "CURIO PRESS ARCHIVE",
   compact = false,
 }: ShelfLayoutProps) {
@@ -722,7 +724,21 @@ export function ShelfLayout({
       >
         <div className="min-w-0 max-w-2xl space-y-1.5">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em]">
-            <span style={{ color: activePalette.accent }}>{activeMeta.creator}</span>
+            {onSelectCreator &&
+            activeMeta.creator &&
+            activeMeta.creator.toLowerCase() !== "unknown author" ? (
+              <button
+                type="button"
+                onClick={() => onSelectCreator(activeMeta.creator)}
+                className="underline underline-offset-4 decoration-dotted hover:opacity-80 cursor-pointer text-left"
+                style={{ color: activePalette.accent }}
+                title={`View all books by ${activeMeta.creator}`}
+              >
+                {activeMeta.creator}
+              </button>
+            ) : (
+              <span style={{ color: activePalette.accent }}>{activeMeta.creator}</span>
+            )}
             {activeMeta.isWishlist && (
               <span
                 className="px-1.5 py-0.5 rounded border border-dashed text-[10px]"

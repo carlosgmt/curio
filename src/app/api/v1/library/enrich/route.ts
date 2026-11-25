@@ -37,16 +37,21 @@ export async function POST(req: NextRequest) {
         const noisyTitle =
           cleanCommercialBookTitle(entity.title).title !== entity.title.trim() ||
           /[…]$|\.\.\.$/.test(entity.title);
+        const creatorLower = (entity.brandOrCreator || "").trim().toLowerCase();
+        const missingAuthor =
+          !creatorLower ||
+          creatorLower === "unknown author" ||
+          /^(amazon|galaxus|provini|google_play|buchhandlung)/.test(creatorLower);
         return (
           noisyTitle ||
           !entity.heroImageUrl ||
-          !entity.brandOrCreator ||
+          missingAuthor ||
           !csd.pageCount ||
           !csd.isbn ||
           !entity.summary
         );
       })
-      .slice(0, 40);
+      .slice(0, 80);
 
     let enrichedCount = 0;
     for (const entity of candidates) {

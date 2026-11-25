@@ -3,20 +3,24 @@ import type { CardData } from "@/components/cards/PolymorphicCard";
 import { normalizeDateString } from "@/lib/books/library";
 
 export type WatchStatus = "WATCHLIST" | "WATCHED";
+export type FilmOriginSource = "LETTERBOXD" | "FILMAFFINITY" | "MY_STUFF" | "MANUAL";
 
 export interface FilmView {
   saveId: string;
   entityId: string | null;
   title: string;
   director: string;
+  genres: string[];
   posterUrl: string | null;
   summary: string | null;
   releaseYear: number | null;
   runtimeMinutes: number | null;
   tmdbId: string | null;
   imdbId: string | null;
+  filmaffinityId: string | null;
   watchStatus: WatchStatus;
   isOwned: boolean;
+  sources: FilmOriginSource[];
   rating: number | null;
   dateWatched: string | null;
   rewatch: boolean;
@@ -38,6 +42,7 @@ export interface CinemaStats {
   totalHoursWatched: number;
   avgRating: number | null;
   tagCounts: Array<{ tag: string; count: number }>;
+  genreCounts: Array<{ genre: string; count: number }>;
 }
 
 const INTERNAL_FILM_NOISE_TAGS = new Set([
@@ -48,6 +53,7 @@ const INTERNAL_FILM_NOISE_TAGS = new Set([
   "movies",
   "cinema",
   "letterboxd",
+  "filmaffinity",
   "watchlist",
   "owner:home",
   "owner:personal",
@@ -112,6 +118,75 @@ export function extractFilmDisplayTags(
   return [...seen.values()];
 }
 
+export function extractFilmGenres(
+  entity?: Pick<GlobalEntity, "coreStructuredData" | "extendedAttributes"> | null,
+  save?: Pick<UserSave, "userCustomValues"> | null
+): string[] {
+  const csd = asRecord(entity?.coreStructuredData);
+  const ext = asRecord(entity?.extendedAttributes);
+  const cv = asRecord(save?.userCustomValues);
+  const candidates = [
+    ...(Array.isArray(csd.genres) ? csd.genres : typeof csd.genre === "string" ? csd.genre.split(",") : []),
+    ...(Array.isArray(ext.genres) ? ext.genres : []),
+    ...(Array.isArray(cv.genres) ? cv.genres : []),
+  ];
+  const seen = new Map<string, string>();
+  for (const raw of candidates) {
+    const clean = String(raw || "").trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (!seen.has(key)) seen.set(key, clean);
+  }
+  return [...seen.values()];
+}
+
+export function resolveFilmSources(
+  save: Pick<UserSave, "hasConvertedPurchase" | "userCustomValues" | "autoTags">,
+  entity?: Pick<GlobalEntity, "canonicalExternalId" | "canonicalUrl" | "coreStructuredData" | "extendedAttributes"> | null
+): FilmOriginSource[] {
+  const sources: FilmOriginSource[] = [];
+  const cv = asRecord(save.userCustomValues);
+  const csd = asRecord(entity?.coreStructuredData);
+  const tags = Array.isArray(save.autoTags) ? save.autoTags : [];
+
+  if (isOwnedFilm(save, entity)) {
+    sources.push("MY_STUFF");
+  }
+
+  const hasLetterboxd =
+    (Array.isArray(cv.letterboxdTags) && cv.letterboxdTags.length > 0) ||
+    Boolean(csd.letterboxdUrl) ||
+    Boolean(entity?.canonicalExternalId?.startsWith("letterboxd:")) ||
+    Boolean(entity?.canonicalUrl?.toLowerCase().includes("letterboxd.com")) ||
+    tags.some((t) => String(t).toLowerCase() === "letterboxd");
+  if (hasLetterboxd) {
+    sources.push("LETTERBOXD");
+  }
+
+  const hasFilmaffinity =
+    Boolean(cv.filmaffinityId) ||
+    Boolean(csd.filmaffinityId) ||
+    Boolean(csd.filmaffinityUrl) ||
+    Boolean(entity?.canonicalExternalId?.startsWith("filmaffinity:")) ||
+    Boolean(entity?.canonicalUrl?.toLowerCase().includes("filmaffinity.com")) ||
+    tags.some((t) => String(t).toLowerCase() === "filmaffinity");
+  if (hasFilmaffinity) {
+    sources.push("FILMAFFINITY");
+  }
+
+  if (sources.length === 0) {
+    sources.push("MANUAL");
+  }
+  return sources;
+}
+
+export function formatFilmSourceLabel(src: FilmOriginSource): string {
+  if (src === "LETTERBOXD") return "Letterboxd";
+  if (src === "FILMAFFINITY") return "FilmAffinity";
+  if (src === "MY_STUFF") return "My Stuff";
+  return "Manual";
+}
+
 export function toFilmView(
   save: UserSave,
   entity: GlobalEntity | null
@@ -124,6 +199,7 @@ export function toFilmView(
   const director = String(
     csd.director || ext.director || entity?.brandOrCreator || "Unknown Director"
   ).trim();
+  const genres = extractFilmGenres(entity, save);
 
   const rawYear = csd.releaseYear ?? csd.year ?? ext.releaseYear;
   const parsedYear = typeof rawYear === "number" ? rawYear : parseInt(String(rawYear || ""), 10);
@@ -190,14 +266,22 @@ export function toFilmView(
     entityId: entity?.id ?? null,
     title,
     director,
+    genres,
     posterUrl: entity?.heroImageUrl || null,
     summary: entity?.summary || null,
     releaseYear,
     runtimeMinutes,
     tmdbId: csd.tmdbId ? String(csd.tmdbId) : null,
     imdbId: csd.imdbId ? String(csd.imdbId) : null,
+    filmaffinityId:
+      cv.filmaffinityId
+        ? String(cv.filmaffinityId)
+        : csd.filmaffinityId
+        ? String(csd.filmaffinityId)
+        : null,
     watchStatus,
     isOwned: owned,
+    sources: resolveFilmSources(save, entity),
     rating,
     dateWatched,
     rewatch: Boolean(cv.rewatch),
@@ -226,6 +310,7 @@ export function computeCinemaStats(films: FilmView[]): CinemaStats {
   let ratingSum = 0;
   let ratingCount = 0;
   const tagMap = new Map<string, { label: string; count: number }>();
+  const genreMap = new Map<string, { label: string; count: number }>();
 
   for (const film of films) {
     if (film.isOwned) ownedCount++;
@@ -248,11 +333,21 @@ export function computeCinemaStats(films: FilmView[]): CinemaStats {
       if (cur) cur.count++;
       else tagMap.set(key, { label: tag, count: 1 });
     }
+
+    for (const genre of film.genres) {
+      const key = genre.toLowerCase();
+      const cur = genreMap.get(key);
+      if (cur) cur.count++;
+      else genreMap.set(key, { label: genre, count: 1 });
+    }
   }
 
   const tagCounts = [...tagMap.values()]
     .map((v) => ({ tag: v.label, count: v.count }))
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  const genreCounts = [...genreMap.values()]
+    .map((v) => ({ genre: v.label, count: v.count }))
+    .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
 
   return {
     total: films.length,
@@ -264,5 +359,6 @@ export function computeCinemaStats(films: FilmView[]): CinemaStats {
     avgRating:
       ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : null,
     tagCounts,
+    genreCounts,
   };
 }

@@ -81,8 +81,9 @@ export function PersonalLibraryView() {
   >({});
 
   // Catalog Filters
-  const [statusFilter, setStatusFilter] = useState<"ALL" | ReadingStatus>("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | ReadingStatus | "NOT_READ">("ALL");
   const [sourceFilter, setSourceFilter] = useState<"ALL" | "MY_STUFF" | "GOODREADS" | "MANUAL">("ALL");
+  const [authorFilter, setAuthorFilter] = useState<string | null>(null);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [isDeduping, setIsDeduping] = useState(false);
   const [openBookSaveId, setOpenBookSaveId] = useState<string | null>(null);
@@ -261,11 +262,20 @@ export function PersonalLibraryView() {
 
   const filteredCatalog = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const authorNorm = authorFilter?.trim().toLowerCase() || null;
     const list = books.filter((b) => {
-      if (statusFilter !== "ALL" && b.readingStatus !== statusFilter) return false;
+      if (statusFilter === "NOT_READ" && b.readingStatus === "FINISHED") return false;
+      if (statusFilter !== "ALL" && statusFilter !== "NOT_READ" && b.readingStatus !== statusFilter) return false;
       if (sourceFilter === "MY_STUFF" && !b.sources.includes("MY_STUFF")) return false;
       if (sourceFilter === "GOODREADS" && !b.sources.includes("GOODREADS")) return false;
       if (sourceFilter === "MANUAL" && !b.sources.includes("MANUAL")) return false;
+      if (
+        authorNorm &&
+        b.author.toLowerCase() !== authorNorm &&
+        !b.author.toLowerCase().includes(authorNorm)
+      ) {
+        return false;
+      }
       if (
         tagFilter &&
         !b.tags.some((t) => t.toLowerCase() === tagFilter.toLowerCase())
@@ -284,7 +294,7 @@ export function PersonalLibraryView() {
     const sorted = [...list];
     sorted.sort((a, b) => compareLibraryBooks(a, b, sortBy));
     return sorted;
-  }, [books, statusFilter, sourceFilter, tagFilter, searchQuery, sortBy]);
+  }, [books, statusFilter, sourceFilter, authorFilter, tagFilter, searchQuery, sortBy]);
 
   const handleEnrichCovers = async () => {
     setIsEnriching(true);
@@ -786,7 +796,21 @@ export function PersonalLibraryView() {
                       className="font-mono text-[10px] uppercase tracking-[0.12em] truncate"
                       style={{ color: activePalette.accent }}
                     >
-                      {activeBook.author}
+                      {activeBook.author &&
+                      activeBook.author.toLowerCase() !== "unknown author" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthorFilter(activeBook.author);
+                            setStatusFilter("ALL");
+                          }}
+                          className="underline underline-offset-4 decoration-dotted hover:opacity-80 cursor-pointer"
+                        >
+                          {activeBook.author}
+                        </button>
+                      ) : (
+                        activeBook.author
+                      )}
                       {activeBook.year ? ` · ${activeBook.year}` : ""}
                       {activeBook.pageCount ? ` · ${activeBook.pageCount} pp` : ""}
                     </div>
@@ -849,6 +873,10 @@ export function PersonalLibraryView() {
           {/* Right: Live Book Inspector & Comments */}
           <BookInspectorDrawer
             book={activeBook}
+            onSelectAuthor={(author) => {
+              setAuthorFilter(author);
+              setStatusFilter("ALL");
+            }}
             onUpdated={() => {
               void loadLibrary();
             }}
@@ -896,8 +924,13 @@ export function PersonalLibraryView() {
                   { id: "ALL", label: "All", count: stats?.total ?? books.length },
                   {
                     id: "FINISHED",
-                    label: "Finished",
+                    label: "Read",
                     count: stats?.finishedCount ?? 0,
+                  },
+                  {
+                    id: "NOT_READ",
+                    label: "Not Read",
+                    count: Math.max(0, (stats?.total ?? books.length) - (stats?.finishedCount ?? 0)),
                   },
                   {
                     id: "READING",
@@ -906,7 +939,7 @@ export function PersonalLibraryView() {
                   },
                   {
                     id: "WANT_TO_READ",
-                    label: "To Read",
+                    label: "Want to Read",
                     count: stats?.wantToReadCount ?? 0,
                   },
                 ] as const
@@ -944,6 +977,15 @@ export function PersonalLibraryView() {
                     : formatBookSourceLabel(src)}
                 </button>
               ))}
+              {authorFilter && (
+                <button
+                  type="button"
+                  onClick={() => setAuthorFilter(null)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-mono bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 cursor-pointer"
+                >
+                  <span>Author: {authorFilter} ×</span>
+                </button>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -1040,11 +1082,12 @@ export function PersonalLibraryView() {
               <p className="font-serif-editorial text-lg text-muted-foreground">
                 No books match the current filters.
               </p>
-              {(tagFilter || searchQuery || statusFilter !== "ALL" || sourceFilter !== "ALL") && (
+              {(tagFilter || authorFilter || searchQuery || statusFilter !== "ALL" || sourceFilter !== "ALL") && (
                 <button
                   type="button"
                   onClick={() => {
                     setTagFilter(null);
+                    setAuthorFilter(null);
                     setSearchQuery("");
                     setStatusFilter("ALL");
                     setSourceFilter("ALL");
@@ -1269,6 +1312,10 @@ export function PersonalLibraryView() {
       <OpenBook3DModal
         book={books.find((b) => b.saveId === openBookSaveId) || null}
         isOpen={Boolean(openBookSaveId)}
+        onSelectAuthor={(author) => {
+          setAuthorFilter(author);
+          setStatusFilter("ALL");
+        }}
         onClose={() => setOpenBookSaveId(null)}
         onUpdated={() => {
           void loadLibrary();

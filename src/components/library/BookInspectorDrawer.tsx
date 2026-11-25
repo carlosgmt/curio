@@ -28,12 +28,14 @@ export interface BookInspectorDrawerProps {
   book: LibraryBookView | null;
   onUpdated: (updatedSave: any, updatedEntity?: any) => void;
   onOpenFullModal: (book: LibraryBookView, presentation?: "standard" | "press") => void;
+  onSelectAuthor?: (author: string) => void;
 }
 
 export function BookInspectorDrawer({
   book,
   onUpdated,
   onOpenFullModal,
+  onSelectAuthor,
 }: BookInspectorDrawerProps) {
   const [notesDraft, setNotesDraft] = useState("");
   const [tagDraft, setTagDraft] = useState("");
@@ -263,7 +265,19 @@ export function BookInspectorDrawer({
             <h3 className="font-serif-editorial text-xl leading-snug font-medium text-foreground">
               {book.title}
             </h3>
-            <p className="text-xs text-muted-foreground">{book.author}</p>
+            {onSelectAuthor &&
+            book.author &&
+            book.author.toLowerCase() !== "unknown author" ? (
+              <button
+                type="button"
+                onClick={() => onSelectAuthor(book.author)}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-dotted cursor-pointer text-left"
+              >
+                {book.author}
+              </button>
+            ) : (
+              <p className="text-xs text-muted-foreground">{book.author}</p>
+            )}
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] tabular-nums text-muted-foreground pt-0.5">
               {book.year && <span>{book.year}</span>}
               {book.pageCount && <span>· {book.pageCount} pp</span>}

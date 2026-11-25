@@ -22,6 +22,8 @@ export interface FilmInspectorDrawerProps {
   film: FilmView | null;
   onUpdated: (updatedSave: any, updatedEntity?: any) => void;
   onOpenFullModal: (film: FilmView, presentation?: "standard" | "press") => void;
+  onSelectDirector?: (director: string) => void;
+  onSelectGenre?: (genre: string) => void;
 }
 
 const HALF_STAR_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
@@ -30,6 +32,8 @@ export function FilmInspectorDrawer({
   film,
   onUpdated,
   onOpenFullModal,
+  onSelectDirector,
+  onSelectGenre,
 }: FilmInspectorDrawerProps) {
   const [notesDraft, setNotesDraft] = useState("");
   const [tagDraft, setTagDraft] = useState("");
@@ -241,10 +245,45 @@ export function FilmInspectorDrawer({
               {film.title}
             </h2>
             <p className="text-xs text-muted-foreground">
-              {film.director}
+              {onSelectDirector &&
+              film.director &&
+              film.director.toLowerCase() !== "unknown director" ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectDirector(film.director)}
+                  className="underline underline-offset-4 decoration-dotted hover:text-foreground cursor-pointer"
+                >
+                  {film.director}
+                </button>
+              ) : (
+                film.director
+              )}
               {film.releaseYear ? ` · ${film.releaseYear}` : ""}
               {film.runtimeMinutes ? ` · ${film.runtimeMinutes} min` : ""}
             </p>
+            {film.genres.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-1">
+                {film.genres.map((g) =>
+                  onSelectGenre ? (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => onSelectGenre(g)}
+                      className="px-2 py-0.5 rounded-full bg-secondary border border-border font-mono text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      {g}
+                    </button>
+                  ) : (
+                    <span
+                      key={g}
+                      className="px-2 py-0.5 rounded-full bg-secondary border border-border font-mono text-[10px] text-muted-foreground"
+                    >
+                      {g}
+                    </span>
+                  )
+                )}
+              </div>
+            )}
           </div>
         </div>
 

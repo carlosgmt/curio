@@ -8,7 +8,13 @@ import {
 } from "../library";
 import { createList, updateBoard } from "@/lib/lists/service";
 import { parseLetterboxdCSV } from "@/lib/importers/letterboxd";
-import { upsertLetterboxdFilms } from "@/lib/sync/letterboxdRss";
+import { parseFilmAffinityCSV, parseFilmAffinityHtml } from "@/lib/importers/filmaffinity";
+import { upsertFilmAffinityFilms } from "@/lib/sync/filmaffinitySync";
+import {
+  parseLetterboxdFilmGridHtml,
+  syncLetterboxdRss,
+  upsertLetterboxdFilms,
+} from "@/lib/sync/letterboxdRss";
 
 function makeFilmSave(overrides: Partial<UserSave> = {}): UserSave {
   return {
@@ -300,5 +306,95 @@ describe("Personal Cinema helpers & Letterboxd import", () => {
       .from(smartLists)
       .where(eq(smartLists.id, board.id));
     expect(row.defaultLayout).toBe("posters");
+  });
+
+  it("parses Letterboxd public films & watchlist grids and errors on empty profiles", async () => {
+    const filmsHtml = `
+      <ul>
+        <li class="griditem">
+          <div class="react-component" data-item-slug="past-lives" data-item-name="Past Lives (2023)">
+            <img src="https://a.ltrbxd.com/past-lives.jpg" alt="Past Lives" />
+          </div>
+          <p class="poster-viewingdata"><span class="rating rated-9">★★★★½</span></p>
+        </li>
+      </ul>
+      <a class="next" href="/testuser/films/page/2/">Older</a>
+    `;
+    const parsedGrid = parseLetterboxdFilmGridHtml(filmsHtml);
+    expect(parsedGrid.items).toHaveLength(1);
+    expect(parsedGrid.items[0].filmTitle).toBe("Past Lives");
+    expect(parsedGrid.items[0].filmYear).toBe(2023);
+    expect(parsedGrid.items[0].memberRating).toBe(4.5);
+    expect(parsedGrid.items[0].isWatchlist).toBe(false);
+    expect(parsedGrid.nextPath).toBe("/testuser/films/page/2/");
+
+    const wlGrid = parseLetterboxdFilmGridHtml(
+      `<li class="griditem"><div data-item-slug="close-up" data-item-name="Close-Up (1990)"></div></li>`,
+      { isWatchlist: true }
+    );
+    expect(wlGrid.items[0].isWatchlist).toBe(true);
+
+    const ts = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({ email: `lbempty-${ts}@curio.local`, username: `lbempty_${ts}` })
+      .returning();
+
+    const emptyFetch = (async () =>
+      new Response("<rss><channel></channel></rss>", { status: 200 })) as unknown as typeof fetch;
+    await expect(
+      syncLetterboxdRss("emptyuser", user.id, { fetchFn: emptyFetch, hydrateMissingDirectors: false })
+    ).rejects.toThrow(/no public films, diary entries, or watchlist items/i);
+  });
+
+  it("parses FilmAffinity CSV & saved HTML (1-10 scaled to 0.5-5 stars) and upserts with genres", async () => {
+    const csv = [
+      "Title,Year,Director,Rating,WatchedDate,Genres,Review,URL",
+      '"Volver",2006,"Pedro Almodóvar",9,2026-10-05,"Drama, Comedy","Warm and sharp.","https://www.filmaffinity.com/en/film252216.html"',
+    ].join("\n");
+    const csvItems = parseFilmAffinityCSV(csv);
+    expect(csvItems).toHaveLength(1);
+    expect(csvItems[0].filmaffinityId).toBe("252216");
+    expect(csvItems[0].director).toBe("Pedro Almodóvar");
+    expect(csvItems[0].rating).toBe(4.5);
+    expect(csvItems[0].genres).toEqual(["Drama", "Comedy"]);
+
+    const faHtml = `
+      <div class="movie-card" data-movie-id="809297">
+        <div class="mc-poster"><img src="https://pics.filmaffinity.com/aftersun.jpg" /></div>
+        <div class="mc-title"><a href="/en/film809297.html">Aftersun</a> (2022)</div>
+        <div class="mc-director">Charlotte Wells</div>
+        <div class="ur-mr-rat">8</div>
+      </div>
+    `;
+    const htmlItems = parseFilmAffinityHtml(faHtml);
+    expect(htmlItems).toHaveLength(1);
+    expect(htmlItems[0].title).toBe("Aftersun");
+    expect(htmlItems[0].releaseYear).toBe(2022);
+    expect(htmlItems[0].director).toBe("Charlotte Wells");
+    expect(htmlItems[0].rating).toBe(4);
+
+    const ts = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({ email: `fa-${ts}@curio.local`, username: `fa_${ts}` })
+      .returning();
+
+    const res = await upsertFilmAffinityFilms(user.id, [...csvItems, ...htmlItems], {
+      hydrateMissingMetadata: false,
+    });
+    expect(res.createdSaves).toBe(2);
+
+    const saved = await db
+      .select({ save: userSaves, entity: globalEntities })
+      .from(userSaves)
+      .innerJoin(globalEntities, eq(userSaves.entityId, globalEntities.id))
+      .where(eq(userSaves.userId, user.id));
+    expect(saved).toHaveLength(2);
+    const volver = saved.find((r) => r.entity.title === "Volver")!;
+    const volverView = toFilmView(volver.save, volver.entity);
+    expect(volverView.sources).toContain("FILMAFFINITY");
+    expect(volverView.genres).toEqual(["Drama", "Comedy"]);
+    expect(volverView.rating).toBe(4.5);
   });
 });

@@ -7,6 +7,8 @@ import type { ImportedBookmark } from "./bookmarks";
 import type { ImportedKeepNote, ImportedPlace } from "./takeout";
 import { resolveFilm } from "../enrichment/providers/cinema";
 import { resolveBook } from "../enrichment/providers/books";
+import { cleanCommercialBookTitle, isOwnedBook } from "../books/library";
+import { ensureHierarchicalBoard } from "../sync/engine";
 
 export type AnyImportedItem =
   | ImportedFilm
@@ -84,6 +86,7 @@ export async function ingestImportedItems(
   const targetUserId = userId || (await getOrCreateDefaultUser()).id;
   let insertedCount = 0;
   let cacheHitCount = 0;
+  let hasImportedBooks = false;
   const errors: string[] = [];
 
   for (const item of items) {
@@ -116,7 +119,11 @@ export async function ingestImportedItems(
       } else if ("externalUrl" in item && item.externalUrl) {
         canonicalUrl = item.externalUrl;
       } else if (item.coreType === "BOOK") {
-        canonicalUrl = `https://openlibrary.org/search?q=${encodeURIComponent(item.title)}`;
+        const bookItem = item as ImportedBook;
+        hasImportedBooks = true;
+        canonicalUrl = bookItem.bookId
+          ? `https://www.goodreads.com/book/show/${bookItem.bookId}`
+          : `https://openlibrary.org/search?q=${encodeURIComponent(item.title)}`;
       } else {
         canonicalUrl = `https://curio.local/item/${encodeURIComponent(
           item.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")
@@ -133,6 +140,22 @@ export async function ingestImportedItems(
           .where(eq(globalEntities.canonicalExternalId, item.canonicalExternalId))
           .limit(1);
         if (byExtId) existingEntity = byExtId;
+      }
+
+      if (!existingEntity && item.coreType === "BOOK") {
+        const bookItem = item as ImportedBook;
+        const bookRows = await db
+          .select()
+          .from(globalEntities)
+          .where(eq(globalEntities.typePath, "/product/book"));
+        const targetNorm = cleanCommercialBookTitle(bookItem.title).title.toLowerCase();
+        existingEntity =
+          bookRows.find((e) => {
+            const csd = (e.coreStructuredData as Record<string, any>) || {};
+            if (bookItem.isbn && csd.isbn === bookItem.isbn) return true;
+            if (bookItem.bookId && csd.goodreadsId === bookItem.bookId) return true;
+            return cleanCommercialBookTitle(e.title).title.toLowerCase() === targetNorm;
+          }) || null;
       }
 
       if (!existingEntity) {
@@ -220,15 +243,37 @@ export async function ingestImportedItems(
       }
       if ("myRating" in item && item.myRating !== undefined) {
         userCustomValues.myRating = item.myRating;
+        userCustomValues.rating = item.myRating;
       }
       if ("review" in item && item.review) {
         personalNotes = item.review;
+      }
+      if ("privateNotes" in item && item.privateNotes) {
+        personalNotes = personalNotes
+          ? personalNotes.includes(item.privateNotes)
+            ? personalNotes
+            : `${personalNotes}\n\n${item.privateNotes}`
+          : item.privateNotes;
       }
       if ("comment" in item && item.comment) {
         personalNotes = item.comment;
       }
       if ("tags" in item && Array.isArray(item.tags)) {
         autoTags = item.tags;
+      }
+
+      if (item.coreType === "BOOK") {
+        const bookItem = item as ImportedBook;
+        if (bookItem.shelf) userCustomValues.shelf = bookItem.shelf;
+        if (bookItem.readingStatus) userCustomValues.readingStatus = bookItem.readingStatus;
+        if (bookItem.dateRead) userCustomValues.dateRead = bookItem.dateRead;
+        if (bookItem.dateAdded) userCustomValues.dateAdded = bookItem.dateAdded;
+        if (bookItem.bookId) userCustomValues.goodreadsBookId = bookItem.bookId;
+        if (bookItem.goodreadsShelves) userCustomValues.goodreadsShelves = bookItem.goodreadsShelves;
+        if (bookItem.ownedCopies && bookItem.ownedCopies > 0) {
+          userCustomValues.owned = true;
+          userCustomValues.bookSource = "OWNED";
+        }
       }
 
       const enrichmentStatus =
@@ -243,22 +288,52 @@ export async function ingestImportedItems(
         .limit(1);
 
       if (existingSave) {
+        const alreadyOwned = isOwnedBook(existingSave, existingEntity);
+        const mergedTags = [
+          ...new Map(
+            [...(existingSave.autoTags || []), ...autoTags]
+              .map((t) => String(t || "").trim())
+              .filter(Boolean)
+              .map((t) => [t.toLowerCase(), t])
+          ).values(),
+        ];
+        const nextNotes = personalNotes
+          ? existingSave.personalNotes &&
+            existingSave.personalNotes.toLowerCase().includes(personalNotes.toLowerCase())
+            ? existingSave.personalNotes
+            : existingSave.personalNotes
+            ? `${existingSave.personalNotes}\n\n${personalNotes}`
+            : personalNotes
+          : existingSave.personalNotes;
+        const incomingWish =
+          item.coreType === "BOOK" && "wishlist" in item ? Boolean(item.wishlist) : existingSave.wishlist;
         await db
           .update(userSaves)
           .set({
+            wishlist: alreadyOwned ? false : incomingWish,
             userCustomValues: {
               ...((existingSave.userCustomValues as Record<string, any>) || {}),
               ...userCustomValues,
+              ...(alreadyOwned ? { owned: true, bookSource: "OWNED" } : {}),
             },
-            personalNotes: personalNotes || existingSave.personalNotes,
+            autoTags: mergedTags,
+            personalNotes: nextNotes,
           })
           .where(eq(userSaves.id, existingSave.id));
       } else {
+        const isOwned = Boolean((item as ImportedBook).ownedCopies && (item as ImportedBook).ownedCopies! > 0);
         await db.insert(userSaves).values({
           userId: targetUserId,
           entityId,
           typePath: item.typePath,
           isPrivateMemo: false,
+          wishlist:
+            item.coreType === "BOOK" && "wishlist" in item
+              ? isOwned
+                ? false
+                : Boolean(item.wishlist)
+              : false,
+          hasConvertedPurchase: isOwned,
           personalNotes: personalNotes || null,
           userCustomValues,
           autoTags,
@@ -271,6 +346,15 @@ export async function ingestImportedItems(
     } catch (err: any) {
       errors.push(`Item ${item.title}: ${err.message || String(err)}`);
     }
+  }
+
+  if (hasImportedBooks) {
+    await ensureHierarchicalBoard(targetUserId, {
+      rootSlug: "books",
+      rootTitle: "Books",
+      rootDefaultLayout: "shelf",
+      autoRules: { coreType: "BOOK" },
+    }).catch(() => {});
   }
 
   return { insertedCount, cacheHitCount, errors };

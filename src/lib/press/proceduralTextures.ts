@@ -179,22 +179,46 @@ export function createSpineCanvas(
   ctx.fillStyle = palette.coverBg;
   ctx.fillRect(0, 0, w, h);
 
-  ctx.fillStyle = "rgba(0,0,0,0.16)";
-  ctx.fillRect(0, 0, 8, h);
-  ctx.fillRect(w - 8, 0, 8, h);
+  // Subtle cloth weave along spine
+  ctx.fillStyle = "rgba(255,255,255,0.03)";
+  for (let y = 0; y < h; y += 6) {
+    ctx.fillRect(0, y, w, 1);
+  }
+
+  // Rounded buckram spine edge shading
+  const spineGrad = ctx.createLinearGradient(0, 0, w, 0);
+  spineGrad.addColorStop(0, "rgba(0,0,0,0.28)");
+  spineGrad.addColorStop(0.16, "rgba(255,255,255,0.08)");
+  spineGrad.addColorStop(0.5, "rgba(255,255,255,0.02)");
+  spineGrad.addColorStop(0.84, "rgba(0,0,0,0.06)");
+  spineGrad.addColorStop(1, "rgba(0,0,0,0.28)");
+  ctx.fillStyle = spineGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Editorial foil head and tail rules
+  ctx.fillStyle = palette.accent;
+  ctx.globalAlpha = 0.65;
+  ctx.fillRect(22, 42, w - 44, 3);
+  ctx.fillRect(22, h - 45, w - 44, 3);
+  ctx.globalAlpha = 1;
 
   ctx.save();
   ctx.translate(w / 2, h / 2);
   ctx.rotate(Math.PI / 2);
   ctx.fillStyle = palette.coverInk;
   ctx.textBaseline = "middle";
-  ctx.font = '500 32px "Newsreader", Georgia, serif';
+  ctx.font = '500 30px "Newsreader", Georgia, serif';
   ctx.textAlign = "left";
   const spineTitle = meta.isWishlist ? `WISHLIST · ${meta.title}` : meta.title;
-  ctx.fillText(spineTitle.slice(0, 34), -h * 0.36, 0);
+  const maxTitleChars = 32;
+  const displayTitle =
+    spineTitle.length > maxTitleChars
+      ? `${spineTitle.slice(0, maxTitleChars - 1)}…`
+      : spineTitle;
+  ctx.fillText(displayTitle, -h * 0.37, -4);
 
   ctx.fillStyle = palette.accent;
-  ctx.font = '500 18px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.font = '500 17px "IBM Plex Mono", ui-monospace, monospace';
   ctx.textAlign = "right";
   ctx.fillText(meta.creator.toUpperCase().slice(0, 18), h * 0.38, 0);
   ctx.restore();

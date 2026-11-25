@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import Link from "next/link";
 import { Omnibox } from "@/components/shapeshift/Omnibox";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import { ImporterModal } from "@/components/importers/ImporterModal";
@@ -39,7 +40,14 @@ import {
   Loader2,
   Shirt,
   Package,
+  BookOpen,
+  Plus,
 } from "lucide-react";
+import { LogBookModal } from "@/components/library/LogBookModal";
+import {
+  GoodreadsSyncModal,
+  type GoodreadsSyncStatusInfo,
+} from "@/components/library/GoodreadsSyncModal";
 
 const VALID_LAYOUT_MODES = new Set<LayoutEngineType>(["masonry", "grid", "timeline", "shelf"]);
 
@@ -123,6 +131,10 @@ export default function Home() {
   const [garmentSeasonFilter, setGarmentSeasonFilter] = useState<string>("ALL");
   const [isSyncingCloset, setIsSyncingCloset] = useState(false);
   const [isSyncingPurchaseHub, setIsSyncingPurchaseHub] = useState(false);
+  const [isLogBookOpen, setIsLogBookOpen] = useState(false);
+  const [isGoodreadsSyncOpen, setIsGoodreadsSyncOpen] = useState(false);
+  const [goodreadsStatus, setGoodreadsStatus] =
+    useState<GoodreadsSyncStatusInfo | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const fetchSeqRef = useRef(0);
 
@@ -949,7 +961,7 @@ export default function Home() {
 
   return (
     <PullToRefresh
-      disabled={Boolean(selectedCard) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen}
+      disabled={Boolean(selectedCard) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen || isLogBookOpen || isGoodreadsSyncOpen}
       onRefresh={() =>
         Promise.all([
           fetchItems({ reset: true, wishlist: wishOnly }),
@@ -964,7 +976,15 @@ export default function Home() {
     <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-8 sm:py-12 px-4 sm:px-6 lg:px-8 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
       {/* Header */}
       <div className="max-w-4xl mx-auto mb-8">
-        <div className="flex items-center justify-end mb-4">
+        <div className="flex items-center justify-end gap-2.5 mb-4">
+          <Link
+            href="/library"
+            data-testid="nav-personal-library"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 hover:bg-neutral-200/80 dark:hover:bg-neutral-700/80 border border-neutral-200/60 dark:border-neutral-700/60 text-xs font-medium text-neutral-800 dark:text-neutral-200 transition"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>Library</span>
+          </Link>
           <UserNav
             user={user}
             onOpenAuth={(tab = "login") => {
@@ -1221,6 +1241,41 @@ export default function Home() {
                         >
                           <span>Open Closet ↗</span>
                         </a>
+                      </>
+                    )}
+                    {activeListSlug === "books" && (
+                      <>
+                        <Link
+                          href="/library"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Open Personal Library →</span>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setIsLogBookOpen(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Log Read Book</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            apiFetch("/api/v1/library/goodreads-sync")
+                              .then((r) => (r.ok ? r.json() : null))
+                              .then((d) => {
+                                if (d) setGoodreadsStatus(d);
+                              })
+                              .catch(() => {});
+                            setIsGoodreadsSyncOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Sync Goodreads</span>
+                        </button>
                       </>
                     )}
                     {isMyStuffDescendant && (
@@ -1499,6 +1554,27 @@ export default function Home() {
           setIsImporterOpen(false);
           fetchItems({ reset: true });
           fetchLists();
+        }}
+      />
+
+      <LogBookModal
+        isOpen={isLogBookOpen}
+        onClose={() => setIsLogBookOpen(false)}
+        onSaved={() => {
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
+      />
+
+      <GoodreadsSyncModal
+        isOpen={isGoodreadsSyncOpen}
+        status={goodreadsStatus}
+        onClose={() => setIsGoodreadsSyncOpen(false)}
+        onSynced={() => {
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
         }}
       />
 

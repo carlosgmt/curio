@@ -80,6 +80,78 @@ export function classifyPurchaseHubItem(item: PurchaseHubSyncItem): {
 
   if (catLower === "books & media" || catLower === "books and media") {
     const probe = `${item.canonical_name} ${item.brand || ""} ${(item.tags || []).join(" ")}`.toLowerCase();
+
+    // 1. Hardware, e-readers, storage & workstation accessories synced under Books & Media
+    if (
+      /\b(nvme|ssd|usb\s*hub|usb-?c|adapter|cable|kindle|e-?reader|ebook\s*reader|tablet|computer\s*storage|pc\s*component|laptop\s*accessory)\b/.test(
+        probe
+      )
+    ) {
+      return {
+        skip: false,
+        coreType: "PRODUCT",
+        typePath: "/product/electronics",
+        boards: [
+          {
+            rootSlug: "my-stuff",
+            rootTitle: "My Stuff",
+            rootDescription: "Owned durable objects synced from Purchase Hub",
+            rootDefaultLayout: "shelf",
+            subSlug: "my-stuff-electronics",
+            subTitle: "Electronics",
+            subDescription: "Owned Electronics items synced from Purchase Hub",
+            subDefaultLayout: "shelf",
+            sectionHeader: kitSection,
+          },
+        ],
+      };
+    }
+
+    // 2. Fitness / misc non-books occasionally categorized under Books & Media
+    if (/\b(foam\s*roller|rodillo|myofascial|self-massage)\b/.test(probe)) {
+      return {
+        skip: false,
+        coreType: "PRODUCT",
+        typePath: "/product",
+        boards: [
+          {
+            rootSlug: "my-stuff",
+            rootTitle: "My Stuff",
+            rootDescription: "Owned durable objects synced from Purchase Hub",
+            rootDefaultLayout: "shelf",
+            subSlug: "my-stuff-sports-outdoors",
+            subTitle: "Sports & Outdoors",
+            subDescription: "Owned Sports & Outdoors items synced from Purchase Hub",
+            subDefaultLayout: "shelf",
+            sectionHeader: kitSection,
+          },
+        ],
+      };
+    }
+
+    // 3. Video games & digital/board RPGs -> Games media board
+    if (
+      /\b(video\s*game|rpg\s*game|playstation|xbox|nintendo|stadia|steam|deckbuilding|early\s*access|juego\s*completo|baldur'?s\s*gate|cyberpunk\s*2077|diablo\s*iii|destiny\s*2|little\s*nightmares|dear\s*esther|board\s*game)\b/.test(
+        probe
+      )
+    ) {
+      return {
+        skip: false,
+        coreType: "MEDIA",
+        typePath: "/media/videogame",
+        boards: [
+          {
+            rootSlug: "games",
+            rootTitle: "Games",
+            rootDefaultLayout: "shelf",
+            sectionHeader: kitSection,
+            autoRules: { typePathPrefix: "/media/videogame" },
+          },
+        ],
+      };
+    }
+
+    // 4. Music / Vinyl
     if (/\b(vinyl|lp|album|turntable|record|soundtrack cd)\b/.test(probe)) {
       return {
         skip: false,
@@ -96,6 +168,8 @@ export function classifyPurchaseHubItem(item: PurchaseHubSyncItem): {
         ],
       };
     }
+
+    // 5. Films / Blu-ray
     if (/\b(blu-?ray|dvd|4k uhd|film|movie|criterion)\b/.test(probe)) {
       return {
         skip: false,
@@ -112,6 +186,34 @@ export function classifyPurchaseHubItem(item: PurchaseHubSyncItem): {
         ],
       };
     }
+
+    // 6. Kids' sticker, coloring & toddler activity books -> excluded from Personal Library
+    if (
+      /\b(sticker\s*book|sticker\s*activity|coloring\s*book|colouring\s*book|libros?\s*para\s*colorear|colorear|activity\s*book|toddler\s*activity|toddler\s*book|kids?\s*activity|peppa\s*pig|shaun\s*the\s*sheep|tiptoi|watch\s*me\s*color)\b/.test(
+        probe
+      )
+    ) {
+      return {
+        skip: false,
+        coreType: "PRODUCT",
+        typePath: "/product/kids-activity",
+        boards: [
+          {
+            rootSlug: "my-stuff",
+            rootTitle: "My Stuff",
+            rootDescription: "Owned durable objects synced from Purchase Hub",
+            rootDefaultLayout: "shelf",
+            subSlug: "my-stuff-kids-activities",
+            subTitle: "Kids & Activities",
+            subDescription: "Owned kids sticker, coloring & activity items synced from Purchase Hub",
+            subDefaultLayout: "shelf",
+            sectionHeader: kitSection,
+          },
+        ],
+      };
+    }
+
+    // 7. Genuine Books -> Personal Library
     return {
       skip: false,
       coreType: "BOOK",
@@ -192,6 +294,25 @@ export function mapPurchaseHubItemToSyncRecord(
     item.owner_scope ? `owner:${item.owner_scope}` : null,
   ].filter((t): t is string => Boolean(t && t.trim()));
 
+  const cleanBrand =
+    item.brand && !/^(amazon|galaxus|google_play|provini)$/i.test(item.brand.trim())
+      ? item.brand.trim()
+      : null;
+
+  const coreStructuredData: Record<string, unknown> = {};
+  if (cleanBrand) coreStructuredData.brand = cleanBrand;
+  if (item.model_number) coreStructuredData.modelNumber = item.model_number;
+  if (item.retailers) coreStructuredData.retailer = item.retailers;
+  const purchaseDate = item.last_bought ?? item.first_bought;
+  if (purchaseDate) coreStructuredData.purchaseDate = purchaseDate;
+  if (item.warranty_until) coreStructuredData.warrantyUntil = item.warranty_until;
+  if (cls.coreType === "BOOK") {
+    coreStructuredData.title = item.canonical_name;
+    if (item.model_number && /^[0-9Xx]{10,13}$/.test(item.model_number.trim())) {
+      coreStructuredData.isbn = item.model_number.trim();
+    }
+  }
+
   return {
     externalId: item.product_id,
     entityKey,
@@ -200,7 +321,7 @@ export function mapPurchaseHubItemToSyncRecord(
     coreType: cls.coreType,
     typePath: cls.typePath,
     title: item.canonical_name,
-    brandOrCreator: item.brand ?? null,
+    brandOrCreator: cls.coreType === "BOOK" ? cleanBrand : item.brand ?? null,
     modelNumber: item.model_number ?? null,
     summary: summaryParts.join(" · ") || null,
     heroImageUrl,
@@ -209,13 +330,7 @@ export function mapPurchaseHubItemToSyncRecord(
     wishlist: false,
     tags,
     personalNotes: item.notes?.trim() || null,
-    coreStructuredData: {
-      brand: item.brand ?? undefined,
-      modelNumber: item.model_number ?? undefined,
-      retailer: item.retailers ?? undefined,
-      purchaseDate: item.last_bought ?? item.first_bought ?? undefined,
-      warrantyUntil: item.warranty_until ?? undefined,
-    },
+    coreStructuredData,
     extendedAttributes: {
       source: "purchase-hub",
       purchaseHubProductId: item.product_id,
@@ -230,6 +345,7 @@ export function mapPurchaseHubItemToSyncRecord(
       hasManual: Boolean(item.has_manual),
       manualUrl: item.manual_url ?? null,
       modelNumber: item.model_number ?? null,
+      ...(cls.coreType === "BOOK" ? { bookSource: "OWNED", owned: true } : {}),
     },
     sourceLink: item.source_url
       ? {

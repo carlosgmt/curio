@@ -4,12 +4,14 @@ import { getConnectedSaves, getConnectedSavesMap, type ConnectedItem } from "@/l
 import { matchesAutoRules } from "@/lib/lists/service";
 import { evaluateAttributePromotion } from "@/lib/curio-learns/attributes";
 import type { UserAffiliateTags } from "@/lib/commerce/affiliate";
+import { readingStatusToShelf, type ReadingStatus } from "@/lib/books/library";
 
 export interface UpdateSaveDetailsInput {
   privateTitle?: string | null;
   personalNotes?: string | null;
   typePath?: string | null;
   userCustomValues?: Record<string, unknown>;
+  autoTags?: string[];
   isPrivateMemo?: boolean;
   wishlist?: boolean;
   title?: string | null;
@@ -273,7 +275,27 @@ export async function updateSaveDetails(
       }
     }
   }
-  if (updates.userCustomValues !== undefined) patch.userCustomValues = updates.userCustomValues;
+  if (updates.userCustomValues !== undefined) {
+    const nextCv = { ...updates.userCustomValues };
+    if (typeof nextCv.readingStatus === "string") {
+      const rs = nextCv.readingStatus.trim().toUpperCase();
+      if (rs === "FINISHED" || rs === "READING" || rs === "WANT_TO_READ") {
+        nextCv.readingStatus = rs;
+        nextCv.shelf = readingStatusToShelf(rs as ReadingStatus);
+      }
+    }
+    patch.userCustomValues = nextCv;
+  }
+  if (updates.autoTags !== undefined) {
+    const seen = new Map<string, string>();
+    for (const rawTag of updates.autoTags) {
+      const clean = String(rawTag || "").trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (!seen.has(key)) seen.set(key, clean);
+    }
+    patch.autoTags = [...seen.values()];
+  }
   if (updates.isPrivateMemo !== undefined) patch.isPrivateMemo = updates.isPrivateMemo;
   if (updates.wishlist !== undefined) patch.wishlist = updates.wishlist;
 

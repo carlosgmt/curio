@@ -2,6 +2,7 @@ import { db, userSaves, globalEntities, curioTypes } from "@/db";
 import { eq, and, sql } from "drizzle-orm";
 import { classifyEntityType, invalidateTypeCache } from "./ontology";
 import { generateDeterministicEmbedding } from "@/lib/search/vector";
+import { readingStatusToShelf, type ReadingStatus } from "@/lib/books/library";
 
 export interface RegisterCustomTypeParams {
   name: string;
@@ -47,6 +48,13 @@ export async function updateSaveCustomAttributes(
       delete merged[key];
     } else {
       merged[key] = val;
+    }
+  }
+  if (typeof merged.readingStatus === "string") {
+    const rs = merged.readingStatus.trim().toUpperCase();
+    if (rs === "FINISHED" || rs === "READING" || rs === "WANT_TO_READ") {
+      merged.readingStatus = rs;
+      merged.shelf = readingStatusToShelf(rs as ReadingStatus);
     }
   }
 

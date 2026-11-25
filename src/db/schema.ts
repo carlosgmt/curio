@@ -63,6 +63,9 @@ export const users = sqliteTable("users", {
     googleTvEnabled?: boolean;
     letterboxdUsername?: string;
     goodreadsUserId?: string;
+    goodreadsAuthStatus?: "ok" | "expired" | "unconfigured";
+    goodreadsLastError?: string | null;
+    goodreadsLastSyncedAt?: string | null;
     lastFeedSyncAt?: string;
   }>(),
   tasteVector: float32Array("taste_vector", { dimensions: 768 }),

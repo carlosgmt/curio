@@ -277,4 +277,128 @@ describe("PurchaseHubAdapter & Books/Media/Furniture Sync", () => {
     expect(boardTitles).toContain(`Furnishing-${ts}`);
     expect(boardTitles).toContain("Furniture");
   });
+
+  it("separates hardware, video games, and kids sticker/coloring books from genuine books and updates boards on reclassification", async () => {
+    const ts = Date.now();
+    const [user] = await db
+      .insert(users)
+      .values({ email: `ph-sep-${ts}@curio.local`, username: `phsep_${ts}` })
+      .returning();
+
+    const kindleCls = classifyPurchaseHubItem({
+      product_id: `prd_kindle_${ts}`,
+      canonical_name: "Amazon Kindle Paperwhite (16 GB)",
+      category: "Books & Media",
+      tags: ["ebook reader", "kindle", "book"],
+    });
+    expect(kindleCls.coreType).toBe("PRODUCT");
+    expect(kindleCls.typePath).toBe("/product/electronics");
+    expect(kindleCls.boards[0].subSlug).toBe("my-stuff-electronics");
+
+    const ssdCls = classifyPurchaseHubItem({
+      product_id: `prd_ssd_${ts}`,
+      canonical_name: "fanxiang S500 Pro 256 GB NVMe SSD",
+      category: "Books & Media",
+      tags: ["nvme ssd", "pc component"],
+    });
+    expect(ssdCls.coreType).toBe("PRODUCT");
+    expect(ssdCls.boards[0].subSlug).toBe("my-stuff-electronics");
+
+    const gameCls = classifyPurchaseHubItem({
+      product_id: `prd_bg3_${ts}`,
+      canonical_name: "Baldur's Gate 3 Early Access",
+      category: "Books & Media",
+      tags: ["video game", "role playing"],
+    });
+    expect(gameCls.coreType).toBe("MEDIA");
+    expect(gameCls.typePath).toBe("/media/videogame");
+    expect(gameCls.boards[0].rootSlug).toBe("games");
+
+    const stickerCls = classifyPurchaseHubItem({
+      product_id: `prd_peppa_${ts}`,
+      canonical_name: "Peppa Pig: Peppa in Space Sticker Activity Book",
+      category: "Books & Media",
+      tags: ["sticker book", "activity book"],
+    });
+    expect(stickerCls.coreType).toBe("PRODUCT");
+    expect(stickerCls.typePath).toBe("/product/kids-activity");
+    expect(stickerCls.boards[0].subSlug).toBe("my-stuff-kids-activities");
+
+    const realBookCls = classifyPurchaseHubItem({
+      product_id: `prd_realbook_${ts}`,
+      canonical_name: "Babel: The SUNDAY TIMES bestseller",
+      category: "Books & Media",
+      tags: ["bestseller", "book"],
+    });
+    expect(realBookCls.coreType).toBe("BOOK");
+    expect(realBookCls.typePath).toBe("/product/book");
+    expect(realBookCls.boards[0].rootSlug).toBe("books");
+
+    // Seed a legacy misclassified SSD currently sitting in 'books' and verify sync moves it out
+    const [booksBoard] = await db
+      .insert(smartLists)
+      .values({
+        userId: user.id,
+        title: "Books",
+        slug: `books-reclass-${ts}`,
+        visibility: "PRIVATE",
+      })
+      .returning();
+    const [legacySsdEnt] = await db
+      .insert(globalEntities)
+      .values({
+        urlHash: `ssd-${ts}`,
+        entityKey: `purchase-hub:prd_legacy_ssd_${ts}`,
+        canonicalExternalId: `purchase-hub:prd_legacy_ssd_${ts}`,
+        canonicalUrl: "https://example.com/ssd",
+        coreType: "BOOK",
+        typePath: "/product/book",
+        title: "fanxiang NVMe SSD",
+        coreStructuredData: {},
+        extendedAttributes: {},
+      })
+      .returning();
+    const [legacySsdSave] = await db
+      .insert(userSaves)
+      .values({
+        userId: user.id,
+        entityId: legacySsdEnt.id,
+        typePath: "/product/book",
+      })
+      .returning();
+    await db.insert(listItems).values({
+      listId: booksBoard.id,
+      saveId: legacySsdSave.id,
+      positionIndex: 0,
+    });
+
+    const syncRes = await syncPurchaseHubWithCurio(user.id, {
+      force: true,
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            digest: `reclass-${ts}`,
+            items: [
+              {
+                product_id: `prd_legacy_ssd_${ts}`,
+                canonical_name: "fanxiang S500 Pro 256 GB NVMe SSD",
+                category: "Books & Media",
+                tags: ["nvme ssd", "pc component"],
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        ),
+    });
+
+    expect(syncRes.synced).toBe(true);
+    const [reclassifiedEnt] = await db
+      .select()
+      .from(globalEntities)
+      .where(eq(globalEntities.id, legacySsdEnt.id));
+    expect(reclassifiedEnt.coreType).toBe("PRODUCT");
+    expect(reclassifiedEnt.typePath).toBe("/product/electronics");
+
+    clearAdapterSyncCache("purchase-hub", user.id);
+  });
 });

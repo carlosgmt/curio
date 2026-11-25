@@ -151,14 +151,31 @@ export function ShelfLayout({
   );
   const shelfItems3D = useMemo<VirtualBookshelfItem[]>(
     () =>
-      items.map((card) => ({
-        saveId: card.save.id,
-        spec: getArchetypeSpec(card),
-        meta: formatSpineMeta(card),
-        palette:
-          palettesBySaveId[card.save.id] || getDeterministicClothPalette(card),
-        imageUrl: resolveSameOriginImageUrl(card.entity?.heroImageUrl),
-      })),
+      items.map((card) => {
+        const csd =
+          card.entity?.coreStructuredData &&
+          typeof card.entity.coreStructuredData === "object"
+            ? (card.entity.coreStructuredData as Record<string, any>)
+            : {};
+        const cv =
+          card.save?.userCustomValues &&
+          typeof card.save.userCustomValues === "object"
+            ? (card.save.userCustomValues as Record<string, any>)
+            : {};
+        const rawPages = csd.pageCount ?? csd.pages ?? csd.numberOfPagesMedian;
+        const parsedPages =
+          typeof rawPages === "number" ? rawPages : parseInt(String(rawPages || ""), 10);
+        return {
+          saveId: card.save.id,
+          spec: getArchetypeSpec(card),
+          meta: formatSpineMeta(card),
+          palette:
+            palettesBySaveId[card.save.id] || getDeterministicClothPalette(card),
+          imageUrl: resolveSameOriginImageUrl(card.entity?.heroImageUrl),
+          pageCount: Number.isFinite(parsedPages) && parsedPages > 0 ? parsedPages : null,
+          rating: typeof cv.rating === "number" ? cv.rating : typeof cv.myRating === "number" ? cv.myRating : null,
+        };
+      }),
     [items, palettesBySaveId]
   );
 

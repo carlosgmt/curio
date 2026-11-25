@@ -547,6 +547,27 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
     }
 
     const targetListIds = [...new Set(boardIdByKey.values())];
+    const userBoards = tx
+      .select({ id: smartLists.id, slug: smartLists.slug })
+      .from(smartLists)
+      .where(eq(smartLists.userId, userId))
+      .all();
+    const managedBoardIds = new Set(
+      userBoards
+        .filter(
+          (b) =>
+            b.slug === "books" ||
+            b.slug === "films" ||
+            b.slug === "music" ||
+            b.slug === "games" ||
+            b.slug === "my-stuff" ||
+            b.slug.startsWith("my-stuff-") ||
+            b.slug === "closet" ||
+            b.slug === "wardrobe" ||
+            b.slug === "outfits"
+        )
+        .map((b) => b.id)
+    );
     const listMembershipMap = new Map<string, { id: string; sectionHeader: string | null }>();
     const maxPosByListId = new Map<string, number>();
     if (targetListIds.length > 0) {
@@ -579,11 +600,18 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
       liveEntityKeys.add(extKey);
 
       const urlHash = sha256Hex(rec.canonicalUrl);
-      const mergedStruct = rec.coreStructuredData || {};
-      const mergedExtAttr = rec.extendedAttributes || {};
+      const mergedStruct: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rec.coreStructuredData || {})) {
+        if (v !== undefined) mergedStruct[k] = v;
+      }
+      const mergedExtAttr: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rec.extendedAttributes || {})) {
+        if (v !== undefined) mergedExtAttr[k] = v;
+      }
 
       let resolvedSaveId: string | null = null;
       let resolvedEntityId: string | null = null;
+      let wasReclassified = false;
 
       // Check existing user save by entityKey or canonicalExternalId
       const existingMatch =
@@ -593,6 +621,8 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
         const { save, entity } = existingMatch;
         resolvedSaveId = save.id;
         resolvedEntityId = entity.id;
+        wasReclassified =
+          entity.coreType !== rec.coreType || (entity.typePath || "") !== rec.typePath;
 
         const existingExt =
           entity.extendedAttributes && typeof entity.extendedAttributes === "object"
@@ -603,12 +633,21 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
             ? (entity.coreStructuredData as Record<string, unknown>)
             : {};
 
+        const preserveEnrichedBook =
+          rec.coreType === "BOOK" && entity.coreType === "BOOK";
+
         tx.update(globalEntities)
           .set({
             title: rec.title,
-            summary: rec.summary ?? entity.summary,
-            heroImageUrl: rec.heroImageUrl || entity.heroImageUrl,
-            brandOrCreator: rec.brandOrCreator ?? entity.brandOrCreator,
+            summary: preserveEnrichedBook && entity.summary && !entity.summary.includes("Location:")
+              ? entity.summary
+              : rec.summary ?? entity.summary,
+            heroImageUrl: preserveEnrichedBook
+              ? entity.heroImageUrl || rec.heroImageUrl
+              : rec.heroImageUrl || entity.heroImageUrl,
+            brandOrCreator: preserveEnrichedBook
+              ? entity.brandOrCreator || rec.brandOrCreator || null
+              : rec.brandOrCreator ?? entity.brandOrCreator,
             coreType: rec.coreType,
             typePath: rec.typePath,
             priceCents: rec.priceCents ?? entity.priceCents,
@@ -785,9 +824,11 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
           saveIdByRecordKey.set(rec.canonicalExternalId, resolvedSaveId);
         }
 
+        const recTargetListIds = new Set<string>();
         for (const target of rec.boards) {
           const listId = boardIdByKey.get(`${target.rootSlug}::${target.subSlug || ""}`);
           if (!listId) continue;
+          recTargetListIds.add(listId);
           const memKey = `${listId}:${resolvedSaveId}`;
           const existingMem = listMembershipMap.get(memKey);
           const nextSection = target.sectionHeader ?? null;
@@ -816,6 +857,20 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
               id: insertedLi.id,
               sectionHeader: nextSection,
             });
+          }
+        }
+
+        if (wasReclassified) {
+          const existingMemberships = tx
+            .select({ id: listItems.id, listId: listItems.listId })
+            .from(listItems)
+            .where(eq(listItems.saveId, resolvedSaveId))
+            .all();
+          for (const m of existingMemberships) {
+            if (managedBoardIds.has(m.listId) && !recTargetListIds.has(m.listId)) {
+              tx.delete(listItems).where(eq(listItems.id, m.id)).run();
+              listMembershipMap.delete(`${m.listId}:${resolvedSaveId}`);
+            }
           }
         }
       }

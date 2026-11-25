@@ -9,6 +9,7 @@ import {
   classifyPurchaseHubItem,
   createPurchaseHubItemFromWishlist,
 } from "@/lib/sync/purchaseHub";
+import { enrichBookEntity } from "@/lib/books/enrichBoughtBook";
 
 const markBoughtSchema = z.object({
   price: z.number().nonnegative().nullable().optional(),
@@ -51,7 +52,15 @@ export async function handleMarkBought(
     const entity = details.entity;
     const itemTitle =
       details.save.privateTitle || entity?.title || "Purchased Item";
-    const category = input.category?.trim() || "Other";
+    const isBookSave =
+      entity?.coreType === "BOOK" || details.save.typePath === "/product/book";
+    const rawCategory = input.category?.trim();
+    const category =
+      rawCategory && rawCategory !== "Other"
+        ? rawCategory
+        : isBookSave
+        ? "Books & Media"
+        : rawCategory || "Other";
     const ownerScope = input.ownerScope || "home";
     const currency = (input.currency || entity?.currency || "CHF").toUpperCase();
     const orderDate = input.orderDate?.trim() || new Date().toISOString().slice(0, 10);
@@ -129,6 +138,12 @@ export async function handleMarkBought(
     const ensuredBoard = await ensureHierarchicalBoard(user.id, targetBoard);
     const targetBoardSlug = targetBoard.subSlug || targetBoard.rootSlug;
 
+    const existingCv =
+      details.save.userCustomValues &&
+      typeof details.save.userCustomValues === "object"
+        ? (details.save.userCustomValues as Record<string, unknown>)
+        : {};
+
     await db
       .update(userSaves)
       .set({
@@ -136,6 +151,15 @@ export async function handleMarkBought(
         hasConvertedPurchase: true,
         typePath: cls.typePath || details.save.typePath,
         personalNotes: effectiveNotes,
+        ...(cls.coreType === "BOOK"
+          ? {
+              userCustomValues: {
+                ...existingCv,
+                bookSource: "OWNED",
+                owned: true,
+              },
+            }
+          : {}),
       })
       .where(eq(userSaves.id, saveId));
 
@@ -154,6 +178,7 @@ export async function handleMarkBought(
         .set({
           priceCents: nextPriceCents,
           currency,
+          coreType: cls.coreType || entity.coreType,
           typePath: cls.typePath || entity.typePath,
           canonicalExternalId: purchaseHubProductId
             ? `purchase-hub:${purchaseHubProductId}`
@@ -161,6 +186,7 @@ export async function handleMarkBought(
           extendedAttributes: {
             ...existingExt,
             ...(purchaseHubProductId ? { purchaseHubProductId, source: "purchase-hub" } : {}),
+            ...(cls.coreType === "BOOK" ? { bookSource: "OWNED", owned: true } : {}),
             ownerScope,
             category,
             collections,
@@ -171,6 +197,18 @@ export async function handleMarkBought(
           updatedAt: new Date().toISOString(),
         })
         .where(eq(globalEntities.id, entity.id));
+
+      if (cls.coreType === "BOOK") {
+        const csd =
+          entity.coreStructuredData && typeof entity.coreStructuredData === "object"
+            ? (entity.coreStructuredData as Record<string, unknown>)
+            : {};
+        if (!entity.heroImageUrl || !csd.pageCount) {
+          await enrichBookEntity(entity.id, {
+            fetchFn: options?.fetchFn as any,
+          }).catch(() => {});
+        }
+      }
     }
 
     const [existingMembership] = await db

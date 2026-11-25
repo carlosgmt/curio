@@ -5,15 +5,18 @@ import { BookOpen, Bookmark, Quote, CheckCircle2, Clock, Check, Plus, Trash2, Sh
 import type { CulturalModeProps } from "./CinemaCulturalMode";
 import { buildAffiliateUrl } from "@/lib/commerce/affiliate";
 import { apiFetch } from "@/lib/apiClient";
-
-type ReadingStatus = "WANT_TO_READ" | "READING" | "FINISHED";
+import {
+  normalizeReadingStatus,
+  readingStatusToShelf,
+  type ReadingStatus,
+} from "@/lib/books/library";
 
 export function BookCulturalMode({ save, entity, primarySource, creatorAffiliateTags }: CulturalModeProps) {
   const data = (typeof entity?.coreStructuredData === "object" && entity?.coreStructuredData) || {};
   const customValues = (typeof save?.userCustomValues === "object" && save?.userCustomValues) || {};
 
-  const [readingStatus, setReadingStatus] = useState<ReadingStatus>(
-    (customValues.readingStatus as ReadingStatus) || "WANT_TO_READ"
+  const [readingStatus, setReadingStatus] = useState<ReadingStatus>(() =>
+    normalizeReadingStatus(customValues as Record<string, any>, save.wishlist)
   );
   const [quotes, setQuotes] = useState<string[]>(
     Array.isArray(customValues.marginQuotes) ? customValues.marginQuotes : []
@@ -36,6 +39,7 @@ export function BookCulturalMode({ save, entity, primarySource, creatorAffiliate
         body: JSON.stringify({
           customValues: {
             readingStatus: status,
+            shelf: readingStatusToShelf(status),
           },
         }),
       });

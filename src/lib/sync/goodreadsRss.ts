@@ -1,13 +1,20 @@
-import { db, globalEntities, smartLists, users, userSaves } from "@/db";
-import { eq, and } from "drizzle-orm";
-import { ensureHierarchicalBoard, type SyncAdapter, type SyncOptions, type SyncRunResult } from "./engine";
+import { db, users } from "@/db";
+import { eq } from "drizzle-orm";
+import { type SyncAdapter, type SyncOptions, type SyncRunResult } from "./engine";
 import { registerSyncAdapter } from "./registry";
-import { generateEntityKey } from "../ingest/cascade";
-import { computeIdentityFingerprint } from "../ingest/resolution";
-import { normalizeEntityString } from "../enrichment/universalDiscovery";
-import { resolveBook } from "../enrichment/providers/books";
+import { getGoodreadsAuthRecord } from "./goodreadsAuthStore";
+import {
+  fetchGoodreadsShelvesWithCookie,
+  GoodreadsAuthExpiredError,
+  parseGoodreadsUserId,
+  upgradeGoodreadsCoverUrl,
+  upsertGoodreadsBooks,
+  type GoodreadsBookItem,
+  type GoodreadsShelf,
+} from "./goodreadsSync";
 
-export type GoodreadsShelf = "read" | "currently-reading" | "to-read";
+export type { GoodreadsShelf };
+export { parseGoodreadsUserId, upgradeGoodreadsCoverUrl };
 
 export interface GoodreadsRssItem {
   bookId: string;
@@ -23,6 +30,7 @@ export interface GoodreadsRssItem {
   bookDescription?: string;
   link: string;
   shelf: GoodreadsShelf;
+  customShelves?: string[];
 }
 
 export interface GoodreadsSyncResult {
@@ -55,31 +63,7 @@ function extractXmlTag(block: string, tagName: string): string | undefined {
 }
 
 /**
- * Cleans and upgrades Goodreads cover image URLs, filtering out "nophoto" placeholders
- */
-export function upgradeGoodreadsCoverUrl(rawUrl?: string): string | undefined {
-  if (!rawUrl) return undefined;
-  if (rawUrl.includes("nophoto")) return undefined;
-  // Upgrade Amazon/Goodreads resized thumbnails (e.g. ._SX98_. or ._SY160_.) to high-res ._SY600_.
-  return rawUrl
-    .replace(/\._S[XY]\d+_\./i, ".")
-    .replace(/\._S[XY]\d+_S[XY]\d+_\./i, ".");
-}
-
-/**
- * Extracts numeric Goodreads user ID from either a raw ID or a Goodreads profile/RSS URL
- */
-export function parseGoodreadsUserId(input: string): string {
-  const trimmed = input.trim();
-  const m =
-    trimmed.match(/list_rss\/(\d+)/i) ||
-    trimmed.match(/user\/show\/(\d+)/i) ||
-    trimmed.match(/^(\d+)/);
-  return m ? m[1] : trimmed;
-}
-
-/**
- * Pure XML parser for Goodreads shelf RSS feed (<item> entries)
+ * Pure XML parser for Goodreads shelf RSS feed (<item> entries), kept for unit tests and legacy XML fixtures.
  */
 export function parseGoodreadsRssXml(
   xmlText: string,
@@ -87,29 +71,43 @@ export function parseGoodreadsRssXml(
 ): GoodreadsRssItem[] {
   const items: GoodreadsRssItem[] = [];
   const itemMatches = xmlText.matchAll(/<item>([\s\S]*?)<\/item>/gi);
+  const exclusive = new Set(["read", "currently-reading", "to-read"]);
 
   for (const match of itemMatches) {
     const block = match[1];
     const rawTitle = extractXmlTag(block, "title");
     if (!rawTitle) continue;
 
-    // Strip series suffix like "Dune (Dune #1)"
-    const cleanTitle = rawTitle.replace(/\s*\([^)]*#\d+[^)]*\)\s*$/g, "").trim() || rawTitle;
+    const cleanTitle =
+      rawTitle.replace(/\s*\([^)]*#\d+[^)]*\)\s*$/g, "").trim() || rawTitle;
     const author = extractXmlTag(block, "author_name") || "Unknown Author";
-    const bookId = extractXmlTag(block, "book_id") || cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const bookId =
+      extractXmlTag(block, "book_id") ||
+      cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     const rawIsbn = extractXmlTag(block, "isbn");
-    const isbn = rawIsbn && /^[0-9Xx]{10,13}$/.test(rawIsbn.trim()) ? rawIsbn.trim() : undefined;
+    const isbn =
+      rawIsbn && /^[0-9Xx]{10,13}$/.test(rawIsbn.trim())
+        ? rawIsbn.trim()
+        : undefined;
 
     const ratingStr = extractXmlTag(block, "user_rating");
     const parsedRating = ratingStr ? parseInt(ratingStr, 10) : NaN;
-    const userRating = Number.isFinite(parsedRating) && parsedRating > 0 ? parsedRating : undefined;
+    const userRating =
+      Number.isFinite(parsedRating) && parsedRating > 0 ? parsedRating : undefined;
 
     const userReadAt = extractXmlTag(block, "user_read_at") || undefined;
     const rawReview = extractXmlTag(block, "user_review") || "";
-    const userReview = rawReview
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .trim() || undefined;
+    const userReview =
+      rawReview
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<[^>]+>/g, "")
+        .trim() || undefined;
+
+    const rawShelves = extractXmlTag(block, "user_shelves") || "";
+    const customShelves = rawShelves
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s && !exclusive.has(s));
 
     const pubStr = extractXmlTag(block, "book_published");
     const pubYear = pubStr ? parseInt(pubStr, 10) : NaN;
@@ -145,6 +143,7 @@ export function parseGoodreadsRssXml(
       bookDescription,
       link,
       shelf,
+      customShelves,
     });
   }
 
@@ -152,7 +151,7 @@ export function parseGoodreadsRssXml(
 }
 
 /**
- * Fetches and syncs a user's Goodreads shelves (read, currently-reading, to-read) into Curio
+ * Syncs parsed RSS items via unified Goodreads upsert (used by tests & XML imports).
  */
 export async function syncGoodreadsRss(
   userIdOrUrl: string,
@@ -168,8 +167,11 @@ export async function syncGoodreadsRss(
     throw new Error("Valid numeric Goodreads User ID or profile URL is required");
   }
 
-  // Order shelves so 'to-read' is processed first, and 'currently-reading' / 'read' override wishlist -> false if on both
-  const shelves: GoodreadsShelf[] = options?.shelves ?? ["to-read", "currently-reading", "read"];
+  const shelves: GoodreadsShelf[] = options?.shelves ?? [
+    "to-read",
+    "currently-reading",
+    "read",
+  ];
   const allItems: GoodreadsRssItem[] = [];
 
   for (const shelf of shelves) {
@@ -192,195 +194,70 @@ export async function syncGoodreadsRss(
     allItems.push(...shelfItems);
   }
 
-  let createdEntities = 0;
-  let createdSaves = 0;
-  let updatedSaves = 0;
+  const bookItems: GoodreadsBookItem[] = allItems.map((it) => ({
+    ...it,
+    customShelves: it.customShelves || [],
+  }));
 
-  const existingBooks = await db
-    .select()
-    .from(globalEntities)
-    .where(eq(globalEntities.typePath, "/product/book"));
-
-  for (const item of allItems) {
-    const isbnExtId = item.isbn ? `isbn:${item.isbn}` : null;
-    const grExtId = `goodreads:${item.bookId}`;
-    const fingerprint = computeIdentityFingerprint("/product/book", item.title, item.author);
-    const normTitle = normalizeEntityString(item.title);
-    const normAuthor = normalizeEntityString(item.author);
-
-    // 1. Multi-Key Canonical Deduplication
-    let matchedEntity = existingBooks.find((e) => {
-      if (isbnExtId && e.canonicalExternalId === isbnExtId) return true;
-      if (e.canonicalExternalId === grExtId) return true;
-      if (e.identityFingerprint === fingerprint) return true;
-      const eCore = (e.coreStructuredData as Record<string, any>) || {};
-      if (item.isbn && eCore.isbn === item.isbn) return true;
-      const normETitle = normalizeEntityString(e.title);
-      const normEAuthor = normalizeEntityString(e.brandOrCreator || eCore.author || "");
-      if (normETitle === normTitle && (!normAuthor || !normEAuthor || normEAuthor.includes(normAuthor) || normAuthor.includes(normEAuthor))) {
-        return true;
-      }
-      return false;
-    });
-
-    if (!matchedEntity) {
-      let coverUrl = item.coverUrl;
-      let summary = item.bookDescription
-        ? item.bookDescription.slice(0, 260)
-        : `By ${item.author}${item.bookPublished ? ` (${item.bookPublished})` : ""}`;
-
-      // Zero-Call Fast Path: Only invoke OpenLibrary/Google Books if coverUrl is missing from RSS
-      if (!coverUrl) {
-        const resolved = await resolveBook(item.title, {
-          authorHint: item.author,
-          isbnHint: item.isbn,
-          yearHint: item.bookPublished,
-          fetchFn,
-          timeoutMs: 3500,
-        }).catch(() => null);
-        if (resolved) {
-          coverUrl = resolved.coverUrl;
-          if (!item.bookDescription && resolved.summary) {
-            summary = resolved.summary;
-          }
-        }
-      }
-
-      const canonicalUrl = `https://www.goodreads.com/book/show/${item.bookId}`;
-      const { urlHash, entityKey } = generateEntityKey(canonicalUrl, item.title);
-
-      const [inserted] = await db
-        .insert(globalEntities)
-        .values({
-          urlHash,
-          entityKey,
-          canonicalUrl,
-          coreType: "BOOK",
-          typePath: "/product/book",
-          canonicalExternalId: isbnExtId || grExtId,
-          identityFingerprint: fingerprint,
-          brandOrCreator: item.author,
-          title: item.title,
-          summary,
-          heroImageUrl: coverUrl || null,
-          coreStructuredData: {
-            title: item.title,
-            author: item.author,
-            ...(item.isbn ? { isbn: item.isbn } : {}),
-            ...(item.numPages ? { pageCount: item.numPages } : {}),
-            ...(item.bookPublished ? { year: item.bookPublished } : {}),
-            goodreadsId: item.bookId,
-            aliases: [item.title],
-          },
-          extendedAttributes: {},
-          priceCents: 1899,
-          currency: "USD",
-        })
-        .returning();
-
-      matchedEntity = inserted;
-      existingBooks.push(inserted);
-      createdEntities++;
-    } else if (!matchedEntity.heroImageUrl && item.coverUrl) {
-      await db
-        .update(globalEntities)
-        .set({ heroImageUrl: item.coverUrl })
-        .where(eq(globalEntities.id, matchedEntity.id));
-      matchedEntity.heroImageUrl = item.coverUrl;
-    }
-
-    // 2. Shelf Transition & Idempotent User Save Upsert on (userId, entityId)
-    const isWishlist = item.shelf === "to-read";
-    const [existingSave] = await db
-      .select()
-      .from(userSaves)
-      .where(and(eq(userSaves.userId, curioUserId), eq(userSaves.entityId, matchedEntity.id)))
-      .limit(1);
-
-    const customVals: Record<string, any> = {
-      ...((existingSave?.userCustomValues as Record<string, any>) || {}),
-      shelf: item.shelf,
-    };
-    if (item.userRating !== undefined) {
-      customVals.rating = item.userRating;
-      customVals.myRating = item.userRating;
-    }
-    if (item.userReadAt) {
-      customVals.dateRead = item.userReadAt;
-    }
-
-    if (existingSave) {
-      const updatedNotes =
-        item.userReview && !existingSave.personalNotes?.includes(item.userReview)
-          ? existingSave.personalNotes
-            ? `${existingSave.personalNotes}\n\n${item.userReview}`
-            : item.userReview
-          : existingSave.personalNotes;
-
-      await db
-        .update(userSaves)
-        .set({
-          wishlist: isWishlist,
-          userCustomValues: customVals,
-          personalNotes: updatedNotes,
-        })
-        .where(eq(userSaves.id, existingSave.id));
-      updatedSaves++;
-    } else {
-      await db.insert(userSaves).values({
-        userId: curioUserId,
-        entityId: matchedEntity.id,
-        typePath: "/product/book",
-        isPrivateMemo: false,
-        wishlist: isWishlist,
-        personalNotes: item.userReview || null,
-        userCustomValues: customVals,
-        autoTags: ["book", "goodreads", item.shelf],
-        enrichmentStatus: "ENRICHED",
-        visibility: "PRIVATE",
-      });
-      createdSaves++;
-    }
-  }
+  const upsertRes = await upsertGoodreadsBooks(curioUserId, bookItems, { fetchFn });
 
   return {
     goodreadsUserId,
-    fetchedCount: allItems.length,
-    createdEntities,
-    createdSaves,
-    updatedSaves,
+    fetchedCount: upsertRes.fetchedCount,
+    createdEntities: upsertRes.createdEntities,
+    createdSaves: upsertRes.createdSaves,
+    updatedSaves: upsertRes.updatedSaves,
     items: allItems,
   };
 }
 
 export const goodreadsSyncAdapter: SyncAdapter<
-  SyncOptions & { goodreadsUserId?: string; shelves?: GoodreadsShelf[] }
+  SyncOptions & {
+    goodreadsUserId?: string;
+    cookie?: string;
+    shelves?: GoodreadsShelf[];
+  }
 > = {
   sourceId: "goodreads",
-  displayName: "Goodreads RSS (Books)",
+  displayName: "Goodreads Shelves (Books)",
   supportsWishlistPromotion: false,
   supportsPruning: false,
   async getStatus(userId: string) {
     const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
+    const authRec = getGoodreadsAuthRecord(userId);
+    const goodreadsUserId = authRec?.goodreadsUserId || tokens.goodreadsUserId || null;
+    const hasCookie = Boolean(authRec?.cookie);
     return {
-      configured: Boolean(tokens.goodreadsUserId),
-      goodreadsUserId: tokens.goodreadsUserId || null,
-      lastSyncedAt: tokens.lastFeedSyncAt || null,
+      configured: Boolean(goodreadsUserId && hasCookie),
+      goodreadsUserId,
+      hasCookie,
+      authStatus:
+        tokens.goodreadsAuthStatus || (hasCookie ? "ok" : "unconfigured"),
+      lastError: tokens.goodreadsLastError || null,
+      lastSyncedAt:
+        tokens.goodreadsLastSyncedAt || tokens.lastFeedSyncAt || null,
     };
   },
   async run(userId: string, options): Promise<SyncRunResult> {
-    let grId = typeof options?.goodreadsUserId === "string" ? options.goodreadsUserId.trim() : "";
-    if (!grId) {
-      const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-      const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
-      grId = String(tokens.goodreadsUserId || "").trim();
-    }
-    if (!grId) {
+    const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const tokens = (u?.googleSyncTokens as Record<string, any>) || {};
+    const storedAuth = getGoodreadsAuthRecord(userId);
+
+    const grId =
+      (typeof options?.goodreadsUserId === "string" && options.goodreadsUserId.trim()) ||
+      storedAuth?.goodreadsUserId ||
+      String(tokens.goodreadsUserId || "").trim();
+    const cookie =
+      (typeof options?.cookie === "string" && options.cookie.trim()) ||
+      storedAuth?.cookie ||
+      "";
+
+    if (!grId || !cookie) {
       return {
         sourceId: "goodreads",
         synced: false,
-        skippedReason: "not_configured",
+        skippedReason: !grId ? "not_configured" : "cookie_required",
         recordsProcessed: 0,
         createdSaves: 0,
         updatedSaves: 0,
@@ -394,36 +271,64 @@ export const goodreadsSyncAdapter: SyncAdapter<
       };
     }
 
-    const res = await syncGoodreadsRss(grId, userId, {
-      fetchFn: options?.fetchFn as typeof fetch | undefined,
-      shelves: options?.shelves,
-    });
-    const boardRes = await ensureHierarchicalBoard(userId, {
-      rootSlug: "books",
-      rootTitle: "Books",
-      rootDefaultLayout: "shelf",
-      autoRules: { coreType: "BOOK" },
-    });
-    await db
-      .update(smartLists)
-      .set({ defaultLayout: "shelf" })
-      .where(and(eq(smartLists.id, boardRes.rootId)));
+    try {
+      const fetched = await fetchGoodreadsShelvesWithCookie(grId, cookie, {
+        fetchFn: options?.fetchFn as typeof fetch | undefined,
+        shelves: options?.shelves,
+      });
+      const upsertRes = await upsertGoodreadsBooks(userId, fetched.items, {
+        fetchFn: options?.fetchFn as typeof fetch | undefined,
+      });
+      const syncedAt = new Date().toISOString();
 
-    return {
-      sourceId: "goodreads",
-      synced: true,
-      recordsProcessed: res.fetchedCount,
-      createdSaves: res.createdSaves,
-      updatedSaves: res.updatedSaves,
-      promotedFromWishlist: 0,
-      prunedSaves: 0,
-      prunedEntities: 0,
-      connectionsSynced: 0,
-      boardsCreated: boardRes.createdCount,
-      digest: `gr-${res.goodreadsUserId}-${res.fetchedCount}`,
-      syncedAt: new Date().toISOString(),
-      meta: { goodreadsUserId: res.goodreadsUserId },
-    };
+      await db
+        .update(users)
+        .set({
+          googleSyncTokens: {
+            ...tokens,
+            goodreadsUserId: fetched.goodreadsUserId,
+            goodreadsAuthStatus: "ok",
+            goodreadsLastError: null,
+            goodreadsLastSyncedAt: syncedAt,
+            lastFeedSyncAt: syncedAt,
+          },
+        })
+        .where(eq(users.id, userId));
+
+      return {
+        sourceId: "goodreads",
+        synced: true,
+        recordsProcessed: upsertRes.fetchedCount,
+        createdSaves: upsertRes.createdSaves,
+        updatedSaves: upsertRes.updatedSaves,
+        promotedFromWishlist: 0,
+        prunedSaves: 0,
+        prunedEntities: 0,
+        connectionsSynced: 0,
+        boardsCreated: 0,
+        digest: `gr-${fetched.goodreadsUserId}-${upsertRes.fetchedCount}`,
+        syncedAt,
+        meta: {
+          goodreadsUserId: fetched.goodreadsUserId,
+          mergedWithOwned: upsertRes.mergedWithOwned,
+          tagsImportedCount: upsertRes.tagsImportedCount,
+        },
+      };
+    } catch (err: any) {
+      const isExpired = err instanceof GoodreadsAuthExpiredError;
+      await db
+        .update(users)
+        .set({
+          googleSyncTokens: {
+            ...tokens,
+            goodreadsUserId: grId,
+            goodreadsAuthStatus: isExpired ? "expired" : tokens.goodreadsAuthStatus || "ok",
+            goodreadsLastError: err?.message || "Goodreads sync failed",
+          },
+        })
+        .where(eq(users.id, userId));
+      throw err;
+    }
   },
 };
 

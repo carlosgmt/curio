@@ -3,13 +3,19 @@ import { db, users } from "@/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, AuthError } from "@/lib/auth/service";
 import { syncLetterboxdRss } from "@/lib/sync/letterboxdRss";
-import { syncGoodreadsRss, parseGoodreadsUserId } from "@/lib/sync/goodreadsRss";
+import { goodreadsSyncAdapter, parseGoodreadsUserId } from "@/lib/sync/goodreadsRss";
+import {
+  clearGoodreadsAuthRecord,
+  getGoodreadsAuthRecord,
+  setGoodreadsAuthRecord,
+} from "@/lib/sync/goodreadsAuthStore";
 
 export async function GET(req: NextRequest) {
   try {
     const { user } = await requireAuth(req);
     const [freshUser] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
     const tokens = (freshUser?.googleSyncTokens as Record<string, any>) || {};
+    const authRec = getGoodreadsAuthRecord(user.id);
 
     const lastFeedSyncAt: string | null = tokens.lastFeedSyncAt || null;
     const isStale =
@@ -18,7 +24,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       letterboxdUsername: tokens.letterboxdUsername || null,
-      goodreadsUserId: tokens.goodreadsUserId || null,
+      goodreadsUserId: authRec?.goodreadsUserId || tokens.goodreadsUserId || null,
+      goodreadsHasCookie: Boolean(authRec?.cookie),
+      goodreadsAuthStatus:
+        tokens.goodreadsAuthStatus || (authRec?.cookie ? "ok" : "unconfigured"),
       lastFeedSyncAt,
       isStale,
     });
@@ -46,12 +55,18 @@ export async function POST(req: NextRequest) {
       body.goodreadsUserId !== undefined
         ? parseGoodreadsUserId(String(body.goodreadsUserId || ""))
         : currentTokens.goodreadsUserId || "";
+    const goodreadsCookie =
+      typeof body.goodreadsCookie === "string" ? body.goodreadsCookie.trim() : "";
 
     if (!letterboxdUsername && !goodreadsUserId) {
       return NextResponse.json(
         { error: "Provide a Letterboxd username or Goodreads User ID to sync" },
         { status: 400 }
       );
+    }
+
+    if (goodreadsUserId && goodreadsCookie) {
+      setGoodreadsAuthRecord(user.id, { goodreadsUserId, cookie: goodreadsCookie });
     }
 
     let letterboxdResult = null;
@@ -68,17 +83,34 @@ export async function POST(req: NextRequest) {
 
     if (goodreadsUserId) {
       try {
-        goodreadsResult = await syncGoodreadsRss(goodreadsUserId, user.id);
+        const res = await goodreadsSyncAdapter.run!(user.id, {
+          goodreadsUserId,
+          ...(goodreadsCookie ? { cookie: goodreadsCookie } : {}),
+        });
+        if (!res.synced && res.skippedReason === "cookie_required") {
+          errors.push(
+            "Goodreads retired RSS feeds; paste your Goodreads session cookie in Personal Library -> Sync Goodreads."
+          );
+        } else {
+          goodreadsResult = {
+            goodreadsUserId,
+            fetchedCount: res.recordsProcessed,
+            createdSaves: res.createdSaves,
+            updatedSaves: res.updatedSaves,
+          };
+        }
       } catch (err: any) {
         errors.push(`Goodreads: ${err.message}`);
       }
     }
 
     const syncedAt = new Date().toISOString();
+    const [postSyncUser] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+    const postTokens = (postSyncUser?.googleSyncTokens as Record<string, any>) || currentTokens;
     const updatedTokens = {
-      ...currentTokens,
+      ...postTokens,
       ...(letterboxdResult ? { letterboxdUsername: letterboxdResult.username } : {}),
-      ...(goodreadsResult ? { goodreadsUserId: goodreadsResult.goodreadsUserId } : {}),
+      ...(goodreadsUserId ? { goodreadsUserId } : {}),
       lastFeedSyncAt: syncedAt,
     };
 
@@ -118,6 +150,9 @@ export async function DELETE(req: NextRequest) {
     }
     if (!provider || provider === "goodreads") {
       delete currentTokens.goodreadsUserId;
+      delete currentTokens.goodreadsAuthStatus;
+      delete currentTokens.goodreadsLastError;
+      clearGoodreadsAuthRecord(user.id);
     }
 
     await db

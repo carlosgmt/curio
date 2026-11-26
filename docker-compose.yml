@@ -9,6 +9,7 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - /Users/carlosgmt/dockermounts/curio:/data
+      - /Volumes/Photo/CurioMedia/instagram:/data/media/instagram
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -19,7 +20,7 @@ services:
       - PURCHASE_HUB_API_URL=http://host.docker.internal:8760
       - CHEF_API_URL=http://host.docker.internal:8720
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-      - REBUILD_VERSION=11
+      - REBUILD_VERSION=12
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

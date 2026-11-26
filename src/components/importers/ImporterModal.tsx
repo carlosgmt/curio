@@ -21,9 +21,10 @@ interface ImporterModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImported?: () => void;
+  onOpenInstagramSync?: () => void;
 }
 
-type PlatformTab = "rss" | "auto" | "letterboxd" | "goodreads" | "bookmarks" | "takeout";
+type PlatformTab = "rss" | "instagram" | "auto" | "letterboxd" | "goodreads" | "bookmarks" | "takeout";
 
 const SAMPLE_LETTERBOXD = `Date,Name,Year,Letterboxd URI,Rating
 2026-03-14,Dune: Part Two,2024,https://boxd.it/mXQk,4.5
@@ -67,7 +68,7 @@ const SAMPLE_TAKEOUT_KEEP = JSON.stringify(
   2
 );
 
-export function ImporterModal({ isOpen, onClose, onImported }: ImporterModalProps) {
+export function ImporterModal({ isOpen, onClose, onImported, onOpenInstagramSync }: ImporterModalProps) {
   const [platform, setPlatform] = useState<PlatformTab>("rss");
   const [payloadText, setPayloadText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -256,6 +257,19 @@ export function ImporterModal({ isOpen, onClose, onImported }: ImporterModalProp
             <Rss className="w-3.5 h-3.5" />
             <span>Live Sync (RSS)</span>
           </button>
+          {onOpenInstagramSync && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenInstagramSync();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-medium whitespace-nowrap transition-colors text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-rose-500" />
+              <span>Instagram Saves</span>
+            </button>
+          )}
           <button
             onClick={() => {
               setPlatform("auto");

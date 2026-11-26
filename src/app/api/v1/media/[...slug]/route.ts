@@ -16,6 +16,8 @@ const MIME_MAP: Record<string, string> = {
   ".avif": "image/avif",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
+  ".m4v": "video/mp4",
+  ".mov": "video/quicktime",
   ".json": "application/json",
 };
 
@@ -32,7 +34,7 @@ function resolveBaseMediaDir(): string {
   if (process.env.NODE_ENV === "test") {
     return localDevMedia;
   }
-  if (fs.existsSync("/Users/carlosgmt/dockermounts/curio/media")) {
+  if (fs.existsSync(/*turbopackIgnore: true*/ "/Users/carlosgmt/dockermounts/curio/media")) {
     return path.resolve("/Users/carlosgmt/dockermounts/curio/media");
   }
   return localDevMedia;
@@ -263,51 +265,104 @@ async function isPublicBoardMediaAllowed(sanitizedSlug: string[]): Promise<boole
   return false;
 }
 
-export async function GET(
+function parseByteRange(
+  rangeHeader: string | null,
+  fileSize: number
+): { start: number; end: number } | "invalid" | null {
+  if (!rangeHeader) return null;
+  const trimmed = rangeHeader.trim();
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(trimmed);
+  if (!match) return "invalid";
+  const [, rawStart, rawEnd] = match;
+  if (!rawStart && !rawEnd) return "invalid";
+
+  if (!rawStart) {
+    const suffixLen = Number.parseInt(rawEnd, 10);
+    if (!Number.isFinite(suffixLen) || suffixLen <= 0 || fileSize === 0) return "invalid";
+    const start = Math.max(0, fileSize - suffixLen);
+    return { start, end: fileSize - 1 };
+  }
+
+  const start = Number.parseInt(rawStart, 10);
+  const end = rawEnd ? Math.min(fileSize - 1, Number.parseInt(rawEnd, 10)) : fileSize - 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= fileSize || start > end) {
+    return "invalid";
+  }
+  return { start, end };
+}
+
+function streamFileRange(
+  targetPath: string,
+  options?: { start: number; end: number }
+): ReadableStream<Uint8Array> {
+  const nodeStream = fs.createReadStream(/*turbopackIgnore: true*/ targetPath, options);
+  return new ReadableStream({
+    start(controller) {
+      nodeStream.on("data", (chunk) =>
+        controller.enqueue(typeof chunk === "string" ? Buffer.from(chunk) : chunk)
+      );
+      nodeStream.on("end", () => controller.close());
+      nodeStream.on("error", (err) => controller.error(err));
+    },
+    cancel() {
+      nodeStream.destroy();
+    },
+  });
+}
+
+async function resolveMediaRequest(
   req: NextRequest,
-  { params }: { params: Promise<{ slug: string[] }> }
-) {
-  try {
-    const { slug } = await params;
-    if (!slug || slug.length === 0) {
-      return NextResponse.json({ error: "Missing media slug" }, { status: 400 });
-    }
-
-    const baseMediaDir = resolveBaseMediaDir();
-    const sanitizedSlug = slug.map((seg) => {
-      try {
-        return path.basename(decodeURIComponent(seg));
-      } catch {
-        return path.basename(seg);
-      }
-    });
-    if (sanitizedSlug.some((seg) => !seg || seg === "." || seg === "..")) {
-      return NextResponse.json({ error: "Invalid media path" }, { status: 400 });
-    }
-
-    let targetPath = path.resolve(baseMediaDir, ...sanitizedSlug);
-
-    // Guard against directory traversal
-    if (!targetPath.startsWith(baseMediaDir + path.sep) && targetPath !== baseMediaDir) {
-      return NextResponse.json({ error: "Forbidden: Path traversal" }, { status: 403 });
-    }
-
-    let isPublicFallback = false;
+  slug: string[],
+  allowProxyCache: boolean
+): Promise<
+  | { kind: "response"; response: Response }
+  | { kind: "file"; targetPath: string; stat: fs.Stats; contentType: string; cacheControl: string }
+> {
+  let baseMediaDir = resolveBaseMediaDir();
+  if (
+    slug[0] === "instagram" &&
+    !process.env.MEDIA_PATH &&
+    process.env.NODE_ENV !== "test" &&
+    !fs.existsSync(/*turbopackIgnore: true*/ "/data/media") &&
+    fs.existsSync(/*turbopackIgnore: true*/ "/Volumes/Photo/CurioMedia")
+  ) {
+    baseMediaDir = path.resolve("/Volumes/Photo/CurioMedia");
+  }
+  const sanitizedSlug = slug.map((seg) => {
     try {
-      await requireAuth(req);
-    } catch (authErr) {
-      if (authErr instanceof AuthError) {
-        const allowed = await isPublicBoardMediaAllowed(sanitizedSlug);
-        if (!allowed) {
-          throw authErr;
-        }
-        isPublicFallback = true;
-      } else {
+      return path.basename(decodeURIComponent(seg));
+    } catch {
+      return path.basename(seg);
+    }
+  });
+  if (sanitizedSlug.some((seg) => !seg || seg === "." || seg === "..")) {
+    return { kind: "response", response: NextResponse.json({ error: "Invalid media path" }, { status: 400 }) };
+  }
+
+  let targetPath = path.resolve(baseMediaDir, ...sanitizedSlug);
+
+  // Guard against directory traversal
+  if (!targetPath.startsWith(baseMediaDir + path.sep) && targetPath !== baseMediaDir) {
+    return { kind: "response", response: NextResponse.json({ error: "Forbidden: Path traversal" }, { status: 403 }) };
+  }
+
+  let isPublicFallback = false;
+  try {
+    await requireAuth(req);
+  } catch (authErr) {
+    if (authErr instanceof AuthError) {
+      const allowed = await isPublicBoardMediaAllowed(sanitizedSlug);
+      if (!allowed) {
         throw authErr;
       }
+      isPublicFallback = true;
+    } else {
+      throw authErr;
     }
-    const cacheControl = isPublicFallback ? "private, max-age=300" : "private, max-age=86400";
+  }
+  const cacheControl = isPublicFallback ? "private, max-age=300" : "private, max-age=86400";
 
+  if (allowProxyCache) {
     // Read-through cache & proxy for Closet UI media (/api/v1/media/closet/<bucket>/<filename>)
     if (
       !fs.existsSync(/*turbopackIgnore: true*/ targetPath) &&
@@ -334,14 +389,18 @@ export async function GET(
           } catch {
             // Non-fatal if media dir is read-only; serve directly from memory
             const ext = path.extname(filename).toLowerCase();
-            return new NextResponse(bytes, {
-              status: 200,
-              headers: {
-                "Content-Type": upstreamRes.headers.get("content-type") || MIME_MAP[ext] || "image/png",
-                "Content-Length": bytes.length.toString(),
-                "Cache-Control": cacheControl,
-              },
-            });
+            return {
+              kind: "response",
+              response: new NextResponse(bytes, {
+                status: 200,
+                headers: {
+                  "Content-Type": upstreamRes.headers.get("content-type") || MIME_MAP[ext] || "image/png",
+                  "Content-Length": bytes.length.toString(),
+                  "Accept-Ranges": "bytes",
+                  "Cache-Control": cacheControl,
+                },
+              }),
+            };
           }
         }
       } catch {
@@ -377,15 +436,19 @@ export async function GET(
             await fs.promises.writeFile(/*turbopackIgnore: true*/ targetPath, bytes);
           } catch {
             const ext = path.extname(filename).toLowerCase();
-            return new NextResponse(bytes, {
-              status: 200,
-              headers: {
-                "Content-Type":
-                  upstreamRes.headers.get("content-type") || MIME_MAP[ext] || "image/jpeg",
-                "Content-Length": bytes.length.toString(),
-                "Cache-Control": cacheControl,
-              },
-            });
+            return {
+              kind: "response",
+              response: new NextResponse(bytes, {
+                status: 200,
+                headers: {
+                  "Content-Type":
+                    upstreamRes.headers.get("content-type") || MIME_MAP[ext] || "image/jpeg",
+                  "Content-Length": bytes.length.toString(),
+                  "Accept-Ranges": "bytes",
+                  "Cache-Control": cacheControl,
+                },
+              }),
+            };
           }
         }
       } catch {
@@ -421,60 +484,128 @@ export async function GET(
             await fs.promises.writeFile(/*turbopackIgnore: true*/ targetPath, bytes);
           } catch {
             const ext = path.extname(filename).toLowerCase();
-            return new NextResponse(bytes, {
-              status: 200,
-              headers: {
-                "Content-Type":
-                  upstreamRes.headers.get("content-type") || MIME_MAP[ext] || "image/jpeg",
-                "Content-Length": bytes.length.toString(),
-                "Cache-Control": cacheControl,
-              },
-            });
+            return {
+              kind: "response",
+              response: new NextResponse(bytes, {
+                status: 200,
+                headers: {
+                  "Content-Type":
+                    upstreamRes.headers.get("content-type") || MIME_MAP[ext] || "image/jpeg",
+                  "Content-Length": bytes.length.toString(),
+                  "Accept-Ranges": "bytes",
+                  "Cache-Control": cacheControl,
+                },
+              }),
+            };
           }
         }
       } catch {
         // Chef UI temporarily unreachable; fall through to 404 if uncached
       }
     }
+  }
 
-    // Legacy single-filename fallback to public/uploads
-    if (!fs.existsSync(/*turbopackIgnore: true*/ targetPath) && sanitizedSlug.length === 1) {
-      const legacyDir = path.join(process.cwd(), "public", "uploads");
-      const legacyPath = path.resolve(legacyDir, sanitizedSlug[0]);
-      if (legacyPath.startsWith(legacyDir + path.sep) && fs.existsSync(/*turbopackIgnore: true*/ legacyPath)) {
-        targetPath = legacyPath;
-      }
+  // Legacy single-filename fallback to public/uploads
+  if (!fs.existsSync(/*turbopackIgnore: true*/ targetPath) && sanitizedSlug.length === 1) {
+    const legacyDir = path.join(process.cwd(), "public", "uploads");
+    const legacyPath = path.resolve(legacyDir, sanitizedSlug[0]);
+    if (legacyPath.startsWith(legacyDir + path.sep) && fs.existsSync(/*turbopackIgnore: true*/ legacyPath)) {
+      targetPath = legacyPath;
     }
+  }
 
-    if (!fs.existsSync(/*turbopackIgnore: true*/ targetPath)) {
-      return NextResponse.json({ error: "Media not found" }, { status: 404 });
+  if (!fs.existsSync(/*turbopackIgnore: true*/ targetPath)) {
+    return { kind: "response", response: NextResponse.json({ error: "Media not found" }, { status: 404 }) };
+  }
+
+  const stat = await fs.promises.stat(/*turbopackIgnore: true*/ targetPath);
+  if (!stat.isFile()) {
+    return { kind: "response", response: NextResponse.json({ error: "Not a file" }, { status: 400 }) };
+  }
+
+  const ext = path.extname(targetPath).toLowerCase();
+  const contentType = MIME_MAP[ext] || "application/octet-stream";
+  return { kind: "file", targetPath, stat, contentType, cacheControl };
+}
+
+export async function HEAD(
+  req: NextRequest,
+  { params }: { params: Promise<{ slug: string[] }> }
+) {
+  try {
+    const { slug } = await params;
+    if (!slug || slug.length === 0) {
+      return new Response(null, { status: 400 });
     }
-
-    const stat = await fs.promises.stat(/*turbopackIgnore: true*/ targetPath);
-    if (!stat.isFile()) {
-      return NextResponse.json({ error: "Not a file" }, { status: 400 });
+    const resolved = await resolveMediaRequest(req, slug, false);
+    if (resolved.kind === "response") {
+      return new Response(null, { status: resolved.response.status });
     }
-
-    const ext = path.extname(targetPath).toLowerCase();
-    const contentType = MIME_MAP[ext] || "application/octet-stream";
-
-    const nodeStream = fs.createReadStream(/*turbopackIgnore: true*/ targetPath);
-    const webStream = new ReadableStream({
-      start(controller) {
-        nodeStream.on("data", (chunk) => controller.enqueue(chunk));
-        nodeStream.on("end", () => controller.close());
-        nodeStream.on("error", (err) => controller.error(err));
-      },
-      cancel() {
-        nodeStream.destroy();
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "Content-Type": resolved.contentType,
+        "Content-Length": resolved.stat.size.toString(),
+        "Accept-Ranges": "bytes",
+        "Cache-Control": resolved.cacheControl,
       },
     });
+  } catch (error: any) {
+    if (error instanceof AuthError) {
+      return new Response(null, { status: error.statusCode });
+    }
+    return new Response(null, { status: 500 });
+  }
+}
 
-    return new Response(webStream, {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ slug: string[] }> }
+) {
+  try {
+    const { slug } = await params;
+    if (!slug || slug.length === 0) {
+      return NextResponse.json({ error: "Missing media slug" }, { status: 400 });
+    }
+
+    const resolved = await resolveMediaRequest(req, slug, true);
+    if (resolved.kind === "response") {
+      return resolved.response;
+    }
+
+    const { targetPath, stat, contentType, cacheControl } = resolved;
+    const range = parseByteRange(req.headers.get("range"), stat.size);
+
+    if (range === "invalid") {
+      return new Response(null, {
+        status: 416,
+        headers: {
+          "Content-Range": `bytes */${stat.size}`,
+          "Accept-Ranges": "bytes",
+        },
+      });
+    }
+
+    if (range) {
+      const chunkLen = range.end - range.start + 1;
+      return new Response(streamFileRange(targetPath, { start: range.start, end: range.end }), {
+        status: 206,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Range": `bytes ${range.start}-${range.end}/${stat.size}`,
+          "Content-Length": chunkLen.toString(),
+          "Accept-Ranges": "bytes",
+          "Cache-Control": cacheControl,
+        },
+      });
+    }
+
+    return new Response(streamFileRange(targetPath), {
       status: 200,
       headers: {
         "Content-Type": contentType,
         "Content-Length": stat.size.toString(),
+        "Accept-Ranges": "bytes",
         "Cache-Control": cacheControl,
       },
     });

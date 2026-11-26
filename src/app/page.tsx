@@ -63,6 +63,10 @@ import {
   FilmAffinitySyncModal,
   type FilmAffinitySyncStatusInfo,
 } from "@/components/cinema/FilmAffinitySyncModal";
+import {
+  InstagramSyncModal,
+  type InstagramSyncStatusInfo,
+} from "@/components/instagram/InstagramSyncModal";
 import { FilmDetailModal } from "@/components/cinema/FilmDetailModal";
 import {
   compareLibraryBooks,
@@ -183,6 +187,9 @@ export default function Home() {
   const [isFilmAffinitySyncOpen, setIsFilmAffinitySyncOpen] = useState(false);
   const [filmaffinityStatus, setFilmaffinityStatus] =
     useState<FilmAffinitySyncStatusInfo | null>(null);
+  const [isInstagramSyncOpen, setIsInstagramSyncOpen] = useState(false);
+  const [instagramStatus, setInstagramStatus] =
+    useState<InstagramSyncStatusInfo | null>(null);
   const [bookSubFilter, setBookSubFilter] = useState<
     "ALL" | "MY_STUFF" | "GOODREADS" | "MANUAL" | "FINISHED" | "NOT_READ" | "READING" | "WANT_TO_READ"
   >("ALL");
@@ -647,6 +654,14 @@ export default function Home() {
         activeListSlug.startsWith("recipes-") ||
         (activeListDetails?.list.slug === activeListSlug &&
           activeListDetails.ancestors?.some((a) => a.slug === "recipes")))
+  );
+
+  const isInstagramDescendant = Boolean(
+    activeListSlug &&
+      (activeListSlug === "instagram-saves" ||
+        activeListSlug.startsWith("instagram-saves-") ||
+        (activeListDetails?.list.slug === activeListSlug &&
+          activeListDetails.ancestors?.some((a) => a.slug === "instagram-saves")))
   );
 
   const activeDbDefaultLayout =
@@ -1382,7 +1397,7 @@ export default function Home() {
 
   return (
     <PullToRefresh
-      disabled={Boolean(selectedCard) || Boolean(openBookView) || Boolean(openFilmView) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen || isLogBookOpen || isGoodreadsSyncOpen || isLogFilmOpen || isLetterboxdSyncOpen || isFilmAffinitySyncOpen}
+      disabled={Boolean(selectedCard) || Boolean(openBookView) || Boolean(openFilmView) || isImporterOpen || isPairingOpen || isCreateListOpen || isTypeBuilderOpen || isTypesModalOpen || isAuthOpen || isOnboardingOpen || isLogBookOpen || isGoodreadsSyncOpen || isLogFilmOpen || isLetterboxdSyncOpen || isFilmAffinitySyncOpen || isInstagramSyncOpen}
       onRefresh={() =>
         Promise.all([
           fetchItems({ reset: true, wishlist: wishOnly }),
@@ -1889,6 +1904,29 @@ export default function Home() {
                           <span>Open Chef ↗</span>
                         </a>
                       </>
+                    )}
+                    {isInstagramDescendant && (
+                      <button
+                        type="button"
+                        data-testid="sync-instagram-btn"
+                        onClick={() => {
+                          apiFetch("/api/v1/sync/instagram")
+                            .then((r) => (r.ok ? r.json() : null))
+                            .then((d) => {
+                              if (d) setInstagramStatus(d);
+                            })
+                            .catch(() => {});
+                          setIsInstagramSyncOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Sync Instagram</span>
+                        {(instagramStatus?.authStatus === "expired" ||
+                          instagramStatus?.authStatus === "challenge") && (
+                          <span className="w-2 h-2 rounded-full bg-amber-500" title="Session refresh needed" />
+                        )}
+                      </button>
                     )}
                     <button
                       type="button"
@@ -2574,6 +2612,15 @@ export default function Home() {
       <ImporterModal
         isOpen={isImporterOpen}
         onClose={() => setIsImporterOpen(false)}
+        onOpenInstagramSync={() => {
+          apiFetch("/api/v1/sync/instagram")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              if (d) setInstagramStatus(d);
+            })
+            .catch(() => {});
+          setIsInstagramSyncOpen(true);
+        }}
         onImported={() => {
           setIsImporterOpen(false);
           fetchItems({ reset: true });
@@ -2695,6 +2742,23 @@ export default function Home() {
         status={filmaffinityStatus}
         onClose={() => setIsFilmAffinitySyncOpen(false)}
         onSynced={() => {
+          fetchItems({ reset: true });
+          fetchLists();
+          if (activeListSlug) refreshActiveBoard(activeListSlug);
+        }}
+      />
+
+      <InstagramSyncModal
+        isOpen={isInstagramSyncOpen}
+        status={instagramStatus}
+        onClose={() => setIsInstagramSyncOpen(false)}
+        onSynced={() => {
+          apiFetch("/api/v1/sync/instagram")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              if (d) setInstagramStatus(d);
+            })
+            .catch(() => {});
           fetchItems({ reset: true });
           fetchLists();
           if (activeListSlug) refreshActiveBoard(activeListSlug);

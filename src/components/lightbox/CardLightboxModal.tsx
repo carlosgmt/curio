@@ -31,6 +31,9 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
   Loader2,
   Disc3,
   Music,
@@ -320,6 +323,7 @@ export function CardLightboxModal({
   const [isWearHistoryOpen, setIsWearHistoryOpen] = useState(false);
   const [showAllWearLinks, setShowAllWearLinks] = useState(false);
   const [showAllAutoCoWear, setShowAllAutoCoWear] = useState(false);
+  const [igCarouselIdx, setIgCarouselIdx] = useState(0);
   const { wearLinks, autoCoWearPairs, curatedPairs } = React.useMemo(
     () => partitionConnections(connections),
     [connections]
@@ -448,6 +452,7 @@ export function CardLightboxModal({
     setIsWearHistoryOpen(false);
     setShowAllWearLinks(false);
     setShowAllAutoCoWear(false);
+    setIgCarouselIdx(0);
     const ext = card.entity?.extendedAttributes as Record<string, unknown> | null | undefined;
     const primarySource = card.primarySource as Record<string, unknown> | null | undefined;
     setBoughtPrice(
@@ -1472,6 +1477,88 @@ export function CardLightboxModal({
         </div>
       )}
 
+      {/* Instagram Archive Metadata */}
+      {(() => {
+        const ext = card.entity?.extendedAttributes as Record<string, any> | null | undefined;
+        const ig = ext?.instagram as Record<string, any> | undefined;
+        if (!ig) return null;
+        const permalink = isSafeHttpOrRelativeUrl(ig.permalink) ? ig.permalink : null;
+        const collections = Array.isArray(ig.collections) ? ig.collections : [];
+        const externalLinks = Array.isArray(ig.externalLinks)
+          ? ig.externalLinks.filter((u: unknown): u is string => isSafeHttpOrRelativeUrl(u))
+          : [];
+        const captionText = typeof ig.caption === "string" ? ig.caption.trim() : "";
+        return (
+          <div
+            data-testid="instagram-archive-metadata"
+            className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-2.5 text-xs"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold">
+                Instagram Archive {ig.authorUsername ? `· @${ig.authorUsername}` : ""}
+              </span>
+              {permalink && (
+                <a
+                  href={permalink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-mono text-neutral-700 dark:text-neutral-200 hover:underline"
+                >
+                  <span>Open on Instagram</span>
+                  <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                </a>
+              )}
+            </div>
+
+            {collections.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {collections.map((c: any, idx: number) => (
+                  <span
+                    key={`${c?.id || idx}`}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-neutral-200/70 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                  >
+                    {String(c?.name || c)}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {externalLinks.length > 0 && (
+              <div className="space-y-1">
+                <span className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400">
+                  Preserved Links
+                </span>
+                <div className="flex flex-col gap-1">
+                  {externalLinks.map((url: string) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-mono text-blue-600 dark:text-blue-400 hover:underline truncate"
+                    >
+                      <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{url}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {captionText && (
+              <details className="pt-1">
+                <summary className="text-[11px] font-mono text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 cursor-pointer select-none">
+                  Original Instagram Caption
+                </summary>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                  {captionText}
+                </p>
+              </details>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Purchase Hub Ownership Metadata */}
       {(() => {
         const ext = card.entity?.extendedAttributes as Record<string, unknown> | null | undefined;
@@ -1966,8 +2053,76 @@ export function CardLightboxModal({
             <div className="md:col-span-6 flex flex-col p-4 sm:p-6 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-[#f9f8f6] dark:bg-neutral-950/80 md:overflow-y-auto overscroll-contain">
               {typeSwitcher}
 
-              {/* Cultural Mode Stage Display */}
-              <div className="flex-1 flex flex-col justify-center">
+              {/* Cultural Mode Stage Display + Archived Instagram Reel/Carousel */}
+              <div className="flex-1 flex flex-col justify-center gap-4">
+                {(() => {
+                  const ig = (card.entity?.extendedAttributes as Record<string, any> | null | undefined)?.instagram;
+                  if (!ig) return null;
+                  const slides = Array.isArray(ig.carouselItems) ? ig.carouselItems : [];
+                  if (slides.length > 1) {
+                    const activeIdx = Math.min(igCarouselIdx, slides.length - 1);
+                    const activeSlide = slides[activeIdx];
+                    const slideSrc = resolveSameOriginImageUrl(activeSlide?.url) || activeSlide?.url;
+                    return (
+                      <div data-testid="instagram-carousel-player" className="rounded-2xl overflow-hidden bg-black border border-neutral-800">
+                        <div className="relative flex items-center justify-center bg-black min-h-[240px] max-h-[380px]">
+                          {activeSlide?.kind === "video" ? (
+                            <video
+                              key={slideSrc}
+                              src={slideSrc}
+                              controls
+                              playsInline
+                              preload="metadata"
+                              className="w-full max-h-[380px] object-contain"
+                            />
+                          ) : (
+                            <img
+                              src={slideSrc}
+                              alt={`Slide ${activeIdx + 1} of ${slides.length}`}
+                              className="w-full max-h-[380px] object-contain"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            aria-label="Previous slide"
+                            onClick={() => setIgCarouselIdx((prev) => (prev - 1 + slides.length) % slides.length)}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/60 text-white hover:bg-black/80 cursor-pointer"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Next slide"
+                            onClick={() => setIgCarouselIdx((prev) => (prev + 1) % slides.length)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-black/60 text-white hover:bg-black/80 cursor-pointer"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                          <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/70 text-white font-mono text-[10px]">
+                            {activeIdx + 1} / {slides.length}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (ig.videoUrl) {
+                    const videoSrc = resolveSameOriginImageUrl(ig.videoUrl) || ig.videoUrl;
+                    const posterSrc = ig.coverUrl ? resolveSameOriginImageUrl(ig.coverUrl) || ig.coverUrl : undefined;
+                    return (
+                      <div data-testid="instagram-reel-player" className="rounded-2xl overflow-hidden bg-black border border-neutral-800">
+                        <video
+                          src={videoSrc}
+                          poster={posterSrc}
+                          controls
+                          playsInline
+                          preload="metadata"
+                          className="w-full max-h-[400px] object-contain"
+                        />
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 {renderLeftStage()}
               </div>
             </div>

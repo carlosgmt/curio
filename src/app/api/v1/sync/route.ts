@@ -10,6 +10,7 @@ import "@/lib/sync/letterboxdRss";
 import "@/lib/sync/goodreadsRss";
 import "@/lib/sync/purchaseHub";
 import "@/lib/sync/chef";
+import "@/lib/sync/instagram";
 
 export async function GET(req: NextRequest) {
   try {

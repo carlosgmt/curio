@@ -29,6 +29,12 @@ export function PhotoCard({
   const aperture = data.aperture || null;
   const iso = data.iso || null;
   const exifSpecs = [lens, exposure, aperture, iso].filter(Boolean);
+  const igMeta = (entity?.extendedAttributes as Record<string, any> | undefined)?.instagram;
+  const igBadge = igMeta?.videoUrl
+    ? "Reel"
+    : Array.isArray(igMeta?.carouselItems) && igMeta.carouselItems.length > 1
+    ? `1/${igMeta.carouselItems.length}`
+    : null;
 
   return (
     <div
@@ -49,12 +55,16 @@ export function PhotoCard({
         {/* Top Subtle Gradient Vignette */}
         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
 
-        {/* Top Badges: Camera (only if real EXIF exists) & Expand */}
+        {/* Top Badges: Camera / IG media badge & Expand */}
         <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px] font-mono">
           {camera ? (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/10 shadow-xs">
               <Camera className="w-3 h-3 text-amber-400" />
               <span className="truncate max-w-[140px]">{camera}</span>
+            </div>
+          ) : igBadge ? (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/10 shadow-xs">
+              <span>{igBadge}</span>
             </div>
           ) : (
             <span />

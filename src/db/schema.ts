@@ -71,6 +71,10 @@ export const users = sqliteTable("users", {
     goodreadsAuthStatus?: "ok" | "expired" | "unconfigured";
     goodreadsLastError?: string | null;
     goodreadsLastSyncedAt?: string | null;
+    instagramUsername?: string;
+    instagramAuthStatus?: "ok" | "expired" | "challenge" | "unconfigured";
+    instagramLastError?: string | null;
+    instagramLastSyncedAt?: string | null;
     lastFeedSyncAt?: string;
   }>(),
   tasteVector: float32Array("taste_vector", { dimensions: 768 }),

@@ -3,6 +3,7 @@ import { parseLetterboxdCSV } from "@/lib/importers/letterboxd";
 import { parseGoodreadsCSV } from "@/lib/importers/goodreads";
 import { parseBookmarksHTML, hydrateTopBookmarks } from "@/lib/importers/bookmarks";
 import { parseGoogleKeepTakeout, parseGoogleMapsSavedPlaces } from "@/lib/importers/takeout";
+import { importInstagramExport } from "@/lib/importers/instagramExport";
 import { ingestImportedItems, type AnyImportedItem } from "@/lib/importers/batchIngest";
 import { requireAuth, AuthError } from "@/lib/auth/service";
 
@@ -15,6 +16,22 @@ export async function POST(req: NextRequest) {
 
     if (!rawContent || (typeof rawContent !== "string" && !Array.isArray(rawContent))) {
       return NextResponse.json({ error: "Missing or invalid payload / csvText" }, { status: 400 });
+    }
+
+    if (platform === "instagram") {
+      const igResult = await importInstagramExport(user.id, rawContent as any, {
+        hydrateLimit: typeof body.hydrateLimit === "number" ? body.hydrateLimit : 0,
+      });
+      return NextResponse.json({
+        success: true,
+        platform: "instagram",
+        parsedCount: igResult.parsedCount,
+        insertedCount: igResult.createdSaves,
+        updatedCount: igResult.updatedSaves,
+        boardsCreated: igResult.boardsCreated,
+        cacheHitCount: 0,
+        errors: [],
+      });
     }
 
     let items: AnyImportedItem[] = [];
@@ -39,6 +56,25 @@ export async function POST(req: NextRequest) {
     } else {
       // Auto-detection engine
       const contentStr = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+      if (
+        contentStr.includes("saved_saved_media") ||
+        contentStr.includes("saved_collections") ||
+        /instagram\.com\/(?:p|reel)\//i.test(contentStr)
+      ) {
+        const igResult = await importInstagramExport(user.id, rawContent as any, {
+          hydrateLimit: typeof body.hydrateLimit === "number" ? body.hydrateLimit : 0,
+        });
+        return NextResponse.json({
+          success: true,
+          platform: "instagram",
+          parsedCount: igResult.parsedCount,
+          insertedCount: igResult.createdSaves,
+          updatedCount: igResult.updatedSaves,
+          boardsCreated: igResult.boardsCreated,
+          cacheHitCount: 0,
+          errors: [],
+        });
+      }
       if (contentStr.includes("<DL>") || contentStr.includes("NETSCAPE-Bookmark-file-1")) {
         detectedPlatform = "bookmarks";
         const parsed = parseBookmarksHTML(contentStr);

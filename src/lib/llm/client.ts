@@ -139,3 +139,28 @@ export async function generateJsonCompletion<T = unknown>(
     return null;
   }
 }
+
+/**
+ * Explicitly unloads the active Ollama model (`keep_alive: 0`) after batch runs
+ * so ~8 GB RAM is freed immediately on host mini.
+ */
+export async function releaseLocalLlmModel(): Promise<void> {
+  if (isLocalLlmDisabled()) {
+    return;
+  }
+  const { baseUrl, model } = getLocalLlmConfig();
+  const ollamaRoot = baseUrl.replace(/\/v1\/?$/, "");
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    await fetch(`${ollamaRoot}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, prompt: "", keep_alive: 0, stream: false }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+  } catch {
+    // Non-fatal best-effort cleanup
+  }
+}

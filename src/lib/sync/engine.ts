@@ -26,6 +26,7 @@ export type SyncSourceId =
   | "chef"
   | "letterboxd"
   | "goodreads"
+  | "instagram"
   | (string & {});
 
 export type SyncFetchFn = (
@@ -71,6 +72,12 @@ export interface SyncRecord {
     priceCents?: number | null;
     currency?: string | null;
   } | null;
+  extraSourceLinks?: Array<{
+    sellerName: string;
+    sourceUrl: string;
+    priceCents?: number | null;
+    currency?: string | null;
+  }>;
   boards: SyncBoardTarget[];
 }
 
@@ -868,29 +875,38 @@ export async function runSyncAdapter<TOptions extends SyncOptions>(
         }
       }
 
-      if (resolvedEntityId && rec.sourceLink?.sourceUrl) {
-        const srcHash = sha256Hex(rec.sourceLink.sourceUrl);
-        const [existingSource] = tx
-          .select({ id: entitySources.id })
-          .from(entitySources)
-          .where(
-            and(
-              eq(entitySources.entityId, resolvedEntityId),
-              eq(entitySources.urlHash, srcHash)
+      if (resolvedEntityId) {
+        const allSources = [
+          ...(rec.sourceLink?.sourceUrl ? [rec.sourceLink] : []),
+          ...(rec.extraSourceLinks || []).filter((s) => Boolean(s?.sourceUrl)),
+        ];
+        const seenSrcHashes = new Set<string>();
+        for (const src of allSources) {
+          const srcHash = sha256Hex(src.sourceUrl);
+          if (seenSrcHashes.has(srcHash)) continue;
+          seenSrcHashes.add(srcHash);
+          const [existingSource] = tx
+            .select({ id: entitySources.id })
+            .from(entitySources)
+            .where(
+              and(
+                eq(entitySources.entityId, resolvedEntityId),
+                eq(entitySources.urlHash, srcHash)
+              )
             )
-          )
-          .all();
-        if (!existingSource) {
-          tx.insert(entitySources)
-            .values({
-              entityId: resolvedEntityId,
-              sellerName: rec.sourceLink.sellerName,
-              sourceUrl: rec.sourceLink.sourceUrl,
-              urlHash: srcHash,
-              priceCents: rec.sourceLink.priceCents ?? rec.priceCents ?? null,
-              currency: rec.sourceLink.currency ?? rec.currency ?? "CHF",
-            })
-            .run();
+            .all();
+          if (!existingSource) {
+            tx.insert(entitySources)
+              .values({
+                entityId: resolvedEntityId,
+                sellerName: src.sellerName,
+                sourceUrl: src.sourceUrl,
+                urlHash: srcHash,
+                priceCents: src.priceCents ?? rec.priceCents ?? null,
+                currency: src.currency ?? rec.currency ?? "CHF",
+              })
+              .run();
+          }
         }
       }
 

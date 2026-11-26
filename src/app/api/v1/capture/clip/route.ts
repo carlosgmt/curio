@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
     const priceCents = parseClipPriceCents(clip.price);
     const currency = normalizeClipCurrency(clip.currency, clip.price);
     const heroImageUrl = clip.images?.[0] || null;
-    const summary = clip.description || clip.selection || null;
+    const summary =
+      clip.description || (clip.caption ? clip.caption.slice(0, 400) : null) || clip.selection || null;
     const brandOrCreator = clip.brand || clip.retailer || null;
     const displayTitle = clip.name || new URL(clip.url).hostname.replace(/^www\./, "");
 
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
       images: clip.images || [],
       schemaTypes: clip.schemaTypes || [],
       selection: clip.selection || null,
+      caption: clip.caption || null,
       recipe: clip.recipe || null,
       routedDestination: classification.destination,
     };

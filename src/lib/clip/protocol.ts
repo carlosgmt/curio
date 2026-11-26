@@ -23,6 +23,7 @@ export interface UniversalClipPayload {
   images?: string[];
   schemaTypes?: string[];
   selection?: string;
+  caption?: string;
   sku?: string;
   manualUrl?: string;
   retailer?: string;
@@ -109,6 +110,32 @@ const RECIPE_HOSTS_RE =
   /(?:seriouseats|bonappetit|cooking\.nytimes|allrecipes|bbcgoodfood|directoalpaladar|elcomidista|recetasgratis|giallozafferano|smittenkitchen|recipetineats)/i;
 
 const RECIPE_PATH_RE = /(?:^|\/)(?:recipes?|recetas?)(?:\/|$)/i;
+
+const SOCIAL_HOST_RE =
+  /(?:^|\.)(?:instagram\.com|tiktok\.com|youtube\.com|youtu\.be|threads\.net|pinterest\.[a-z.]+)$/i;
+
+const RECIPE_HEADER_RE =
+  /\b(?:ingredients?|ingredientes?|zutaten|ingr[eé]dients?|preparaci[oó]n|elaboraci[oó]n|instrucciones?|instructions?|directions?|receta|recipe|paso\s*a\s*paso)\b/i;
+
+const RECIPE_CUE_RE =
+  /(?:\b\d+(?:[.,/]\d+)?\s*(?:g|gr|kg|ml|l|cl|oz|lb|tbsp|tsp|cups?|tazas?|cucharadas?|cucharaditas?|cdas?|cdtas?|min(?:utos?|s)?|°\s?[cf])|\b(?:horno|oven|sart[eé]n|air\s*fryer|preheat|precalentar)\b)/i;
+
+const RECIPE_UNIT_GLOBAL_RE =
+  /\b\d+(?:[.,/]\d+)?\s*(?:g|gr|kg|ml|l|cl|oz|lb|tbsp|tsp|cups?|tazas?|cucharadas?|cucharaditas?|cdas?|cdtas?|min(?:utos?|s)?|°\s?[cf])\b/gi;
+
+function isCulinaryCaption(text: string, isSocialHost: boolean): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < 30) return false;
+  const bulletCount = (trimmed.match(/(?:^|\n)\s*(?:[-•*]|\d+[.)])\s+\S/g) || []).length;
+  if (RECIPE_HEADER_RE.test(trimmed) && (RECIPE_CUE_RE.test(trimmed) || bulletCount >= 2)) {
+    return true;
+  }
+  if (isSocialHost && trimmed.length >= 80) {
+    const unitCount = (trimmed.match(RECIPE_UNIT_GLOBAL_RE) || []).length;
+    if (unitCount >= 3) return true;
+  }
+  return false;
+}
 
 const APPAREL_KEYWORDS_RE =
   /\b(?:shirt|t-shirt|tee|polo|sweater|knit|knitwear|cardigan|hoodie|fleece|overshirt|jacket|coat|parka|puffer|blazer|vest|pants|trousers|chinos|jeans|shorts|sweatpants|sneakers|boots|loafers|shoes|socks|scarf|beanie|cap|belt|merino|cashmere|corduroy|denim|menswear|womenswear|apparel|garment)\b/i;
@@ -206,17 +233,25 @@ export function classifyClipDestination(clip: UniversalClipPayload): ClipClassif
   const hasProductSchema = schemaLower.some((s) => s.includes("product") && !s.includes("book"));
   const hasPrice = parseClipPriceCents(clip.price) !== null;
 
-  // 1. Recipe -> Chef
+  // 1. Recipe -> Chef (structured Recipe OR culinary social/caption cues before VideoObject/Film)
+  const isSocialHost = SOCIAL_HOST_RE.test(hostname);
+  const captionProbe = [clip.caption, clip.selection, clip.description, clip.name].filter(Boolean).join("\n");
   const hasRecipeSchema = schemaLower.some((s) => s.includes("recipe"));
   const hasRecipeIngredients = (clip.recipe?.ingredients?.length ?? 0) >= 2;
-  if (hasRecipeSchema || hasRecipeIngredients || RECIPE_HOSTS_RE.test(hostname) || RECIPE_PATH_RE.test(pathname)) {
+  const hasCaptionRecipe = isCulinaryCaption(captionProbe, isSocialHost);
+  if (hasRecipeSchema || hasRecipeIngredients || hasCaptionRecipe || RECIPE_HOSTS_RE.test(hostname) || RECIPE_PATH_RE.test(pathname)) {
     return {
       destination: "chef",
       coreType: "CULINARY",
       typePath: "/culinary/recipe",
       label: "Chef",
       targetPath: "/chef/",
-      reason: hasRecipeSchema || hasRecipeIngredients ? "Recipe structured data detected" : "Recipe URL detected",
+      reason:
+        hasRecipeSchema || hasRecipeIngredients
+          ? "Recipe structured data detected"
+          : hasCaptionRecipe
+            ? "Recipe detected in social caption"
+            : "Recipe URL detected",
       tags: ["clipped", "recipe", "chef"],
     };
   }
@@ -365,6 +400,16 @@ export function sanitizeUniversalClipPayload(raw: unknown): UniversalClipPayload
     return clean || undefined;
   };
 
+  const multilineOrUndef = (val: unknown, maxLen: number): string | undefined => {
+    if (typeof val !== "string") return undefined;
+    const clean = val
+      .replace(/\r\n?/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+      .slice(0, maxLen);
+    return clean || undefined;
+  };
+
   const strArray = (val: unknown, maxItems: number, maxLen: number, httpOnly = false): string[] | undefined => {
     if (!Array.isArray(val)) return undefined;
     const items = val
@@ -410,7 +455,8 @@ export function sanitizeUniversalClipPayload(raw: unknown): UniversalClipPayload
     description: strOrUndef(obj.description, 800),
     images: strArray(obj.images, 12, 800, true),
     schemaTypes: strArray(obj.schemaTypes, 8, 60),
-    selection: strOrUndef(obj.selection, 800),
+    selection: multilineOrUndef(obj.selection, 1500),
+    caption: multilineOrUndef(obj.caption, 3000),
     sku: strOrUndef(obj.sku, 80),
     manualUrl,
     retailer: strOrUndef(obj.retailer, 80),
@@ -533,7 +579,14 @@ export function buildCurioSaveToBookmarkletHref(curioClipUrl: string): string {
     `addStep(REC.recipeInstructions);` +
     `recObj={servings:Array.isArray(REC.recipeYield)?REC.recipeYield[0]:(REC.recipeYield||""),prepTime:REC.prepTime||"",cookTime:REC.cookTime||"",totalTime:REC.totalTime||"",ingredients:ings,instructions:steps};` +
     `}` +
-    `var sel="";try{sel=(window.getSelection&&window.getSelection().toString()||"").replace(/\\s+/g," ").trim().slice(0,500);}catch(e){}` +
+    `var sel="";try{sel=(window.getSelection&&window.getSelection().toString()||"").replace(/\\r\\n?/g,"\\n").trim().slice(0,1200);}catch(e){}` +
+    `var soc=/(?:instagram\\.com|tiktok\\.com|youtube\\.com|youtu\\.be|threads\\.net|pinterest\\.)/i.test(L.hostname),cap="";` +
+    `if(soc){` +
+    `var cands=[],cels=D.querySelectorAll('[data-e2e="browse-video-desc"],[data-e2e="video-desc"],[id="description-inline-expander"],ytd-text-inline-expander,[id="attributed-snippet-text"],article h1,main h1,[role="dialog"] h1,article ul li span[dir="auto"],[role="dialog"] span[dir="auto"]');` +
+    `for(var ci=0;ci<cels.length;ci++){var cx=(cels[ci].innerText||cels[ci].textContent||"").replace(/\\r\\n?/g,"\\n").trim();if(cx.length>=40&&!/(?:log in|sign up|forgot password|create new account)/i.test(cx))cands.push(cx);}` +
+    `cands.sort(function(a,b){return b.length-a.length;});` +
+    `if(cands[0])cap=cands[0].slice(0,2400);` +
+    `}` +
     `var h1=D.querySelector("h1");` +
     `var br=P&&P.brand?(typeof P.brand==="string"?P.brand:P.brand.name):(P&&P.author?(typeof P.author==="string"?P.author:(Array.isArray(P.author)?(P.author[0]&&P.author[0].name):P.author.name)):"");` +
     `var sku=PROD?(PROD.sku||PROD.mpn||PROD.gtin13||PROD.model||""):"";` +
@@ -554,6 +607,7 @@ export function buildCurioSaveToBookmarkletHref(curioClipUrl: string): string {
     `images:imgs,` +
     `schemaTypes:ST,` +
     `selection:sel,` +
+    `caption:cap,` +
     `recipe:recObj` +
     `};` +
     `var b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"");` +

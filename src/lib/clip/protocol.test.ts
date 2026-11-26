@@ -91,5 +91,24 @@ describe("Universal Save to Curio Clip Protocol", () => {
     });
     expect(quoteRoute.destination).toBe("curio");
     expect(quoteRoute.typePath).toBe("/quote");
+
+    const igRecipeRoute = classifyClipDestination({
+      url: "https://www.instagram.com/reel/ABC123/",
+      name: "Arroz meloso de setas",
+      schemaTypes: ["VideoObject"],
+      caption:
+        "Ingredientes:\n- 300g arroz bomba\n- 250g setas\n- 1L caldo\nPreparación: cocinar 18 min.",
+    });
+    expect(igRecipeRoute.destination).toBe("chef");
+    expect(igRecipeRoute.typePath).toBe("/culinary/recipe");
+
+    const igCasualRoute = classifyClipDestination({
+      url: "https://www.instagram.com/reel/XYZ999/",
+      name: "Weekend walk in Zurich",
+      schemaTypes: ["VideoObject"],
+      caption: "Sunday coffee and lake views with friends.",
+    });
+    expect(igCasualRoute.destination).toBe("curio");
+    expect(igCasualRoute.typePath).toBe("/media/film");
   });
 });

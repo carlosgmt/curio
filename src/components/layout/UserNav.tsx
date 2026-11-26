@@ -2,8 +2,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Download, Share, User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers, Upload } from "lucide-react";
+import { Download, Share, User, LogOut, Sparkles, ChevronDown, CheckCircle2, Shield, DollarSign, Layers, Upload, Bookmark } from "lucide-react";
 import { AffiliateSettingsModal } from "@/components/commerce/AffiliateSettingsModal";
+import { ClipperModal } from "@/components/clip/ClipperModal";
 import { useInstallPrompt } from "@/components/pwa/useInstallPrompt";
 import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
 
@@ -37,6 +38,7 @@ export function UserNav({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [affiliateModalOpen, setAffiliateModalOpen] = useState(false);
   const [typesModalOpen, setTypesModalOpen] = useState(false);
+  const [clipperModalOpen, setClipperModalOpen] = useState(false);
   const install = useInstallPrompt();
 
   if (!user) {
@@ -203,7 +205,19 @@ export function UserNav({
               className="w-full flex items-center gap-2 p-2 rounded-xl text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition text-left cursor-pointer"
             >
               <Layers className="w-3.5 h-3.5 text-amber-500" />
-              <span>Types & Schemas</span>
+              <span>Types &amp; Schemas</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setDropdownOpen(false);
+                setClipperModalOpen(true);
+              }}
+              className="w-full flex items-center gap-2 p-2 rounded-xl text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition text-left cursor-pointer"
+            >
+              <Bookmark className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Save to Clipper</span>
             </button>
 
             <button
@@ -247,6 +261,12 @@ export function UserNav({
       <TypesSettingsModal
         isOpen={typesModalOpen}
         onClose={() => setTypesModalOpen(false)}
+      />
+
+      {/* Embedded Universal Clipper Modal */}
+      <ClipperModal
+        isOpen={clipperModalOpen}
+        onClose={() => setClipperModalOpen(false)}
       />
     </div>
   );

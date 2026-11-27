@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Curio Capture",
-  "version": "1.1.0",
-  "description": "1-tap capture and Instagram session sync for your Curio Taste Graph.",
+  "version": "1.2.0",
+  "description": "1-tap capture and automatic Instagram session sync for your Curio Taste Graph.",
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -15,7 +15,8 @@
     "activeTab",
     "storage",
     "contextMenus",
-    "cookies"
+    "cookies",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.instagram.com/*",

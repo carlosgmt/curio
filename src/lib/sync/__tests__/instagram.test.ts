@@ -8,6 +8,7 @@ import { matchesAutoRules } from "@/lib/lists/service";
 import {
   clearInstagramAuthRecord,
   getInstagramAuthRecord,
+  mergeInstagramSetCookieHeaders,
   parseInstagramCookieString,
   setInstagramAuthRecord,
 } from "../instagramAuthStore";
@@ -358,5 +359,143 @@ describe("Instagram Auth, Client, Media, Classifier & SyncAdapter", () => {
 
     clearInstagramAuthRecord(user.id);
     fs.rmSync(tmpBase, { recursive: true, force: true });
+  });
+
+  it("merges Set-Cookie rotations, ignores deletions, and persists rotated tokens during paginated sync", async () => {
+    const current = {
+      cookie: "sessionid=1%3Asess_old; csrftoken=csrf_old; ds_user_id=1",
+      sessionId: "1%3Asess_old",
+      csrfToken: "csrf_old",
+      dsUserId: "1",
+    };
+
+    const ignored = mergeInstagramSetCookieHeaders(current, [
+      'csrftoken=""; Max-Age=0; Path=/',
+      "rur=deleted; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+      "csrftoken=csrf_old; Path=/",
+    ]);
+    expect(ignored.updated).toBe(false);
+    expect(ignored.csrfToken).toBe("csrf_old");
+
+    const rotated = mergeInstagramSetCookieHeaders(current, [
+      "csrftoken=csrf_new; Path=/; Secure",
+      'rur="VLL\\0541\\054179:abc"; Path=/',
+    ]);
+    expect(rotated.updated).toBe(true);
+    expect(rotated.csrfToken).toBe("csrf_new");
+    expect(rotated.cookie).toContain("csrftoken=csrf_new");
+    expect(rotated.cookie).toContain("rur=");
+
+    const ts = Date.now();
+    const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), "curio-ig-rot-"));
+    const [user] = await db
+      .insert(users)
+      .values({ email: `ig-rot-${ts}@curio.local`, username: `ig_rot_${ts}` })
+      .returning();
+
+    setInstagramAuthRecord(user.id, {
+      cookie: current.cookie,
+      igUsername: "rot_tester",
+    });
+
+    let page2SeenCsrf = "";
+    const rotatingFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const reqHeaders = new Headers(init?.headers);
+      if (url.includes("/api/v1/collections/list/")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: {
+            "set-cookie": "csrftoken=csrf_rotated_1; Path=/; Secure",
+          },
+        });
+      }
+      if (url.includes("/api/v1/feed/saved/posts/") && !url.includes("max_id=")) {
+        return new Response(
+          JSON.stringify({
+            more_available: true,
+            next_max_id: "p2",
+            items: [],
+          }),
+          { status: 200 }
+        );
+      }
+      page2SeenCsrf = reqHeaders.get("x-csrf-token") || reqHeaders.get("X-CSRFToken") || "";
+      return new Response(
+        JSON.stringify({
+          more_available: false,
+          items: [],
+        }),
+        { status: 200 }
+      );
+    };
+
+    await instagramSyncAdapter.run!(user.id, {
+      fetchFn: rotatingFetch,
+      mediaBaseDir: tmpBase,
+      delayFn: async () => {},
+    });
+
+    expect(page2SeenCsrf).toBe("csrf_rotated_1");
+    const updatedAuth = getInstagramAuthRecord(user.id);
+    expect(updatedAuth?.csrfToken).toBe("csrf_rotated_1");
+
+    clearInstagramAuthRecord(user.id);
+    fs.rmSync(tmpBase, { recursive: true, force: true });
+  });
+
+  it("falls back gracefully when collections/list returns 404 HTML and still fetches saved posts", async () => {
+    const auth = {
+      cookie: "sessionid=1%3Aabc; csrftoken=tok",
+      sessionId: "1%3Aabc",
+      csrfToken: "tok",
+      updatedAt: new Date().toISOString(),
+    };
+
+    let sawCorsHeaders = false;
+    const mockFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const hdrs = new Headers(init?.headers);
+      if (
+        hdrs.get("sec-fetch-site") === "same-origin" &&
+        hdrs.get("origin") === "https://www.instagram.com" &&
+        hdrs.get("x-asbd-id") === "129477"
+      ) {
+        sawCorsHeaders = true;
+      }
+      if (url.includes("/api/v1/collections/list/")) {
+        return new Response("<!DOCTYPE html><html><body>Not Found</body></html>", {
+          status: 404,
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          more_available: false,
+          items: [
+            {
+              media: {
+                code: "FALLBACK_POST_1",
+                pk: "777",
+                media_type: 1,
+                caption: { text: "Saved without collections endpoint" },
+                user: { username: "creator_fb" },
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      );
+    };
+
+    const res = await fetchInstagramSavedPosts(auth, {
+      fetchFn: mockFetch,
+      delayFn: async () => {},
+    });
+
+    expect(sawCorsHeaders).toBe(true);
+    expect(res.collections).toEqual([]);
+    expect(res.posts).toHaveLength(1);
+    expect(res.posts[0].shortcode).toBe("FALLBACK_POST_1");
   });
 });

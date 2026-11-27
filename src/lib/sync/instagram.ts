@@ -278,6 +278,12 @@ export const instagramSyncAdapter: SyncAdapter<InstagramSyncOptions> = {
           incremental: options.incremental !== false,
           fetchFn: options.fetchFn,
           delayFn: options.delayFn,
+          onCookieUpdate: (mergedCookie) => {
+            setInstagramAuthRecord(userId, {
+              cookie: mergedCookie,
+              igUsername: authRec?.igUsername,
+            });
+          },
         });
         posts = res.posts;
         pagesFetched = res.pagesFetched;

@@ -164,3 +164,115 @@ export function clearInstagramAuthRecord(userId: string): void {
     writeAllAuthRecords(all);
   }
 }
+
+const TRACKED_IG_COOKIES = new Set([
+  "sessionid",
+  "csrftoken",
+  "ds_user_id",
+  "ig_did",
+  "mid",
+  "datr",
+  "rur",
+]);
+
+/**
+ * Merges rotated `Set-Cookie` response headers from Instagram into the stored
+ * cookie string while ignoring empty/deletion cookies (`Max-Age=0`, 1970 expiry).
+ */
+export function mergeInstagramSetCookieHeaders(
+  current: Pick<StoredInstagramAuth, "cookie" | "sessionId" | "csrfToken" | "dsUserId">,
+  setCookieHeaders: string[]
+): {
+  updated: boolean;
+  cookie: string;
+  sessionId: string;
+  csrfToken?: string;
+  dsUserId?: string;
+} {
+  if (!Array.isArray(setCookieHeaders) || setCookieHeaders.length === 0) {
+    return {
+      updated: false,
+      cookie: current.cookie,
+      sessionId: current.sessionId,
+      csrfToken: current.csrfToken,
+      dsUserId: current.dsUserId,
+    };
+  }
+
+  const kv = new Map<string, string>();
+  for (const part of current.cookie.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx <= 0) continue;
+    const name = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (name && value) kv.set(name, value);
+  }
+
+  let sawCandidate = false;
+  for (const rawHeader of setCookieHeaders) {
+    if (!rawHeader || typeof rawHeader !== "string") continue;
+    const segments = rawHeader.split(";").map((s) => s.trim());
+    const nameVal = segments[0] || "";
+    const eqIdx = nameVal.indexOf("=");
+    if (eqIdx <= 0) continue;
+
+    const name = nameVal.slice(0, eqIdx).trim();
+    const lowerName = name.toLowerCase();
+    if (!TRACKED_IG_COOKIES.has(lowerName)) continue;
+
+    let value = nameVal.slice(eqIdx + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1).trim();
+    }
+    if (!value || value.toLowerCase() === "deleted") continue;
+
+    const attrs = segments.slice(1).join("; ").toLowerCase();
+    if (/\bmax-age=0\b/.test(attrs) || /\bexpires=[^;]*1970\b/.test(attrs)) {
+      continue;
+    }
+
+    // Preserve canonical lowercase key for core tokens
+    const canonicalKey =
+      lowerName === "sessionid" || lowerName === "csrftoken" || lowerName === "ds_user_id"
+        ? lowerName
+        : name;
+    kv.set(canonicalKey, value);
+    sawCandidate = true;
+  }
+
+  if (!sawCandidate) {
+    return {
+      updated: false,
+      cookie: current.cookie,
+      sessionId: current.sessionId,
+      csrfToken: current.csrfToken,
+      dsUserId: current.dsUserId,
+    };
+  }
+
+  const rebuiltPairs: string[] = [];
+  for (const [k, v] of kv.entries()) {
+    rebuiltPairs.push(`${k}=${v}`);
+  }
+  const parsed = parseInstagramCookieString(rebuiltPairs.join("; "));
+  if (!parsed) {
+    return {
+      updated: false,
+      cookie: current.cookie,
+      sessionId: current.sessionId,
+      csrfToken: current.csrfToken,
+      dsUserId: current.dsUserId,
+    };
+  }
+
+  return {
+    updated: parsed.cookie !== current.cookie,
+    cookie: parsed.cookie,
+    sessionId: parsed.sessionId,
+    csrfToken: parsed.csrfToken,
+    dsUserId: parsed.dsUserId,
+  };
+}

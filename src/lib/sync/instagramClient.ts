@@ -1,5 +1,8 @@
 import type { SyncFetchFn } from "./engine";
-import type { StoredInstagramAuth } from "./instagramAuthStore";
+import {
+  mergeInstagramSetCookieHeaders,
+  type StoredInstagramAuth,
+} from "./instagramAuthStore";
 
 export const IG_WEB_APP_ID = "936619743392459";
 export const IG_DEFAULT_USER_AGENT =
@@ -80,6 +83,7 @@ export interface FetchInstagramSavedOptions {
   maxDelayMs?: number;
   fetchFn?: SyncFetchFn;
   delayFn?: (ms: number) => Promise<void>;
+  onCookieUpdate?: (mergedCookie: string) => void;
 }
 
 export interface FetchInstagramSavedResult {
@@ -146,9 +150,16 @@ function buildHeaders(auth: StoredInstagramAuth): Record<string, string> {
     Cookie: auth.cookie,
     "User-Agent": IG_DEFAULT_USER_AGENT,
     "X-IG-App-ID": IG_WEB_APP_ID,
+    "X-ASBD-ID": "129477",
+    "X-IG-WWW-Claim": "0",
     "X-Requested-With": "XMLHttpRequest",
     Accept: "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
     Referer: "https://www.instagram.com/",
+    Origin: "https://www.instagram.com",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
   };
   if (auth.csrfToken) {
     headers["X-CSRFToken"] = auth.csrfToken;
@@ -156,10 +167,23 @@ function buildHeaders(auth: StoredInstagramAuth): Record<string, string> {
   return headers;
 }
 
+function extractSetCookieHeaders(headers: Headers): string[] {
+  const anyHeaders = headers as unknown as { getSetCookie?: () => string[] };
+  if (typeof anyHeaders.getSetCookie === "function") {
+    const list = anyHeaders.getSetCookie();
+    if (Array.isArray(list)) return list;
+  }
+  const combined = headers.get("set-cookie");
+  if (!combined) return [];
+  // Split multiple Set-Cookie headers joined by comma without breaking Expires dates (e.g. "Thu, 01 Jan ...")
+  return combined.split(/,(?=\s*[A-Za-z0-9_.-]+=)/).map((s) => s.trim());
+}
+
 async function fetchIgJson(
   url: string,
   auth: StoredInstagramAuth,
-  fetchFn: SyncFetchFn
+  fetchFn: SyncFetchFn,
+  onCookieUpdate?: (mergedCookie: string) => void
 ): Promise<Record<string, any>> {
   const res = await fetchFn(url, {
     method: "GET",
@@ -200,7 +224,20 @@ async function fetchIgJson(
     throw new Error(`Instagram API HTTP ${res.status}`);
   }
 
-  const data = (await res.json()) as Record<string, any>;
+  const rawText = await res.text();
+  if (/^\s*<!doctype|^\s*<html/i.test(rawText)) {
+    if (/login|accounts\/login/i.test(rawText)) {
+      throw new InstagramAuthExpiredError();
+    }
+    throw new Error("Instagram returned HTML instead of JSON");
+  }
+
+  let data: Record<string, any>;
+  try {
+    data = JSON.parse(rawText) as Record<string, any>;
+  } catch {
+    throw new Error("Instagram returned invalid JSON payload");
+  }
   if (data?.require_login || data?.message === "login_required") {
     throw new InstagramAuthExpiredError();
   }
@@ -212,6 +249,19 @@ async function fetchIgJson(
   ) {
     throw new InstagramChallengeError();
   }
+
+  const setCookies = extractSetCookieHeaders(res.headers);
+  if (setCookies.length > 0) {
+    const merged = mergeInstagramSetCookieHeaders(auth, setCookies);
+    if (merged.updated) {
+      auth.cookie = merged.cookie;
+      auth.sessionId = merged.sessionId;
+      auth.csrfToken = merged.csrfToken;
+      auth.dsUserId = merged.dsUserId;
+      onCookieUpdate?.(merged.cookie);
+    }
+  }
+
   return data;
 }
 
@@ -401,11 +451,12 @@ export function parseInstagramMediaNode(
 
 export async function fetchInstagramCollections(
   auth: StoredInstagramAuth,
-  fetchFn: SyncFetchFn = fetch
+  fetchFn: SyncFetchFn = fetch,
+  onCookieUpdate?: (mergedCookie: string) => void
 ): Promise<InstagramCollection[]> {
   const url =
     "https://www.instagram.com/api/v1/collections/list/?collection_types=%5B%22ALL_MEDIA_AUTO_COLLECTION%22%2C%22MEDIA%22%5D";
-  const data = await fetchIgJson(url, auth, fetchFn);
+  const data = await fetchIgJson(url, auth, fetchFn, onCookieUpdate);
   const items = Array.isArray(data?.items) ? data.items : [];
   const collections: InstagramCollection[] = [];
 
@@ -430,6 +481,7 @@ export async function fetchInstagramSavedPosts(
   auth: StoredInstagramAuth,
   opts: FetchInstagramSavedOptions = {}
 ): Promise<FetchInstagramSavedResult> {
+  const workingAuth: StoredInstagramAuth = { ...auth };
   const fetchFn = opts.fetchFn || fetch;
   const delayFn = opts.delayFn || defaultDelay;
   const maxPages = Math.max(1, opts.maxPages ?? 5);
@@ -438,7 +490,24 @@ export async function fetchInstagramSavedPosts(
   const knownShortcodes = opts.knownShortcodes || new Set<string>();
   const incremental = opts.incremental !== false;
 
-  const collections = await fetchInstagramCollections(auth, fetchFn);
+  let collections: InstagramCollection[] = [];
+  try {
+    collections = await fetchInstagramCollections(
+      workingAuth,
+      fetchFn,
+      opts.onCookieUpdate
+    );
+  } catch (err) {
+    if (
+      err instanceof InstagramAuthExpiredError ||
+      err instanceof InstagramChallengeError
+    ) {
+      throw err;
+    }
+    // Meta deprecated /api/v1/collections/list/ for some web clients (404 HTML);
+    // degrade gracefully and continue syncing /api/v1/feed/saved/posts/.
+    collections = [];
+  }
   const collectionMap = new Map(collections.map((c) => [c.id, c]));
 
   const postMap = new Map<string, InstagramSavedPost>();
@@ -456,8 +525,9 @@ export async function fetchInstagramSavedPosts(
 
     const data = await fetchIgJson(
       `https://www.instagram.com/api/v1/feed/saved/posts/?${qs.toString()}`,
-      auth,
-      fetchFn
+      workingAuth,
+      fetchFn,
+      opts.onCookieUpdate
     );
     pagesFetched++;
 
@@ -505,8 +575,9 @@ export async function fetchInstagramSavedPosts(
         if (colNextMaxId) qs.set("max_id", colNextMaxId);
         const colData = await fetchIgJson(
           `https://www.instagram.com/api/v1/feed/collection/${encodeURIComponent(col.id)}/posts/?${qs.toString()}`,
-          auth,
-          fetchFn
+          workingAuth,
+          fetchFn,
+          opts.onCookieUpdate
         );
         colPages++;
         const colItems = Array.isArray(colData?.items) ? colData.items : [];

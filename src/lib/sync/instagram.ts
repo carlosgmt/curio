@@ -59,6 +59,7 @@ export interface InstagramSyncOptions extends SyncOptions {
   igUsername?: string;
   incremental?: boolean;
   maxPages?: number;
+  maxNewItems?: number;
   mediaFetchFn?: SyncFetchFn;
   mediaBaseDir?: string;
   delayFn?: (ms: number) => Promise<void>;
@@ -312,10 +313,25 @@ export const instagramSyncAdapter: SyncAdapter<InstagramSyncOptions> = {
     const records: SyncRecord[] = [];
     let usedLlmInBatch = false;
     let mediaArchivedCount = 0;
+    let newItemsProcessed = 0;
+    let hasMoreUnprocessed = false;
+    const maxNewItems =
+      typeof options.maxNewItems === "number"
+        ? Math.max(1, options.maxNewItems)
+        : options.preloadedPosts
+        ? Number.POSITIVE_INFINITY
+        : 25;
 
     try {
       for (const post of posts) {
         const existing = existingByShortcode.get(post.shortcode);
+        if (!existing && newItemsProcessed >= maxNewItems) {
+          hasMoreUnprocessed = true;
+          continue;
+        }
+        if (!existing) {
+          newItemsProcessed++;
+        }
         const existingExt =
           existing?.entity.extendedAttributes &&
           typeof existing.entity.extendedAttributes === "object"
@@ -506,6 +522,8 @@ export const instagramSyncAdapter: SyncAdapter<InstagramSyncOptions> = {
             pagesFetched,
             stoppedEarly,
             mediaArchivedCount,
+            newItemsProcessed,
+            hasMoreUnprocessed,
           },
         }),
       },

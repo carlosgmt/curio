@@ -276,7 +276,7 @@ Rules:
     const raw = await generateJsonCompletion<unknown>(
       `Classify this saved Instagram post:\n${JSON.stringify(promptPayload, null, 2)}`,
       systemPrompt,
-      { temperature: 0.1, timeoutMs: 90_000 }
+      { temperature: 0.1, timeoutMs: 25_000, think: false, maxTokens: 320 }
     );
     if (!raw) {
       return classifyInstagramPostHeuristic(post, userBoards);

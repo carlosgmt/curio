@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
       force: body?.force !== false,
       incremental: body?.incremental !== false,
       maxPages: typeof body?.maxPages === "number" ? body.maxPages : 5,
+      maxNewItems: typeof body?.maxNewItems === "number" ? body.maxNewItems : undefined,
     });
 
     return NextResponse.json({

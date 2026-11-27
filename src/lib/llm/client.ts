@@ -2,6 +2,8 @@ export interface CompletionOptions {
   jsonMode?: boolean;
   timeoutMs?: number;
   temperature?: number;
+  think?: boolean;
+  maxTokens?: number;
 }
 
 export interface ChatMessage {
@@ -58,22 +60,38 @@ export async function generateChatCompletion(
   }
   messages.push({ role: "user", content: prompt });
 
-  const payload: Record<string, unknown> = {
-    model,
-    messages,
-    stream: false,
-    temperature: options.temperature ?? 0.1,
-  };
+  const payload: Record<string, unknown> =
+    options.think === false
+      ? {
+          model,
+          messages,
+          stream: false,
+          think: false,
+          ...(options.jsonMode ? { format: "json" } : {}),
+          options: {
+            temperature: options.temperature ?? 0.1,
+            ...(options.maxTokens ? { num_predict: options.maxTokens } : {}),
+          },
+        }
+      : {
+          model,
+          messages,
+          stream: false,
+          temperature: options.temperature ?? 0.1,
+          ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
+          ...(options.jsonMode ? { response_format: { type: "json_object" } } : {}),
+        };
 
-  if (options.jsonMode) {
-    payload.response_format = { type: "json_object" };
-  }
+  const endpointUrl =
+    options.think === false
+      ? `${baseUrl.replace(/\/v1\/?$/, "")}/api/chat`
+      : `${baseUrl}/chat/completions`;
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetch(endpointUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -90,7 +108,8 @@ export async function generateChatCompletion(
     }
 
     const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
+    const content =
+      data?.message?.content ?? data?.choices?.[0]?.message?.content;
     if (typeof content !== "string") {
       return null;
     }

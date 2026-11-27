@@ -12,7 +12,7 @@ COPY . .
 
 # Run Next.js production build (generates .next/standalone)
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN bun run build
+RUN DATABASE_PATH=:memory: bun run build
 
 # ── Runner ─────────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner

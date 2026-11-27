@@ -5,6 +5,12 @@ import { dirname } from "path";
 import * as schema from "./schema";
 
 function getDatabasePath(): string {
+  if (
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.DATABASE_PATH === ":memory:"
+  ) {
+    return ":memory:";
+  }
   if (process.env.DATABASE_PATH) {
     return process.env.DATABASE_PATH;
   }
@@ -16,15 +22,19 @@ function getDatabasePath(): string {
 
 const DB_PATH = getDatabasePath();
 
-try {
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-} catch {
-  // directory exists
+if (DB_PATH !== ":memory:") {
+  try {
+    mkdirSync(dirname(DB_PATH), { recursive: true });
+  } catch {
+    // directory exists
+  }
 }
 
 export const sqlite = new Database(DB_PATH, { timeout: 15000 });
 sqlite.pragma("busy_timeout = 15000");
-sqlite.pragma("journal_mode = WAL");
+if (DB_PATH !== ":memory:") {
+  sqlite.pragma("journal_mode = WAL");
+}
 sqlite.pragma("foreign_keys = ON");
 
 // Helper to safely add column if it doesn't already exist

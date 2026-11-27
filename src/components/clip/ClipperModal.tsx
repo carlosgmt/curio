@@ -72,9 +72,9 @@ export function ClipperBookmarkletBar({ compact = false }: ClipperBookmarkletBar
 
       <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
         <strong>Desktop:</strong> Drag <strong>Save to Curio</strong> to your bookmarks bar.{" "}
-        <strong>Mobile Chrome:</strong> Tap <strong>Copy Code</strong>, bookmark any page, edit the bookmark name to{" "}
-        <span className="font-mono">Curio</span> and replace its URL with the copied code, then type{" "}
-        <span className="font-mono">Curio</span> in the address bar on any page.
+        <strong>Mobile Chrome (Android/iOS):</strong> Tap <strong>Copy Code</strong>, bookmark any page, edit it → name{" "}
+        <span className="font-mono">Curio</span>, paste the code as the URL. To run on any page, type{" "}
+        <span className="font-mono">Curio</span> in the address bar and tap the ★ bookmark suggestion (tapping from the Bookmarks menu does not work on Android).
       </p>
     </div>
   );

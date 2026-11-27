@@ -11,7 +11,11 @@ describe("Universal Save to Curio Clip Protocol", () => {
     const href = buildCurioSaveToBookmarkletHref("https://mini.orca-banjo.ts.net/curio/clip");
     expect(href.startsWith("javascript:")).toBe(true);
     expect(href.includes("#")).toBe(false);
-    expect(() => new Function(href.slice("javascript:".length))).not.toThrow();
+    expect(/%(?![0-9A-Fa-f]{2})/.test(href)).toBe(false);
+    const decodedScript = decodeURI(href.slice("javascript:".length));
+    expect(() => new Function(decodedScript)).not.toThrow();
+    expect(href.length).toBeLessThan(10000);
+    expect(decodedScript).toContain("Android");
 
     const payload = {
       url: "https://www.cos.com/en-ch/men/knitwear/merino-sweater.html",

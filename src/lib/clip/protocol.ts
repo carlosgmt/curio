@@ -506,115 +506,105 @@ export function buildCurioSaveToBookmarkletHref(curioClipUrl: string): string {
     throw new Error("Invalid Curio clip URL");
   }
 
-  // Zero literal '#' characters inside the javascript: payload so address bars never truncate at a fragment.
+  // Zero literal '#' and zero bare '%' anywhere; return encodeURI(script) so strict mobile URL parsers (Android/iOS Chrome, Safari) execute cleanly.
+  const q = "'";
   const script =
     `(function(){` +
     `try{` +
     `var D=document,L=location;` +
-    `if(!/^https?:$/.test(L.protocol)){alert("Open a web page first.");return;}` +
-    `var M={},ms=D.querySelectorAll("meta");` +
-    `for(var i=0;i<ms.length;i++){` +
-    `var k=(ms[i].getAttribute("property")||ms[i].getAttribute("name")||ms[i].getAttribute("itemprop")||"").toLowerCase().trim();` +
-    `var v=(ms[i].getAttribute("content")||"").trim();` +
+    `if(!/^https?:$/.test(L.protocol)){alert(${q}Open a web page first.${q});return;}` +
+    `var isS=function(x){return typeof x===${q}string${q};},isA=Array.isArray,` +
+    `Q=function(r){return D.querySelector(r);},QA=function(r){return D.querySelectorAll(r);},` +
+    `G=function(e,k){return(e.getAttribute(k)||${q}${q}).trim();},` +
+    `C=function(v,n){return String(v||${q}${q}).replace(/\\s+/g,${q} ${q}).trim().slice(0,n);},` +
+    `M={},ms=QA(${q}meta${q}),i,k,v;` +
+    `for(i=0;i<ms.length;i++){` +
+    `k=(G(ms[i],${q}property${q})||G(ms[i],${q}name${q})||G(ms[i],${q}itemprop${q})).toLowerCase();` +
+    `v=G(ms[i],${q}content${q});` +
     `if(k&&v&&!M[k])M[k]=v;` +
     `}` +
     `var ST=[],REC=null,PROD=null,BOOK=null,MEDIA=null;` +
     `function scan(n){` +
-    `if(!n||typeof n!=="object")return;` +
-    `if(Array.isArray(n)){for(var a=0;a<n.length;a++)scan(n[a]);return;}` +
-    `var t=n["@type"],ts=Array.isArray(t)?t:t?[t]:[];` +
+    `if(!n||typeof n!==${q}object${q})return;` +
+    `if(isA(n)){for(var a=0;a<n.length;a++)scan(n[a]);return;}` +
+    `var t=n[${q}@type${q}],ts=isA(t)?t:t?[t]:[];` +
     `for(var b=0;b<ts.length;b++){` +
-    `var s=String(ts[b]),sl=s.toLowerCase();` +
-    `if(ST.indexOf(s)<0&&ST.length<8)ST.push(s);` +
-    `if(sl.indexOf("recipe")>=0&&!REC)REC=n;` +
-    `else if(sl.indexOf("book")>=0&&!BOOK)BOOK=n;` +
-    `else if((sl.indexOf("movie")>=0||sl.indexOf("tvseries")>=0)&&!MEDIA)MEDIA=n;` +
-    `else if(sl.indexOf("product")>=0&&!PROD)PROD=n;` +
+    `var r=String(ts[b]),rl=r.toLowerCase();` +
+    `if(ST.indexOf(r)<0&&ST.length<8)ST.push(r);` +
+    `if(rl.indexOf(${q}recipe${q})>=0&&!REC)REC=n;` +
+    `else if(rl.indexOf(${q}book${q})>=0&&!BOOK)BOOK=n;` +
+    `else if((rl.indexOf(${q}movie${q})>=0||rl.indexOf(${q}tvseries${q})>=0)&&!MEDIA)MEDIA=n;` +
+    `else if(rl.indexOf(${q}product${q})>=0&&!PROD)PROD=n;` +
     `}` +
-    `if(n["@graph"])scan(n["@graph"]);` +
+    `if(n[${q}@graph${q}])scan(n[${q}@graph${q}]);` +
     `}` +
-    `var lds=D.querySelectorAll('script[type="application/ld+json"]');` +
-    `for(var j=0;j<lds.length;j++){try{scan(JSON.parse(lds[j].textContent||""));}catch(e){}}` +
-    `var P=REC||BOOK||MEDIA||PROD;` +
-    `var imgs=[],seen={};` +
+    `var lds=QA(${q}script[type="application/ld+json"]${q});` +
+    `for(i=0;i<lds.length;i++){try{scan(JSON.parse(lds[i].textContent||${q}${q}));}catch(e){}}` +
+    `var P=REC||BOOK||MEDIA||PROD,imgs=[],seen={};` +
     `function addImg(u){` +
     `if(!u)return;` +
-    `if(Array.isArray(u)){for(var x=0;x<u.length;x++)addImg(u[x]);return;}` +
-    `if(typeof u==="object"){addImg(u.url||u.contentUrl||u.src||u.image);return;}` +
-    `if(typeof u!=="string")return;` +
-    `u=u.trim();if(!u||/^(?:data|blob|javascript):/i.test(u))return;` +
+    `if(isA(u)){for(var x=0;x<u.length;x++)addImg(u[x]);return;}` +
+    `if(typeof u===${q}object${q}){addImg(u.url||u.contentUrl||u.src||u.image);return;}` +
+    `if(!isS(u))return;u=u.trim();` +
+    `if(!u||/^(?:data|blob|javascript):/i.test(u))return;` +
     `try{u=new URL(u,L.href).href;}catch(e){return;}` +
+    `if(u.length>600||(imgs.length>0&&u.length>420))return;` +
     `if(/\\.(?:svg|gif|ico)(?:[?]|$)/i.test(u)||/(?:logo|favicon|sprite|icon|avatar|badge|visa|mastercard|paypal|klarna)/i.test(u))return;` +
-    `if(!seen[u]&&imgs.length<8){seen[u]=1;imgs.push(u);}` +
+    `if(!seen[u]&&imgs.length<6){seen[u]=1;imgs.push(u);}` +
     `}` +
     `if(P){addImg(P.image);if(P.hasVariant)addImg(P.hasVariant);}` +
-    `addImg(M["og:image:secure_url"]||M["og:image"]||M["twitter:image"]);` +
-    `var els=D.querySelectorAll("img");` +
-    `for(var g=0;g<els.length&&imgs.length<8;g++){` +
-    `var el=els[g],nw=el.naturalWidth||el.width||0,nh=el.naturalHeight||el.height||0;` +
-    `if((nw>=250||nh>=250)||(nw===0&&nh===0&&el.getBoundingClientRect().width>=200)){addImg(el.currentSrc||el.getAttribute("src")||el.getAttribute("data-src"));}` +
+    `addImg(M[${q}og:image:secure_url${q}]||M[${q}og:image${q}]||M[${q}twitter:image${q}]);` +
+    `var els=QA(${q}img${q});` +
+    `for(i=0;i<els.length&&imgs.length<6;i++){` +
+    `var el=els[i],nw=el.naturalWidth||el.width||0,nh=el.naturalHeight||el.height||0;` +
+    `if((nw>=250||nh>=250)||(nw===0&&nh===0&&el.getBoundingClientRect().width>=200))addImg(el.currentSrc||G(el,${q}src${q})||G(el,${q}data-src${q}));` +
     `}` +
     `var cols=[];` +
-    `function addCol(c){if(!c)return;if(Array.isArray(c)){for(var q=0;q<c.length;q++)addCol(c[q]);return;}if(typeof c==="object")c=c.name;if(typeof c==="string"){c=c.trim();if(c&&cols.indexOf(c)<0&&cols.length<8)cols.push(c);}}` +
-    `if(PROD){addCol(PROD.color);if(Array.isArray(PROD.hasVariant))for(var v0=0;v0<PROD.hasVariant.length;v0++)addCol(PROD.hasVariant[v0]&&PROD.hasVariant[v0].color);}` +
-    `addCol(M["product:color"]);` +
-    `var colSel=D.querySelector('[class*="color" i],[data-testid*="color" i],[aria-label*="color" i]');` +
-    `if(colSel&&colSel.textContent){var cm=colSel.textContent.trim().match(/^(?:colou?r|farbe)\\s*[:\\-]\\s*([a-zA-Z\\u00C0-\\u00FF\\s\\/-]{2,28})/i);if(cm)addCol(cm[1]);}` +
-    `var offer=PROD&&PROD.offers?(Array.isArray(PROD.offers)?PROD.offers[0]:PROD.offers):null;` +
-    `var price=(offer&&(offer.price||offer.lowPrice))||M["product:price:amount"]||M["og:price:amount"]||"";` +
-    `var curr=(offer&&offer.priceCurrency)||M["product:price:currency"]||M["og:price:currency"]||"";` +
-    `if(!price){var pe=D.querySelector('[itemprop="price"],[data-testid*="price" i],[class*="product-price" i]');if(pe)price=(pe.getAttribute("content")||pe.textContent||"").trim().slice(0,32);}` +
-    `var mat=(PROD&&typeof PROD.material==="string"?PROD.material:"")||M["product:material"]||"";` +
-    `var matLines=[],nodes=D.querySelectorAll('details,[class*="material" i],[class*="composition" i],[class*="fabric" i],[class*="detail" i],[class*="care" i]');` +
-    `for(var d0=0;d0<nodes.length;d0++){var tx=(nodes[d0].textContent||"").replace(/\\s+/g," ").trim();if(tx.length>4&&tx.length<300&&/(?:%|cotton|wool|merino|linen|silk|cashmere|polyamide|polyester|elastane|nylon|leather|gore-?tex|waterproof|water-?repellent)/i.test(tx))matLines.push(tx);}` +
-    `var bt=(D.body&&D.body.innerText?D.body.innerText:"").split(/\\r?\\n/);` +
-    `for(var bl=0;bl<bt.length&&matLines.length<10;bl++){var ln=bt[bl].trim();if(ln.length>4&&ln.length<200&&/(?:\\d+\\s*%\\s*[a-zA-Z]|composition|shell\\s*:|lining\\s*:|fabric\\s*:|material\\s*:|gore-?tex|waterproof|water-?repellent)/i.test(ln))matLines.push(ln);}` +
-    `var manUrl="";var links=D.querySelectorAll("a[href]");` +
-    `for(var li=0;li<links.length;li++){var href=links[li].href||"",ltxt=(links[li].textContent||"").trim();if(/\\.pdf(?:[?]|$)/i.test(href)&&/(?:manual|handbook|guide|instruction|datasheet|spec)/i.test(href+" "+ltxt)){manUrl=href.slice(0,400);break;}}` +
-    `var recObj=null;` +
+    `function addCol(c){if(!c)return;if(isA(c)){for(var j=0;j<c.length;j++)addCol(c[j]);return;}if(typeof c===${q}object${q})c=c.name;if(isS(c)){c=c.trim();if(c&&cols.indexOf(c)<0&&cols.length<6)cols.push(c);}}` +
+    `if(PROD){addCol(PROD.color);if(isA(PROD.hasVariant))for(i=0;i<PROD.hasVariant.length;i++)addCol(PROD.hasVariant[i]&&PROD.hasVariant[i].color);}` +
+    `addCol(M[${q}product:color${q}]);` +
+    `var cs=Q(${q}[class*="color" i],[data-testid*="color" i],[aria-label*="color" i]${q});` +
+    `if(cs&&cs.textContent){var cm=cs.textContent.trim().match(/^(?:colou?r|farbe)\\s*[:\\-]\\s*([a-zA-Z\\u00C0-\\u00FF\\s\\/-]{2,28})/i);if(cm)addCol(cm[1]);}` +
+    `var off=PROD&&PROD.offers?(isA(PROD.offers)?PROD.offers[0]:PROD.offers):null;` +
+    `var price=(off&&(off.price||off.lowPrice))||M[${q}product:price:amount${q}]||M[${q}og:price:amount${q}]||${q}${q};` +
+    `var curr=(off&&off.priceCurrency)||M[${q}product:price:currency${q}]||M[${q}og:price:currency${q}]||${q}${q};` +
+    `if(!price){var pe=Q(${q}[itemprop="price"],[data-testid*="price" i],[class*="product-price" i]${q});if(pe)price=(G(pe,${q}content${q})||pe.textContent||${q}${q}).trim().slice(0,32);}` +
+    `var mat=(PROD&&isS(PROD.material)?PROD.material:${q}${q})||M[${q}product:material${q}]||${q}${q};` +
+    `var mRe=/(?:\\x25|cotton|wool|merino|linen|silk|cashmere|polyamide|polyester|elastane|nylon|leather|gore-?tex|water-?(?:proof|repellent))/i;` +
+    `var ml=[],nds=QA(${q}details,[class*="material" i],[class*="composition" i],[class*="fabric" i],[class*="detail" i],[class*="care" i]${q});` +
+    `for(i=0;i<nds.length;i++){var tx=C(nds[i].textContent,300);if(tx.length>4&&mRe.test(tx))ml.push(tx);}` +
+    `var bt=(D.body&&D.body.innerText||${q}${q}).split(/\\r?\\n/);` +
+    `for(i=0;i<bt.length&&ml.length<10;i++){var ln=bt[i].trim();if(ln.length>4&&ln.length<200&&/(?:\\d+\\s*\\x25\\s*[a-zA-Z]|(?:composition|shell|lining|fabric|material)\\s*:|gore-?tex|water-?(?:proof|repellent))/i.test(ln))ml.push(ln);}` +
+    `var manUrl=${q}${q},lks=QA(${q}a[href]${q});` +
+    `for(i=0;i<lks.length;i++){var hr=lks[i].href||${q}${q},lt=(lks[i].textContent||${q}${q}).trim();if(/\\.pdf(?:[?]|$)/i.test(hr)&&/(?:manual|handbook|guide|instruction|datasheet|spec)/i.test(hr+${q} ${q}+lt)){manUrl=hr.slice(0,400);break;}}` +
+    `var rec=null;` +
     `if(REC){` +
-    `var ings=Array.isArray(REC.recipeIngredient)?REC.recipeIngredient.slice(0,25).map(function(s){return String(s).replace(/\\s+/g," ").trim().slice(0,180);}):[];` +
-    `var steps=[];` +
-    `function addStep(s){if(!s||steps.length>=20)return;if(Array.isArray(s)){for(var u=0;u<s.length;u++)addStep(s[u]);return;}if(typeof s==="string"){var c=s.replace(/\\s+/g," ").trim();if(c)steps.push(c.slice(0,320));return;}if(typeof s==="object"){if(s.text)addStep(s.text);else if(s.itemListElement)addStep(s.itemListElement);else if(s.name)addStep(s.name);}}` +
-    `addStep(REC.recipeInstructions);` +
-    `recObj={servings:Array.isArray(REC.recipeYield)?REC.recipeYield[0]:(REC.recipeYield||""),prepTime:REC.prepTime||"",cookTime:REC.cookTime||"",totalTime:REC.totalTime||"",ingredients:ings,instructions:steps};` +
+    `var ings=isA(REC.recipeIngredient)?REC.recipeIngredient.slice(0,25).map(function(x){return C(x,180);}):[];` +
+    `var st=[];` +
+    `function addSt(x){if(!x||st.length>=20)return;if(isA(x)){for(var u=0;u<x.length;u++)addSt(x[u]);return;}if(isS(x)){var c=C(x,320);if(c)st.push(c);return;}if(typeof x===${q}object${q})addSt(x.text||x.itemListElement||x.name);}` +
+    `addSt(REC.recipeInstructions);` +
+    `rec={servings:isA(REC.recipeYield)?REC.recipeYield[0]:(REC.recipeYield||${q}${q}),prepTime:REC.prepTime||${q}${q},cookTime:REC.cookTime||${q}${q},totalTime:REC.totalTime||${q}${q},ingredients:ings,instructions:st};` +
     `}` +
-    `var sel="";try{sel=(window.getSelection&&window.getSelection().toString()||"").replace(/\\r\\n?/g,"\\n").trim().slice(0,1200);}catch(e){}` +
-    `var soc=/(?:instagram\\.com|tiktok\\.com|youtube\\.com|youtu\\.be|threads\\.net|pinterest\\.)/i.test(L.hostname),cap="";` +
+    `var sel=${q}${q};try{sel=(window.getSelection&&window.getSelection().toString()||${q}${q}).replace(/\\r\\n?/g,${q}\\n${q}).trim().slice(0,1200);}catch(e){}` +
+    `var soc=/(?:instagram\\.com|tiktok\\.com|youtube\\.com|youtu\\.be|threads\\.net|pinterest\\.)/i.test(L.hostname),cap=${q}${q};` +
     `if(soc){` +
-    `var cands=[],cels=D.querySelectorAll('[data-e2e="browse-video-desc"],[data-e2e="video-desc"],[id="description-inline-expander"],ytd-text-inline-expander,[id="attributed-snippet-text"],article h1,main h1,[role="dialog"] h1,article ul li span[dir="auto"],[role="dialog"] span[dir="auto"]');` +
-    `for(var ci=0;ci<cels.length;ci++){var cx=(cels[ci].innerText||cels[ci].textContent||"").replace(/\\r\\n?/g,"\\n").trim();if(cx.length>=40&&!/(?:log in|sign up|forgot password|create new account)/i.test(cx))cands.push(cx);}` +
-    `cands.sort(function(a,b){return b.length-a.length;});` +
-    `if(cands[0])cap=cands[0].slice(0,2400);` +
+    `var cd=[],cels=QA(${q}[data-e2e="browse-video-desc"],[data-e2e="video-desc"],[id="description-inline-expander"],ytd-text-inline-expander,[id="attributed-snippet-text"],article h1,main h1,[role="dialog"] h1,article ul li span[dir="auto"],[role="dialog"] span[dir="auto"]${q});` +
+    `for(i=0;i<cels.length;i++){var cx=(cels[i].innerText||cels[i].textContent||${q}${q}).replace(/\\r\\n?/g,${q}\\n${q}).trim();if(cx.length>=40&&!/(?:log in|sign up|forgot password|create new account)/i.test(cx))cd.push(cx);}` +
+    `cd.sort(function(a,b){return b.length-a.length;});` +
+    `if(cd[0])cap=cd[0].slice(0,2400);` +
     `}` +
-    `var h1=D.querySelector("h1");` +
-    `var br=P&&P.brand?(typeof P.brand==="string"?P.brand:P.brand.name):(P&&P.author?(typeof P.author==="string"?P.author:(Array.isArray(P.author)?(P.author[0]&&P.author[0].name):P.author.name)):"");` +
-    `var sku=PROD?(PROD.sku||PROD.mpn||PROD.gtin13||PROD.model||""):"";` +
-    `var payload={` +
-    `url:L.href.slice(0,${MAX_CLIP_URL}),` +
-    `name:((P&&typeof P.name==="string"?P.name:"")||(P&&typeof P.headline==="string"?P.headline:"")||M["og:title"]||(h1&&h1.textContent)||D.title||"").replace(/\\s+/g," ").trim().slice(0,200),` +
-    `brand:String(br||M["product:brand"]||"").replace(/\\s+/g," ").trim().slice(0,80),` +
-    `retailer:String(M["og:site_name"]||"").replace(/\\s+/g," ").trim().slice(0,60),` +
-    `color:cols[0]||"",` +
-    `colors:cols,` +
-    `material:String(mat).trim().slice(0,120),` +
-    `materialText:matLines.join(" | ").slice(0,700),` +
-    `price:price,` +
-    `currency:String(curr).slice(0,12),` +
-    `sku:String(sku).slice(0,60),` +
-    `manualUrl:manUrl,` +
-    `description:String((P&&P.description)||M["og:description"]||M.description||"").replace(/\\s+/g," ").trim().slice(0,360),` +
-    `images:imgs,` +
-    `schemaTypes:ST,` +
-    `selection:sel,` +
-    `caption:cap,` +
-    `recipe:recObj` +
-    `};` +
-    `var b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"");` +
-    `var dest=${JSON.stringify(normalizedUrl)}+String.fromCharCode(35)+"clip="+b64;` +
-    `if(!window.open(dest,"_blank"))L.href=dest;` +
-    `}catch(err){alert("Save to Curio error: "+(err&&err.message?err.message:err));}` +
+    `var h1=Q(${q}h1${q});` +
+    `var br=P&&P.brand?(isS(P.brand)?P.brand:P.brand.name):(P&&P.author?(isS(P.author)?P.author:(isA(P.author)?(P.author[0]&&P.author[0].name):P.author.name)):${q}${q});` +
+    `var sku=PROD?(PROD.sku||PROD.mpn||PROD.gtin13||PROD.model||${q}${q}):${q}${q};` +
+    `var pl={url:L.href.slice(0,${MAX_CLIP_URL}),name:C((P&&isS(P.name)?P.name:${q}${q})||(P&&isS(P.headline)?P.headline:${q}${q})||M[${q}og:title${q}]||(h1&&h1.textContent)||D.title,200),brand:C(br||M[${q}product:brand${q}],80),retailer:C(M[${q}og:site_name${q}],60),color:cols[0]||${q}${q},colors:cols,material:C(mat,120),materialText:ml.join(${q} | ${q}).slice(0,700),price:price,currency:String(curr).slice(0,12),sku:String(sku).slice(0,60),manualUrl:manUrl,description:C((P&&P.description)||M[${q}og:description${q}]||M.description,360),images:imgs,schemaTypes:ST,selection:sel,caption:cap,recipe:rec};` +
+    `var u8=new TextEncoder().encode(JSON.stringify(pl)),bin=${q}${q};` +
+    `for(i=0;i<u8.length;i++)bin+=String.fromCharCode(u8[i]);` +
+    `var b64=btoa(bin).replace(/\\+/g,${q}-${q}).replace(/\\//g,${q}_${q}).replace(/=+$/,${q}${q});` +
+    `var dest=${JSON.stringify(normalizedUrl)}+String.fromCharCode(35)+${q}clip=${q}+b64;` +
+    `var mob=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);` +
+    `if(mob||!window.open(dest,${q}_blank${q}))L.href=dest;` +
+    `}catch(err){alert(${q}Save to Curio error: ${q}+(err&&err.message?err.message:err));}` +
     `})();`;
 
-  return `javascript:${script}`;
+  return `javascript:${encodeURI(script)}`;
 }

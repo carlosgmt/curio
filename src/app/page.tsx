@@ -9,6 +9,8 @@ import { ListTabsBar } from "@/components/lists/ListTabsBar";
 import { CreateListModal } from "@/components/lists/CreateListModal";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
 import { BreadcrumbNav } from "@/components/lists/BreadcrumbNav";
+import { BoardFilterSheet } from "@/components/lists/BoardFilterSheet";
+import { BoardExhibitionModal } from "@/components/lists/BoardExhibitionModal";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { TypeBuilderModal } from "@/components/shapeshift/TypeBuilderModal";
 import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
@@ -47,6 +49,8 @@ import {
   Clock,
   ShoppingBag,
   Repeat,
+  Maximize2,
+  SlidersHorizontal,
 } from "lucide-react";
 import { LogBookModal } from "@/components/library/LogBookModal";
 import {
@@ -212,8 +216,30 @@ export default function Home() {
   const [isEnrichingFilms, setIsEnrichingFilms] = useState(false);
   const [filmsBannerMsg, setFilmsBannerMsg] = useState<string | null>(null);
   const [openFilmSaveId, setOpenFilmSaveId] = useState<string | null>(null);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [isExhibitionOpen, setIsExhibitionOpen] = useState(false);
+  const [mobileBarHidden, setMobileBarHidden] = useState(false);
+  const lastScrollYRef = useRef(0);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const fetchSeqRef = useRef(0);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const y = Math.max(0, Math.min(window.scrollY, maxScroll));
+      const delta = y - lastScrollYRef.current;
+      if (y <= 48) {
+        setMobileBarHidden(false);
+      } else if (delta > 8 && y > 64) {
+        setMobileBarHidden(true);
+      } else if (delta < -6) {
+        setMobileBarHidden(false);
+      }
+      lastScrollYRef.current = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const GARMENT_CATEGORIES = [
     { id: "ALL", label: "All Items" },
@@ -1393,6 +1419,11 @@ export default function Home() {
   const displayedWishlistCount = wishlistCount ?? items.filter((it) => it.save.wishlist).length;
   const hiddenWearLogCount = !wishOnly && !showWearLogs ? wearLogCount ?? 0 : 0;
   const hiddenClosetCount = !wishOnly && !showCloset ? closetCount ?? 0 : 0;
+
+  const exhibitionItems: CardData[] =
+    activeListSlug !== null && activeListDetails
+      ? displayedBoardSections.flatMap((sec) => sec.items as unknown as CardData[])
+      : visibleItems;
   const hiddenMyStuffCount = !wishOnly && !showMyStuff ? myStuffCount ?? 0 : 0;
 
   return (
@@ -1410,10 +1441,63 @@ export default function Home() {
         ])
       }
     >
-    <main className="min-h-screen bg-[#fafaf9] dark:bg-[#0c0a09] py-8 sm:py-12 px-4 sm:px-6 lg:px-8 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+    <main className="min-h-screen bg-background text-foreground py-8 sm:py-12 px-4 sm:px-6 lg:px-8 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+      {/* < 48px Auto-Hiding Mobile Sticky Gallery Bar */}
+      <div
+        className={`md:hidden sticky top-0 z-30 -mx-4 px-4 h-11 mb-4 flex items-center justify-between gap-2 bg-background/90 backdrop-blur-md border-b border-border transition-transform duration-150 ${
+          mobileBarHidden ? "-translate-y-full focus-within:translate-y-0" : "translate-y-0"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (activeListSlug !== null) {
+              setWishOnly(false);
+              setActiveListSlug(null);
+            }
+          }}
+          className={`flex items-center gap-1.5 min-w-0 text-left ${
+            activeListSlug !== null ? "cursor-pointer" : "cursor-default"
+          }`}
+        >
+          <span className="truncate font-serif text-sm text-foreground">
+            {activeListDetails
+              ? `← ${activeListDetails.list.title}`
+              : wishOnly
+              ? "Wishlist"
+              : "Curio"}
+          </span>
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground shrink-0">
+            · {activeListDetails ? activeListDetails.itemCount : wishOnly ? visibleItems.length : displayedStreamTotal}
+          </span>
+        </button>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsMobileFilterOpen(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono border border-border bg-card text-foreground cursor-pointer"
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+            <span>Filter</span>
+          </button>
+          {exhibitionItems.length > 0 && (
+            <button
+              type="button"
+              data-testid="mobile-open-exhibition-btn"
+              onClick={() => setIsExhibitionOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono bg-[var(--brand)] text-[var(--brand-foreground)] cursor-pointer"
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>Immerse</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Header */}
-      <div className="max-w-4xl mx-auto mb-8">
-        <div className="flex items-center justify-end gap-2.5 mb-4">
+      <div className="max-w-4xl mx-auto mb-7">
+        <div className="flex items-center justify-end gap-2.5 mb-3">
           <UserNav
             user={user}
             onOpenAuth={(tab = "login") => {
@@ -1436,7 +1520,7 @@ export default function Home() {
         </div>
 
         <div className="text-center">
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-50 font-serif">
+          <h1 className="text-4xl sm:text-5xl font-normal tracking-tight text-foreground font-serif">
             Curio
           </h1>
         </div>
@@ -1456,16 +1540,16 @@ export default function Home() {
 
       {/* Optional Onboarding / Bring in your collections Banner */}
       {user && !user.onboardingCompleted && !dismissedOnboarding && (
-        <div className="max-w-4xl mx-auto mb-10 p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/80 dark:border-amber-800/60 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+        <div className="max-w-4xl mx-auto mb-10 p-4 rounded-xl bg-card border border-[var(--brand)]/25 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-rest">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
-              <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            <div className="w-9 h-9 rounded-lg bg-[var(--brand-soft)] flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4 text-[var(--brand)]" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+              <h3 className="text-xs font-semibold text-foreground">
                 Bring in your collections
               </h3>
-              <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+              <p className="text-[11px] text-muted-foreground">
                 Seed your taste graph with starter boards or import from Letterboxd, Goodreads, and bookmarks.
               </p>
             </div>
@@ -1474,14 +1558,14 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setIsOnboardingOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 text-xs font-bold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition cursor-pointer shadow-xs"
+              className="px-3.5 py-1.5 rounded-full bg-[var(--brand)] text-[var(--brand-foreground)] text-xs font-mono hover:opacity-90 transition-opacity cursor-pointer"
             >
               Get Started →
             </button>
             <button
               type="button"
               onClick={handleDismissBringCollections}
-              className="p-1.5 rounded-xl text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition cursor-pointer"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title="Dismiss"
             >
               <X className="w-4 h-4" />
@@ -1491,13 +1575,13 @@ export default function Home() {
       )}
 
       {/* My collections */}
-      <div className="max-w-screen-2xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-3 border-b border-neutral-200/60 dark:border-neutral-800">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-3.5 border-b border-border/80">
           <div>
-            <h2 className="text-xl font-bold font-serif text-neutral-900 dark:text-neutral-100">
+            <h2 className="text-xl font-normal font-serif text-foreground">
               My collections
             </h2>
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-muted-foreground tabular-nums">
               {wishOnly
                 ? `Showing ${visibleItems.length} of ${displayedWishlistCount} wishlisted saves`
                 : hiddenClosetCount === 0 &&
@@ -1524,10 +1608,10 @@ export default function Home() {
                 data-testid="toggle-closet-stream"
                 aria-pressed={showCloset}
                 onClick={handleToggleCloset}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border transition-colors cursor-pointer ${
                   showCloset
-                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white shadow-xs"
-                    : "bg-white dark:bg-neutral-900 border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                    : "bg-card border-border text-muted-foreground hover:text-foreground"
                 }`}
                 title={showCloset ? "Hide Closet garments from All stream" : "Include Closet garments in All stream"}
               >
@@ -1541,10 +1625,10 @@ export default function Home() {
                 data-testid="toggle-mystuff-stream"
                 aria-pressed={showMyStuff}
                 onClick={handleToggleMyStuff}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border transition-colors cursor-pointer ${
                   showMyStuff
-                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white shadow-xs"
-                    : "bg-white dark:bg-neutral-900 border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                    : "bg-card border-border text-muted-foreground hover:text-foreground"
                 }`}
                 title={showMyStuff ? "Hide My Stuff items from All stream" : "Include My Stuff items in All stream"}
               >
@@ -1558,10 +1642,10 @@ export default function Home() {
                 data-testid="toggle-wear-logs"
                 aria-pressed={showWearLogs}
                 onClick={handleToggleWearLogs}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border transition-colors cursor-pointer ${
                   showWearLogs
-                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white shadow-xs"
-                    : "bg-white dark:bg-neutral-900 border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                    : "bg-card border-border text-muted-foreground hover:text-foreground"
                 }`}
                 title={
                   showWearLogs
@@ -1579,11 +1663,23 @@ export default function Home() {
                 data-testid="sync-all-sources-btn"
                 onClick={triggerAllSourcesSync}
                 disabled={isSyncingAll}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-card border border-border text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50"
                 title="Sync Closet, Purchase Hub, and external feeds"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAll ? "animate-spin" : ""}`} aria-hidden="true" />
                 <span className="hidden sm:inline">{isSyncingAll ? "Syncing..." : "Sync"}</span>
+              </button>
+            )}
+            {exhibitionItems.length > 0 && (
+              <button
+                type="button"
+                data-testid="open-exhibition-btn"
+                onClick={() => setIsExhibitionOpen(true)}
+                className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-card border border-border text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                title="Open full-screen horizontal Exhibition Deck"
+              >
+                <Maximize2 className="w-3.5 h-3.5 text-[var(--brand)]" aria-hidden="true" />
+                <span>Immerse</span>
               </button>
             )}
             <ViewModeSwitcher
@@ -1633,16 +1729,16 @@ export default function Home() {
               />
             )}
 
-            {/* Board Header details */}
+            {/* Board Header details (unboxed Swiss gallery ledger) */}
             {activeListDetails && (
-              <div className="mb-8 p-6 rounded-3xl bg-neutral-100/60 dark:bg-neutral-900/40 border border-neutral-200/80 dark:border-neutral-800">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="mb-8 pb-5 border-b border-border/80">
+                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                   <div>
-                    <h2 className="text-2xl font-bold font-serif text-neutral-900 dark:text-neutral-100">
+                    <h2 className="text-3xl font-normal font-serif tracking-tight text-foreground">
                       {activeListDetails.list.title}
                     </h2>
                     {activeListDetails.list.description && (
-                      <p className="text-xs text-neutral-500 mt-1 max-w-xl">
+                      <p className="text-sm font-serif italic text-muted-foreground mt-1.5 max-w-xl">
                         {activeListDetails.list.description}
                       </p>
                     )}
@@ -2446,8 +2542,8 @@ export default function Home() {
                   }}
                 />
               ) : (
-                <div className="text-center py-20 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl p-8">
-                  <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
+                <div className="text-center py-20 border border-dashed border-border rounded-2xl bg-card/40 p-8">
+                  <p className="text-foreground font-medium text-sm mb-1">
                     {activeListSlug === "wardrobe" && (garmentCategoryFilter !== "ALL" || garmentSeasonFilter !== "ALL")
                       ? "No garments match the selected filters."
                       : activeListSlug === "books" && (bookSubFilter !== "ALL" || bookAuthorFilter || bookTagFilter || bookSearchQuery.trim())
@@ -2518,8 +2614,8 @@ export default function Home() {
                 Loading your collections...
               </div>
             ) : visibleItems.length === 0 ? (
-              <div className="text-center py-20 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl p-8">
-                <p className="text-neutral-600 dark:text-neutral-300 font-medium text-sm mb-1">
+              <div className="text-center py-20 border border-dashed border-border rounded-2xl bg-card/40 p-8">
+                <p className="text-foreground font-medium text-sm mb-1">
                   {wishOnly
                     ? "Your wishlist is empty. Tap the heart on any card."
                     : hiddenWearLogCount > 0
@@ -2979,6 +3075,109 @@ export default function Home() {
           </div>
         </div>
       )}
+      {/* Mobile Filter & Stream Controls Sheet */}
+      <BoardFilterSheet
+        isOpen={isMobileFilterOpen}
+        onClose={() => setIsMobileFilterOpen(false)}
+        title={activeListDetails ? activeListDetails.list.title : "Collections & View"}
+        subtitle={
+          activeListDetails
+            ? `${activeListDetails.itemCount} items`
+            : `${displayedStreamTotal} saves`
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+              Layout &amp; Density
+            </span>
+            <ViewModeSwitcher
+              layout={layoutEngine}
+              density={cardDensity}
+              onLayoutChange={(next) => {
+                handleLayoutChange(next);
+              }}
+              onDensityChange={setCardDensity}
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {activeListSlug === null && !wishOnly && ((closetCount ?? 0) > 0 || showCloset) && (
+              <button
+                type="button"
+                onClick={handleToggleCloset}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border cursor-pointer ${
+                  showCloset
+                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                    : "bg-card border-border text-muted-foreground"
+                }`}
+              >
+                <Shirt className="w-3.5 h-3.5" />
+                <span>Closet{typeof closetCount === "number" ? ` (${closetCount})` : ""}</span>
+              </button>
+            )}
+            {activeListSlug === null && !wishOnly && ((myStuffCount ?? 0) > 0 || showMyStuff) && (
+              <button
+                type="button"
+                onClick={handleToggleMyStuff}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border cursor-pointer ${
+                  showMyStuff
+                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                    : "bg-card border-border text-muted-foreground"
+                }`}
+              >
+                <Package className="w-3.5 h-3.5" />
+                <span>My Stuff{typeof myStuffCount === "number" ? ` (${myStuffCount})` : ""}</span>
+              </button>
+            )}
+            {activeListSlug === null && !wishOnly && ((wearLogCount ?? 0) > 0 || showWearLogs) && (
+              <button
+                type="button"
+                onClick={handleToggleWearLogs}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border cursor-pointer ${
+                  showWearLogs
+                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                    : "bg-card border-border text-muted-foreground"
+                }`}
+              >
+                <Shirt className="w-3.5 h-3.5" />
+                <span>Wear logs{typeof wearLogCount === "number" ? ` (${wearLogCount})` : ""}</span>
+              </button>
+            )}
+          </div>
+
+          {exhibitionItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsMobileFilterOpen(false);
+                setIsExhibitionOpen(true);
+              }}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-mono bg-[var(--brand)] text-[var(--brand-foreground)] cursor-pointer"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Open Exhibition Mode</span>
+            </button>
+          )}
+        </div>
+      </BoardFilterSheet>
+
+      {/* Immersive Mobile & Desktop Scroll-Snap Exhibition Deck */}
+      <BoardExhibitionModal
+        isOpen={isExhibitionOpen}
+        items={exhibitionItems}
+        boardTitle={activeListDetails ? activeListDetails.list.title : wishOnly ? "Wishlist" : "Curio Stream"}
+        onClose={() => setIsExhibitionOpen(false)}
+        onInspectCard={(card) => {
+          setIsExhibitionOpen(false);
+          openCardOrBook(card, "standard");
+        }}
+        onWishToggled={(saveId, wishlist) => {
+          setItems((prev) =>
+            prev.map((it) => (it.save.id === saveId ? { ...it, save: { ...it.save, wishlist } } : it))
+          );
+        }}
+      />
     </main>
     </PullToRefresh>
   );

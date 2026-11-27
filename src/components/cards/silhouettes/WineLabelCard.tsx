@@ -37,45 +37,38 @@ export function WineLabelCard({
   return (
     <div
       data-testid="wine-label-card"
-      className="group relative rounded-2xl bg-[#faf8f5] dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm hover:shadow-lg transition-shadow duration-200 border border-stone-200 dark:border-stone-800 flex flex-col justify-between overflow-hidden"
+      className="curio-gallery-card group relative flex flex-col justify-between overflow-hidden"
     >
-      {/* Wine Label Canvas */}
+      {/* Editorial Wine Label Slip */}
       <div className="p-5 sm:p-6 relative flex flex-col items-center text-center flex-1">
-        {/* Subtle vintage border frame */}
-        <div className="absolute inset-3 border border-stone-300/60 dark:border-stone-700/60 pointer-events-none rounded-xl" />
-
-        {/* Embossed Crest */}
-        <div className="w-9 h-9 rounded-full border border-amber-600/40 bg-gradient-to-b from-amber-100 to-amber-200/80 dark:from-amber-900/40 dark:to-stone-800 flex items-center justify-center text-amber-800 dark:text-amber-300 shadow-inner mb-3">
+        <div className="w-8 h-8 rounded-full border border-[var(--gallery-hairline)] bg-[var(--well-surface)] flex items-center justify-center text-[var(--brand)] mb-3">
           <Wine className="w-4 h-4" aria-hidden="true" />
         </div>
 
-        {/* Producer & Vintage */}
         {producer && (
-          <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 mb-1">
+          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-1">
             {producer}
           </span>
         )}
-        <h3 className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-50 mb-1">
+        <h3 className="font-serif-editorial text-xl font-medium tracking-tight text-foreground mb-0.5">
           {cuvee}
         </h3>
         {vintage && (
-          <span className="font-serif text-base italic tabular-nums text-amber-800 dark:text-amber-400 font-semibold mb-2.5">
+          <span className="font-serif italic text-sm tabular-nums text-[var(--brand)] mb-2">
             {vintage}
           </span>
         )}
 
-        {/* Micro-Appellation Pill (only when real origin data exists) */}
         {originText && (
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-200/60 dark:bg-stone-800/80 text-[11px] font-serif text-stone-700 dark:text-stone-300 border border-stone-300/60 dark:border-stone-700 mb-3">
-            <MapPin className="w-3 h-3 text-stone-500 shrink-0" aria-hidden="true" />
+          <p className="inline-flex items-center gap-1 text-xs text-muted-foreground mb-3">
+            <MapPin className="w-3 h-3 shrink-0" aria-hidden="true" />
             <span>{originText}</span>
-          </div>
+          </p>
         )}
 
-        {/* Label Specs Grid (only for populated fields) */}
         {specEntries.length > 0 && (
           <div
-            className={`w-full grid gap-2 border-t border-stone-200 dark:border-stone-800 pt-3 mt-1 text-[10px] font-mono uppercase text-stone-500 dark:text-stone-400 ${
+            className={`w-full grid gap-2 border-t border-[var(--gallery-hairline)] pt-3 mt-auto text-[10px] font-mono text-muted-foreground ${
               specEntries.length === 1
                 ? "grid-cols-1"
                 : specEntries.length === 2
@@ -85,10 +78,8 @@ export function WineLabelCard({
           >
             {specEntries.map((spec) => (
               <div key={spec.label}>
-                <span className="block text-[8px] text-stone-400">{spec.label}</span>
-                <span className="font-semibold text-stone-800 dark:text-stone-200 truncate block tabular-nums">
-                  {spec.value}
-                </span>
+                <span className="block text-[8px] uppercase text-muted-foreground/75">{spec.label}</span>
+                <span className="text-foreground truncate block tabular-nums">{spec.value}</span>
               </div>
             ))}
           </div>
@@ -101,17 +92,19 @@ export function WineLabelCard({
         />
       </div>
 
-      {/* Footer */}
-      <CardFooterWaterfall
-        entity={{
-          ...entity,
-          typePath: entity.typePath || "/product/beverage/wine",
-        }}
-        primarySource={primarySource}
-        creatorAffiliateTags={creatorAffiliateTags}
-        customUtilityLabel="Vivino Review"
-        isWishlist={Boolean(save.wishlist)}
-      />
+      {/* Hover/Focus-Revealed Footer */}
+      <div className="curio-hover-footer">
+        <CardFooterWaterfall
+          entity={{
+            ...entity,
+            typePath: entity.typePath || "/product/beverage/wine",
+          }}
+          primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
+          customUtilityLabel="Vivino Review"
+          isWishlist={Boolean(save.wishlist)}
+        />
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 import type * as THREE_NS from "three";
-import type { ArchetypeSpec, PressPalette, SpineMeta } from "@/lib/press/archetypes";
+import { getEditionTrimFactor, type ArchetypeSpec, type PressPalette, type SpineMeta } from "@/lib/press/archetypes";
 import {
   createBumpCanvas,
   createFrontCoverCanvas,
@@ -76,7 +76,8 @@ function computeVolumeDimensions(item: VirtualBookshelfItem) {
   const baseH = 1.42;
   const spec = item.spec;
   const aspect = spec.widthRatio / Math.max(0.4, spec.heightRatio);
-  const objH = Math.min(1.56, Math.max(1.02, baseH * (spec.heightRatio / 1.42)));
+  const trimMul = spec.id === "book_hardcover" ? getEditionTrimFactor(item.saveId) : 1.0;
+  const objH = Math.min(1.58, Math.max(1.02, baseH * (spec.heightRatio / 1.42) * trimMul));
   const objW = objH * aspect;
 
   let depthRatio = spec.depthRatio;
@@ -301,6 +302,13 @@ export default function VirtualBookshelf3D({
       rimLight.position.set(-4.5, 2.6, -2.5);
       scene.add(rimLight);
 
+      // Warm pointer-reactive foil specular accent light
+      const foilLight = new THREE.PointLight(0xf5dec0, 1.35, 8, 1.4);
+      foilLight.position.set(initCamX + 1.1, 0.85, 2.8);
+      scene.add(foilLight);
+      let foilTargetXOffset = 1.1;
+      let foilTargetY = 0.85;
+
       // Architectural shelf plinth + brass/steel lip shadow receiver
       const shelfLedgeGeom = new THREE.BoxGeometry(36, 0.12, 2.5);
       const shelfLedgeMat = new THREE.MeshStandardMaterial({
@@ -414,25 +422,18 @@ export default function VirtualBookshelf3D({
           entryDisposables.push(edgeMat);
         }
 
-        const slabGeom = new THREE.BoxGeometry(objW, objH, objD);
-        const slabMesh = new THREE.Mesh(slabGeom, [
-          edgeMat,
-          spineMat,
-          edgeMat,
-          edgeMat,
-          spec.id === "archival_box" ? backMat : coverMat,
-          backMat,
-        ]);
-        slabMesh.castShadow = true;
-        slabMesh.receiveShadow = true;
-        slabMesh.userData.saveId = item.saveId;
-
         const group = new THREE.Group();
-        group.add(slabMesh);
+        let hitMesh: THREE_NS.Mesh;
 
-        if (spec.id === "archival_box") {
-          const lidGeom = new THREE.BoxGeometry(objW + 0.035, objH + 0.035, Math.max(0.06, objD * 0.28));
-          const lidMesh = new THREE.Mesh(lidGeom, [
+        if (spec.id === "book_hardcover") {
+          // True composite Stripe Press clothbound hardcover: overhanging cloth boards + recessed cream page-block + curved buckram spine + woven headbands
+          const boardT = 0.021;
+          const overhangFore = 0.026;
+          const overhangVert = 0.044;
+          const innerD = Math.max(0.04, objD - boardT * 2);
+
+          const frontBoardGeom = new THREE.BoxGeometry(objW, objH, boardT);
+          const frontBoard = new THREE.Mesh(frontBoardGeom, [
             backMat,
             backMat,
             backMat,
@@ -440,30 +441,128 @@ export default function VirtualBookshelf3D({
             coverMat,
             backMat,
           ]);
-          lidMesh.position.z = objD * 0.39;
-          lidMesh.castShadow = true;
-          lidMesh.userData.saveId = item.saveId;
-          entryDisposables.push(lidGeom);
-          group.add(lidMesh);
-        }
+          frontBoard.position.z = objD / 2 - boardT / 2;
+          frontBoard.castShadow = true;
+          frontBoard.receiveShadow = true;
+          frontBoard.userData.saveId = item.saveId;
 
-        if (spec.hasPeekingDisc) {
-          const r = objW * 0.41;
-          const discGeom = new THREE.CylinderGeometry(r, r, 0.018, 36);
-          const discMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color("#141416"),
-            roughness: 0.34,
-            metalness: 0.42,
+          const backBoardGeom = new THREE.BoxGeometry(objW, objH, boardT);
+          const backBoard = new THREE.Mesh(backBoardGeom, backMat);
+          backBoard.position.z = -(objD / 2 - boardT / 2);
+          backBoard.castShadow = true;
+          backBoard.receiveShadow = true;
+          backBoard.userData.saveId = item.saveId;
+
+          const pageW = Math.max(0.2, objW - overhangFore);
+          const pageH = Math.max(0.2, objH - overhangVert);
+          const pageGeom = new THREE.BoxGeometry(pageW, pageH, innerD);
+          const pageMesh = new THREE.Mesh(pageGeom, edgeMat);
+          pageMesh.position.x = -overhangFore / 2;
+          pageMesh.castShadow = true;
+          pageMesh.receiveShadow = true;
+          pageMesh.userData.saveId = item.saveId;
+
+          // Slightly curved buckram spine joining both boards
+          const spineGeom = new THREE.CylinderGeometry(
+            objD / 2,
+            objD / 2,
+            objH,
+            12,
+            1,
+            false,
+            Math.PI * 0.5,
+            Math.PI
+          );
+          const spineMesh = new THREE.Mesh(spineGeom, spineMat);
+          spineMesh.position.x = -objW / 2 + 0.004;
+          spineMesh.castShadow = true;
+          spineMesh.receiveShadow = true;
+          spineMesh.userData.saveId = item.saveId;
+
+          // Woven head and tail bands tucked cleanly at spine ends of page block
+          const bandMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(item.palette.accent || "#C89572"),
+            roughness: 0.72,
+            metalness: 0.12,
           });
-          const discMesh = new THREE.Mesh(discGeom, discMat);
-          discMesh.rotation.x = Math.PI / 2;
-          discMesh.position.set(objW * 0.28, 0, -0.005);
-          discMesh.castShadow = true;
-          group.add(discMesh);
-          entryDisposables.push(discGeom, discMat);
+          const bandGeom = new THREE.BoxGeometry(0.026, 0.016, innerD * 0.88);
+          const headBand = new THREE.Mesh(bandGeom, bandMat);
+          headBand.position.set(-objW / 2 + 0.022, pageH / 2 - 0.005, 0);
+          const tailBand = new THREE.Mesh(bandGeom, bandMat);
+          tailBand.position.set(-objW / 2 + 0.022, -(pageH / 2 - 0.005), 0);
+
+          const hitGeom = new THREE.BoxGeometry(objW, objH, objD);
+          const hitMat = new THREE.MeshBasicMaterial({
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+          });
+          hitMesh = new THREE.Mesh(hitGeom, hitMat);
+          hitMesh.userData.saveId = item.saveId;
+
+          group.add(frontBoard, backBoard, pageMesh, spineMesh, headBand, tailBand, hitMesh);
+          entryDisposables.push(
+            frontBoardGeom,
+            backBoardGeom,
+            pageGeom,
+            spineGeom,
+            bandGeom,
+            bandMat,
+            hitGeom,
+            hitMat
+          );
+        } else {
+          const slabGeom = new THREE.BoxGeometry(objW, objH, objD);
+          const slabMesh = new THREE.Mesh(slabGeom, [
+            edgeMat,
+            spineMat,
+            edgeMat,
+            edgeMat,
+            spec.id === "archival_box" ? backMat : coverMat,
+            backMat,
+          ]);
+          slabMesh.castShadow = true;
+          slabMesh.receiveShadow = true;
+          slabMesh.userData.saveId = item.saveId;
+          hitMesh = slabMesh;
+          group.add(slabMesh);
+          entryDisposables.push(slabGeom);
+
+          if (spec.id === "archival_box") {
+            const lidGeom = new THREE.BoxGeometry(objW + 0.035, objH + 0.035, Math.max(0.06, objD * 0.28));
+            const lidMesh = new THREE.Mesh(lidGeom, [
+              backMat,
+              backMat,
+              backMat,
+              backMat,
+              coverMat,
+              backMat,
+            ]);
+            lidMesh.position.z = objD * 0.39;
+            lidMesh.castShadow = true;
+            lidMesh.userData.saveId = item.saveId;
+            entryDisposables.push(lidGeom);
+            group.add(lidMesh);
+          }
+
+          if (spec.hasPeekingDisc) {
+            const r = objW * 0.41;
+            const discGeom = new THREE.CylinderGeometry(r, r, 0.018, 36);
+            const discMat = new THREE.MeshStandardMaterial({
+              color: new THREE.Color("#141416"),
+              roughness: 0.34,
+              metalness: 0.42,
+            });
+            const discMesh = new THREE.Mesh(discGeom, discMat);
+            discMesh.rotation.x = Math.PI / 2;
+            discMesh.position.set(objW * 0.28, 0, -0.005);
+            discMesh.castShadow = true;
+            group.add(discMesh);
+            entryDisposables.push(discGeom, discMat);
+          }
         }
 
-        entryDisposables.push(coverTex, spineTex, coverMat, spineMat, backMat, slabGeom);
+        entryDisposables.push(coverTex, spineTex, coverMat, spineMat, backMat);
 
         // Seat flush on shelf plinth
         const restingY = FLOOR_Y + objH / 2 + 0.008;
@@ -484,7 +583,7 @@ export default function VirtualBookshelf3D({
           index,
           signature: buildSignature(item),
           group,
-          hitMesh: slabMesh,
+          hitMesh,
           coverMat,
           spec,
           meta: item.meta,
@@ -604,6 +703,13 @@ export default function VirtualBookshelf3D({
           lastY = e.clientY;
           scrollPanOffsetRef.current -= dx * 0.014;
           return;
+        }
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          const nx = (e.clientX - rect.left) / rect.width - 0.5;
+          const ny = (e.clientY - rect.top) / rect.height - 0.5;
+          foilTargetXOffset = nx * 2.8;
+          foilTargetY = 0.65 - ny * 1.4;
         }
         const hovered = pickSaveId(e.clientX, e.clientY);
         hoveredSaveIdRef.current = hovered;
@@ -744,6 +850,8 @@ export default function VirtualBookshelf3D({
         keyLight.position.x = cameraXRef.current + 3.2;
         keyLight.target.position.set(cameraXRef.current, -0.1, 0.4);
         keyLight.target.updateMatrixWorld();
+        foilLight.position.x += (cameraXRef.current + foilTargetXOffset - foilLight.position.x) * 0.12;
+        foilLight.position.y += (foilTargetY - foilLight.position.y) * 0.12;
 
         const actIdx = activeIndexRef.current;
         const mode = shelfModeRef.current;

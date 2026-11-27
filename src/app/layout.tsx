@@ -24,8 +24,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fafaf9" },
-    { media: "(prefers-color-scheme: dark)", color: "#0c0a09" },
+    { media: "(prefers-color-scheme: light)", color: "#F2EFE9" },
+    { media: "(prefers-color-scheme: dark)", color: "#121110" },
   ],
 };
 
@@ -67,7 +67,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full bg-[#fafaf9] text-[#1a1a19] selection:bg-neutral-900 selection:text-white dark:bg-[#0c0a09] dark:text-[#fafaf9]">
+      <body className="min-h-full bg-background text-foreground selection:bg-[var(--brand-soft)] selection:text-[var(--brand)]">
         <ClientFetchInterceptor>{children}</ClientFetchInterceptor>
         <PwaRegister />
       </body>

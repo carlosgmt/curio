@@ -58,58 +58,41 @@ export function ElectronicsCard({
   return (
     <div
       data-testid="electronics-card"
-      className="group relative rounded-2xl bg-neutral-950 text-neutral-100 shadow-sm hover:shadow-xl transition-shadow duration-200 border border-neutral-800 flex flex-col justify-between overflow-hidden"
+      className="curio-gallery-card group relative flex flex-col justify-between overflow-hidden"
     >
-      <div className="p-4 sm:p-5 flex flex-col flex-1">
-        {/* Header: Brand & Optional Chip / Model */}
-        <div className="flex items-center justify-between gap-2 mb-2.5 pr-16 sm:pr-0">
-          <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 truncate">
-            {brand}
-          </span>
-          {chipArchitecture ? (
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-neutral-900 border border-neutral-800 text-[10px] font-mono text-cyan-400 shrink-0">
-              <Cpu className="w-3 h-3 text-cyan-400" aria-hidden="true" />
-              <span className="truncate max-w-[130px]">{chipArchitecture}</span>
-            </div>
-          ) : modelNumber ? (
-            <span className="text-[11px] font-mono tabular-nums text-neutral-400 truncate max-w-[140px]">
-              {modelNumber}
-            </span>
-          ) : null}
-        </div>
-
+      <div className="p-3.5 sm:p-4 flex flex-col flex-1">
         {/* Hero Device Media */}
         {entity.heroImageUrl ? (
-          <div className="relative aspect-[16/10] w-full rounded-xl overflow-hidden bg-neutral-900 mb-3 border border-neutral-800/80">
+          <div className="relative aspect-[16/10] w-full rounded-[8px] overflow-hidden bg-[var(--well-surface)] mb-3">
             <img
               src={entity.heroImageUrl}
               alt={deviceName}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
+              className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
             />
           </div>
         ) : (
-          <div className="w-full aspect-16/9 rounded-xl bg-neutral-900 flex items-center justify-center text-neutral-600 mb-3 border border-neutral-800">
-            <Radio className="w-8 h-8 stroke-1 text-cyan-500/70" aria-hidden="true" />
+          <div className="w-full aspect-[16/10] rounded-[8px] bg-[var(--well-surface)] flex items-center justify-center text-muted-foreground mb-3">
+            <Radio className="w-8 h-8 stroke-1" aria-hidden="true" />
           </div>
         )}
 
         {/* Device Name & Single Price */}
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <h3 className="font-sans text-base font-bold text-neutral-100 leading-snug line-clamp-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-sm sm:text-[15px] font-medium text-foreground leading-snug line-clamp-2">
             {deviceName}
           </h3>
           {formattedPrice && (
-            <span className="text-xs font-mono tabular-nums font-semibold text-neutral-200 shrink-0 pt-0.5">
+            <span className="text-xs font-mono tabular-nums font-medium text-[var(--brand)] shrink-0">
               {formattedPrice}
             </span>
           )}
         </div>
 
-        {/* Real Purchase Hub / Hardware Metadata Strip */}
-        {ownershipMeta.length > 0 && (
-          <p className="text-[11px] font-mono tabular-nums text-neutral-400 mb-2 truncate">
-            {ownershipMeta.join(" · ")}
+        {/* Real Hardware & Ownership Line */}
+        {(brand || chipArchitecture || ownershipMeta.length > 0) && (
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {[brand, chipArchitecture, ...ownershipMeta].filter(Boolean).join(" · ")}
           </p>
         )}
 
@@ -117,53 +100,39 @@ export function ElectronicsCard({
         {(wattage || batteryHours) && (
           <div
             data-testid="electronics-telemetry"
-            className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800/80 text-[10px] font-mono tabular-nums mb-2.5"
+            className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-[var(--gallery-hairline)] text-[10px] font-mono tabular-nums"
           >
             {wattage && (
-              <div className="flex items-center gap-2">
-                <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
-                <div>
-                  <span className="text-neutral-500 block text-[9px] uppercase">Power</span>
-                  <span className="font-semibold text-neutral-200">{wattage}</span>
-                </div>
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Zap className="w-3 h-3 text-[var(--brand)] shrink-0" aria-hidden="true" />
+                <span className="text-foreground">{wattage}</span>
               </div>
             )}
 
             {batteryHours && (
-              <div className="flex items-center gap-2">
-                <BatteryCharging className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
-                <div>
-                  <span className="text-neutral-500 block text-[9px] uppercase">Runtime</span>
-                  <span className="font-semibold text-neutral-200">{batteryHours}</span>
-                </div>
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <BatteryCharging className="w-3 h-3 text-[var(--brand)] shrink-0" aria-hidden="true" />
+                <span className="text-foreground">{batteryHours}</span>
               </div>
             )}
           </div>
         )}
 
-        {/* Ports & Connectivity Badges (only when real data exists, capped to 3 + N) */}
+        {/* Ports & Connectivity (capped to 3 + N) */}
         {(visiblePorts.length > 0 || connectivity) && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            <Usb className="w-3 h-3 text-neutral-500 mr-0.5 shrink-0" aria-hidden="true" />
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 text-[10px] font-mono text-muted-foreground">
+            <Usb className="w-3 h-3 shrink-0" aria-hidden="true" />
             {visiblePorts.map((port, idx) => (
               <span
                 key={idx}
                 data-testid={`port-${idx}`}
-                className="px-2 py-0.5 rounded bg-neutral-800/70 text-neutral-300 text-[10px] font-mono border border-neutral-700/60"
+                className="px-1.5 py-0.5 rounded bg-[var(--well-surface)] border border-[var(--gallery-hairline)] text-foreground/85"
               >
                 {port}
               </span>
             ))}
-            {overflowPorts > 0 && (
-              <span className="text-[10px] font-mono tabular-nums text-neutral-400">
-                +{overflowPorts}
-              </span>
-            )}
-            {connectivity && (
-              <span className="px-2 py-0.5 rounded bg-neutral-900 text-neutral-400 text-[10px] font-mono">
-                {connectivity}
-              </span>
-            )}
+            {overflowPorts > 0 && <span className="tabular-nums">+{overflowPorts}</span>}
+            {connectivity && <span>{connectivity}</span>}
           </div>
         )}
 
@@ -174,15 +143,16 @@ export function ElectronicsCard({
         />
       </div>
 
-      {/* Footer Waterfall */}
-      <CardFooterWaterfall
-        entity={entity}
-        primarySource={primarySource}
-        creatorAffiliateTags={creatorAffiliateTags}
-        isWishlist={Boolean(save.wishlist)}
-        hidePrice
-        tone="dark"
-      />
+      {/* Hover/Focus-Revealed Footer Waterfall */}
+      <div className="curio-hover-footer">
+        <CardFooterWaterfall
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
+          isWishlist={Boolean(save.wishlist)}
+          hidePrice
+        />
+      </div>
     </div>
   );
 }

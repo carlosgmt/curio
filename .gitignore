@@ -15,3 +15,7 @@ docs_drive
 .agents/
 public/uploads/*
 !public/uploads/.gitkeep
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/build/
+.impeccable/surface-briefs/

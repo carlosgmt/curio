@@ -252,56 +252,49 @@ export function PosterWallLayout({
       data-testid="poster-wall-layout"
       aria-label={`${galleryLabel} Poster Gallery`}
       onKeyDown={handleKeyDown}
-      className="relative w-full overflow-hidden rounded-2xl sm:rounded-3xl border outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+      className="relative w-full overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
       style={{
-        backgroundColor: activePalette.surface,
-        borderColor: activePalette.rule,
-        color: activePalette.ink,
-        transition: "background-color 420ms ease, color 420ms ease, border-color 420ms ease",
+        backgroundColor: "#141312",
+        color: "#F2EFE9",
+        transition: "background-color 600ms ease, color 600ms ease",
       }}
     >
-      {/* Top Theater Ledger Bar */}
+      {/* Subtle Ambient Poster Glow */}
       <div
-        className="relative z-10 flex flex-wrap items-center justify-between gap-2 px-4 sm:px-7 py-3 border-b"
-        style={{ borderColor: activePalette.rule }}
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Film className="w-3.5 h-3.5 shrink-0" style={{ color: activePalette.accent }} />
-          <span
-            className="font-mono text-[11px] uppercase tracking-[0.14em] truncate"
-            style={{ color: activePalette.accent }}
-          >
-            {galleryLabel}
-          </span>
-        </div>
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={{
+          background: `radial-gradient(circle at 50% 42%, ${activePalette.coverBg}4D 0%, #141312 70%)`,
+          transition: "background 600ms ease",
+        }}
+      />
 
-        <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
+      {/* Quiet Theater Ledger Top Bar */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 px-5 sm:px-8 pt-4 pb-1 text-xs">
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#A8A196] truncate">
+          {galleryLabel}
+        </span>
+
+        <span className="font-mono text-[11px] tabular-nums text-[#A8A196]">
+          {String(safeIdx + 1).padStart(2, "0")} / {String(items.length).padStart(2, "0")}
+        </span>
+
+        <div className="flex items-center gap-3 font-mono text-[11px]">
           <button
             type="button"
             onClick={() =>
               setWallMode((m) => (m === "gallery" ? "marquee" : "gallery"))
             }
-            className="px-2.5 py-1 rounded-md border text-[10px] uppercase tracking-wider cursor-pointer"
-            style={{
-              borderColor: activePalette.rule,
-              backgroundColor: activePalette.surfaceSecondary,
-              color: activePalette.ink,
-            }}
+            className="text-[#A8A196] hover:text-[#F2EFE9] transition-colors cursor-pointer"
           >
             {wallMode === "gallery" ? "Gallery" : "Marquee"}
           </button>
           <button
             type="button"
             onClick={() => setInspectBack((b) => !b)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-[10px] uppercase tracking-wider cursor-pointer"
-            style={{
-              borderColor: activePalette.rule,
-              backgroundColor: activePalette.surfaceSecondary,
-              color: activePalette.ink,
-            }}
+            className="text-[#F2EFE9] hover:text-[#C89572] transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-2.5 h-2.5" />
-            <span>{inspectBack ? "Poster" : "Credits"}</span>
+            {inspectBack ? "Show Poster" : "Credits"}
           </button>
           <button
             type="button"
@@ -310,47 +303,9 @@ export function PosterWallLayout({
               setInspectBack(false);
               setResetSignal((n) => n + 1);
             }}
-            className="p-1.5 rounded-md border cursor-pointer"
-            style={{
-              borderColor: activePalette.rule,
-              backgroundColor: activePalette.surfaceSecondary,
-              color: activePalette.ink,
-            }}
+            className="text-[#A8A196] hover:text-[#F2EFE9] transition-colors cursor-pointer"
           >
-            <RotateCcw className="w-3 h-3" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveByIndex(safeIdx - 1)}
-            disabled={safeIdx <= 0}
-            aria-label="Previous poster"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-opacity disabled:opacity-30 cursor-pointer ml-1"
-            style={{
-              borderColor: activePalette.rule,
-              backgroundColor: activePalette.surfaceSecondary,
-              color: activePalette.ink,
-            }}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-          </button>
-          <span style={{ color: activePalette.muted }}>
-            {String(safeIdx + 1).padStart(2, "0")} /{" "}
-            {String(items.length).padStart(2, "0")}
-          </span>
-          <button
-            type="button"
-            onClick={() => setActiveByIndex(safeIdx + 1)}
-            disabled={safeIdx >= items.length - 1}
-            aria-label="Next poster"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-opacity disabled:opacity-30 cursor-pointer"
-            style={{
-              borderColor: activePalette.rule,
-              backgroundColor: activePalette.surfaceSecondary,
-              color: activePalette.ink,
-            }}
-          >
-            <ArrowRight className="h-3.5 w-3.5" />
+            Reset
           </button>
         </div>
       </div>
@@ -415,17 +370,14 @@ export function PosterWallLayout({
         </div>
       )}
 
-      {/* Bottom Film Marquee + Scrubber */}
-      <div
-        className="relative z-10 border-t px-4 sm:px-7 py-4 space-y-3"
-        style={{
-          borderColor: activePalette.rule,
-          backgroundColor: `${activePalette.surfaceSecondary}CC`,
-        }}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Museum Caption + Hairline Tick-Mark Film Scrubber */}
+      <div className="relative z-10 px-5 sm:px-8 pt-2 pb-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em]">
+            <h3 className="font-serif-editorial text-2xl sm:text-[28px] leading-[1.15] text-[#F2EFE9] truncate">
+              {activePoster.title}
+            </h3>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#A8A196]">
               {onSelectDirector &&
               activePoster.director &&
               activePoster.director.toLowerCase() !== "unknown director" &&
@@ -433,20 +385,23 @@ export function PosterWallLayout({
                 <button
                   type="button"
                   onClick={() => onSelectDirector(activePoster.director)}
-                  className="underline underline-offset-4 decoration-dotted hover:opacity-80 cursor-pointer"
-                  style={{ color: activePalette.accent }}
+                  className="text-[#C89572] hover:underline underline-offset-4 cursor-pointer"
                   title={`Filter films by ${activePoster.director}`}
                 >
                   {activePoster.director}
                 </button>
               ) : (
-                <span style={{ color: activePalette.accent }}>{activePoster.director}</span>
+                <span>{activePoster.director}</span>
               )}
               {(activePoster.year || activePoster.runtimeMinutes) && (
-                <span style={{ color: activePalette.muted }}>
-                  {activePoster.year ? `${activePoster.year}` : ""}
-                  {activePoster.year && activePoster.runtimeMinutes ? " · " : ""}
-                  {activePoster.runtimeMinutes ? `${activePoster.runtimeMinutes} min` : ""}
+                <span className="font-mono tabular-nums">
+                  {activePoster.year ? `· ${activePoster.year}` : ""}
+                  {activePoster.runtimeMinutes ? ` · ${activePoster.runtimeMinutes} min` : ""}
+                </span>
+              )}
+              {activePoster.rating && (
+                <span className="inline-flex items-center gap-0.5 font-mono text-[#C89572]">
+                  · ★ {activePoster.rating}
                 </span>
               )}
               {Array.isArray((activeCard.entity?.coreStructuredData as any)?.genres) &&
@@ -458,70 +413,69 @@ export function PosterWallLayout({
                         key={g}
                         type="button"
                         onClick={() => onSelectGenre(g)}
-                        className="px-1.5 py-0.5 rounded border text-[9px] hover:opacity-80 cursor-pointer"
-                        style={{
-                          borderColor: activePalette.rule,
-                          color: activePalette.muted,
-                        }}
+                        className="font-mono text-[10px] hover:text-[#F2EFE9] cursor-pointer"
                       >
-                        {g}
+                        · {g}
                       </button>
                     ) : (
-                      <span
-                        key={g}
-                        className="px-1.5 py-0.5 rounded border text-[9px]"
-                        style={{
-                          borderColor: activePalette.rule,
-                          color: activePalette.muted,
-                        }}
-                      >
-                        {g}
+                      <span key={g} className="font-mono text-[10px]">
+                        · {g}
                       </span>
                     )
                   )}
-              {activePoster.rating && (
-                <span className="inline-flex items-center gap-0.5 text-amber-400">
-                  <Star className="w-2.5 h-2.5 fill-current" />
-                  {activePoster.rating}
-                </span>
-              )}
-              {activePoster.rewatch && (
-                <span className="inline-flex items-center gap-0.5 opacity-80">
-                  <Repeat className="w-2.5 h-2.5" />
-                  Rewatch
-                </span>
-              )}
             </div>
-            <h3 className="font-serif-editorial text-xl sm:text-2xl truncate mt-0.5">
-              {activePoster.title}
-            </h3>
           </div>
 
           <button
             type="button"
             onClick={() => onOpenObject(activeCard, "standard")}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-mono text-xs font-medium shrink-0 cursor-pointer transition hover:opacity-90"
-            style={{
-              backgroundColor: activePalette.accent,
-              color: activePalette.surfaceSecondary,
-            }}
+            className="font-mono text-xs text-[#C89572] hover:underline underline-offset-4 shrink-0 cursor-pointer self-start sm:self-end"
           >
-            <Film className="w-3.5 h-3.5" />
-            <span>Open Film Details</span>
+            Open Film →
           </button>
         </div>
 
-        {items.length > 3 && (
-          <input
-            type="range"
-            min={0}
-            max={items.length - 1}
-            value={safeIdx}
+        {items.length > 1 && (
+          <div
+            role="slider"
+            tabIndex={0}
             aria-label="Scrub movie posters"
-            onChange={(e) => setActiveByIndex(Number(e.target.value))}
-            className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
-            style={{ accentColor: activePalette.accent }}
-          />
+            aria-valuemin={1}
+            aria-valuemax={items.length}
+            aria-valuenow={safeIdx + 1}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+              setActiveByIndex(Math.round(ratio * (items.length - 1)));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") setActiveByIndex(safeIdx + 1);
+              if (e.key === "ArrowLeft") setActiveByIndex(safeIdx - 1);
+            }}
+            className="flex items-end justify-between h-5 pt-1 border-t border-white/10 cursor-pointer select-none"
+          >
+            {(() => {
+              const tickCount = Math.min(items.length, 48);
+              const activeTick =
+                items.length <= 1
+                  ? 0
+                  : Math.round((safeIdx / (items.length - 1)) * (tickCount - 1));
+              return Array.from({ length: tickCount }, (_, i) => {
+                const isAct = i === activeTick;
+                return (
+                  <span
+                    key={i}
+                    className="block transition-all duration-150"
+                    style={{
+                      width: "1px",
+                      height: isAct ? "15px" : i % 6 === 0 ? "9px" : "5px",
+                      backgroundColor: isAct ? "#C89572" : "rgba(242, 239, 233, 0.24)",
+                    }}
+                  />
+                );
+              });
+            })()}
+          </div>
         )}
       </div>
     </section>

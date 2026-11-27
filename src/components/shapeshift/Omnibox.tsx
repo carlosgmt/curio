@@ -753,7 +753,7 @@ export function Omnibox({
         hostLabel = "Link";
       }
       return (
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-800/40">
+        <span className="flex items-center gap-1.5 text-xs font-mono font-medium text-[var(--brand)] bg-[var(--brand-soft)] px-2.5 py-0.5 rounded-full border border-[var(--gallery-hairline)]">
           <Link2 className="w-3.5 h-3.5" />
           <span>Link: {hostLabel}</span>
         </span>
@@ -761,104 +761,105 @@ export function Omnibox({
     }
 
     if (!intentPreview) {
-      return <Sparkles className="w-5 h-5 text-neutral-400 dark:text-neutral-500" />;
+      return <Sparkles className="w-4 h-4 text-muted-foreground" />;
     }
 
     if (intentPreview.intent === "EDIT_SAVE") {
       const targetTitle = intentPreview.targetSave?.title || "Card";
+      const badgeCls =
+        "flex items-center gap-1.5 text-xs font-mono font-medium text-[var(--brand)] bg-[var(--brand-soft)] px-2.5 py-0.5 rounded-full border border-[var(--gallery-hairline)]";
       if (intentPreview.action === "RATING") {
         return (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40">
+          <span className={badgeCls}>
             <Edit3 className="w-3.5 h-3.5" />
-            ✏️ Update &lsquo;{targetTitle}&rsquo; ({intentPreview.editDetails?.rating}★)
+            Update &lsquo;{targetTitle}&rsquo; ({intentPreview.editDetails?.rating}★)
           </span>
         );
       }
       if (intentPreview.action === "NOTE") {
         return (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-800/40">
+          <span className={badgeCls}>
             <FileText className="w-3.5 h-3.5" />
-            📝 Add note to &lsquo;{targetTitle}&rsquo;
+            Note on &lsquo;{targetTitle}&rsquo;
           </span>
         );
       }
       if (intentPreview.action === "LIST_MOVE") {
         return (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/40">
+          <span className={badgeCls}>
             <FolderInput className="w-3.5 h-3.5" />
-            📁 Move &lsquo;{targetTitle}&rsquo; to {intentPreview.editDetails?.targetList}
+            Move &lsquo;{targetTitle}&rsquo; to {intentPreview.editDetails?.targetList}
           </span>
         );
       }
       if (intentPreview.action === "STATUS") {
         return (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded-full border border-purple-200/60 dark:border-purple-800/40">
+          <span className={badgeCls}>
             <RotateCcw className="w-3.5 h-3.5" />
-            🔄 Mark &lsquo;{targetTitle}&rsquo; as {intentPreview.editDetails?.status}
+            Mark &lsquo;{targetTitle}&rsquo; as {intentPreview.editDetails?.status}
           </span>
         );
       }
       return (
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40">
+        <span className={badgeCls}>
           <Edit3 className="w-3.5 h-3.5" />
-          ✏️ Edit &lsquo;{targetTitle}&rsquo;
+          Edit &lsquo;{targetTitle}&rsquo;
         </span>
       );
     }
 
     if (intentPreview.intent === "PRIVATE_MEMO") {
       return (
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2.5 py-0.5 rounded-full border border-neutral-200/60 dark:border-neutral-700/50">
+        <span className="flex items-center gap-1.5 text-xs font-mono font-medium text-muted-foreground bg-muted px-2.5 py-0.5 rounded-full border border-[var(--gallery-hairline)]">
           <Lock className="w-3.5 h-3.5" />
-          🔒 Text Note
+          Private Note
         </span>
       );
     }
 
     return (
-      <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/40">
+      <span className="flex items-center gap-1.5 text-xs font-mono font-medium text-[var(--brand)] bg-[var(--brand-soft)] px-2.5 py-0.5 rounded-full border border-[var(--gallery-hairline)]">
         <Sparkles className="w-3.5 h-3.5" />
-        ✨ Capture: New Card
+        Capture
       </span>
     );
   };
 
   const renderArchetypeIcon = (item: SearchResultItem) => {
     if (item.isPrivateMemo) {
-      return <Lock className="w-3.5 h-3.5 text-amber-500" />;
+      return <Lock className="w-3.5 h-3.5 text-[var(--brand)]" />;
     }
     const path = (item.typePath || "").toLowerCase();
     const core = (item.coreType || "").toUpperCase();
 
     if (path.includes("/book") || core === "BOOK") {
-      return <BookOpen className="w-3.5 h-3.5 text-blue-500" />;
+      return <BookOpen className="w-3.5 h-3.5 text-[var(--ink-2)]" />;
     }
     if (path.includes("/film") || path.includes("/movie") || (core === "MEDIA" && path.includes("film"))) {
-      return <Film className="w-3.5 h-3.5 text-rose-500" />;
+      return <Film className="w-3.5 h-3.5 text-[var(--ink-2)]" />;
     }
     if (path.includes("/vinyl") || path.includes("/music") || core === "MEDIA") {
-      return <Disc className="w-3.5 h-3.5 text-purple-500" />;
+      return <Disc className="w-3.5 h-3.5 text-[var(--ink-2)]" />;
     }
     if (path.includes("/recipe") || core === "CULINARY") {
-      return <Utensils className="w-3.5 h-3.5 text-orange-500" />;
+      return <Utensils className="w-3.5 h-3.5 text-[var(--ink-2)]" />;
     }
     if (path.includes("/place") || core === "PLACE") {
-      return <MapPin className="w-3.5 h-3.5 text-emerald-500" />;
+      return <MapPin className="w-3.5 h-3.5 text-[var(--ink-2)]" />;
     }
-    return <ShoppingBag className="w-3.5 h-3.5 text-neutral-500" />;
+    return <ShoppingBag className="w-3.5 h-3.5 text-muted-foreground" />;
   };
 
   return (
     <div ref={containerRef} className="w-full max-w-3xl mx-auto px-4 relative">
       <form
         onSubmit={handleSubmit}
-        className={`relative group rounded-3xl bg-white dark:bg-neutral-900 border transition-all duration-200 p-2 sm:p-2.5 flex items-center gap-2 shadow-sm hover:shadow-md ${
-          inSearch
-            ? "border-purple-400 dark:border-purple-600 ring-2 ring-purple-100 dark:ring-purple-950/40"
-            : intentPreview?.intent === "EDIT_SAVE"
-            ? "border-amber-400 dark:border-amber-600 ring-2 ring-amber-100 dark:ring-amber-950/40"
-            : "border-neutral-200/80 dark:border-neutral-800"
+        className={`relative group rounded-xl bg-card border transition-all duration-150 px-2 py-1.5 sm:px-2.5 sm:py-2 flex items-center gap-2 ${
+          inSearch || intentPreview?.intent === "EDIT_SAVE"
+            ? "border-[var(--brand)] ring-2 ring-[var(--brand)]/15"
+            : "border-[var(--gallery-hairline)]"
         }`}
+        style={{ boxShadow: "var(--shadow-rest)" }}
       >
         <div className="pl-3 text-neutral-400 dark:text-neutral-500 flex items-center justify-center shrink-0">
           {renderIntentBadge()}
@@ -1247,91 +1248,58 @@ export function Omnibox({
         </div>
       )}
 
-      {/* Omnibox Search & Save Usage Explanation */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 mt-2.5 px-2 text-xs text-neutral-500">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="inline-flex items-center gap-1 font-semibold text-neutral-700 dark:text-neutral-300">
-            <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-neutral-200/80 dark:bg-neutral-800 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-2xs">
-              /
-            </kbd>
-            <span>Search:</span>
-          </span>
-          <span className="text-neutral-600 dark:text-neutral-400">
-            Type <code className="text-purple-600 dark:text-purple-400 font-mono font-semibold">/</code> followed by any word or concept (e.g.{" "}
-            <button
-              type="button"
-              onClick={() => {
-                setInput("/coffee");
-                setIsSearchMode(true);
-                inputRef.current?.focus();
-              }}
-              className="text-purple-600 dark:text-purple-400 font-mono underline hover:text-purple-700 cursor-pointer"
-            >
-              /coffee
-            </button>
-            ) or click <Search className="w-3 h-3 inline text-purple-500 mx-0.5" /> to search saves semantically.
-          </span>
+      {/* Quiet Editorial Command Footer (zero rainbow pill confetti) */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mt-2 px-1 text-[11px] font-mono tabular-nums text-muted-foreground">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => {
+              setInput("/coffee");
+              setIsSearchMode(true);
+              inputRef.current?.focus();
+            }}
+            className="hover:text-[var(--brand)] transition-colors cursor-pointer"
+          >
+            / search
+          </button>
+          <span className="opacity-40">·</span>
+          <button
+            type="button"
+            onClick={() => setInput("Change rating to 5 stars for Past Lives")}
+            className="hover:text-foreground transition-colors cursor-pointer"
+          >
+            edit by prompt
+          </button>
+          <span className="opacity-40">·</span>
+          <button
+            type="button"
+            onClick={() => setInput("Met Sarah about Q3 funding")}
+            className="hover:text-foreground transition-colors cursor-pointer"
+          >
+            private note
+          </button>
+          {onOpenTypeBuilder && (
+            <>
+              <span className="opacity-40">·</span>
+              <button
+                type="button"
+                onClick={onOpenTypeBuilder}
+                className="text-[var(--brand)] hover:underline underline-offset-4 transition-colors cursor-pointer"
+                title="Teach Curio a new custom type"
+              >
+                + add type
+              </button>
+            </>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 text-[11px] text-neutral-400 shrink-0">
-          <span><kbd className="px-1 font-mono bg-neutral-100 dark:bg-neutral-800 rounded border border-neutral-200 dark:border-neutral-700">Enter</kbd> to save</span>
-          <span>•</span>
-          <span><kbd className="px-1 font-mono bg-neutral-100 dark:bg-neutral-800 rounded border border-neutral-200 dark:border-neutral-700">Esc</kbd> to exit search</span>
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
+          <span>↵ save</span>
+          <span className="opacity-40">·</span>
+          <span>⇧↵ new</span>
+          <span className="opacity-40">·</span>
+          <span>esc dismiss</span>
         </div>
-      </div>
-
-      {/* Quick suggestions pills */}
-      <div className="flex items-center justify-center gap-2 mt-2 text-xs text-neutral-500 flex-wrap">
-        <span className="text-neutral-400">Try:</span>
-        <button
-          type="button"
-          onClick={() => {
-            setInput("/coffee");
-            setIsSearchMode(true);
-            inputRef.current?.focus();
-          }}
-          className="hover:text-purple-600 dark:hover:text-purple-400 transition font-medium text-neutral-700 dark:text-neutral-300 flex items-center gap-1 bg-purple-50/70 dark:bg-purple-950/30 px-2 py-0.5 rounded-full border border-purple-200/50 dark:border-purple-800/40 cursor-pointer"
-        >
-          <Search className="w-3 h-3 text-purple-500" /> /coffee (Search)
-        </button>
-        <span>•</span>
-        <button
-          type="button"
-          onClick={() => setInput("Change rating to 5 stars for Past Lives")}
-          className="hover:text-neutral-900 dark:hover:text-neutral-200 transition underline underline-offset-2 flex items-center gap-1"
-        >
-          <Edit3 className="w-3 h-3 text-amber-500" /> Change rating to 5 stars for Past Lives
-        </button>
-        <span>•</span>
-        <button
-          type="button"
-          onClick={() => setInput("Loved the ending of Dune")}
-          className="hover:text-neutral-900 dark:hover:text-neutral-200 transition underline underline-offset-2 flex items-center gap-1"
-        >
-          <BookOpen className="w-3 h-3 text-blue-500" /> Loved the ending of Dune
-        </button>
-        <span>•</span>
-        <button
-          type="button"
-          onClick={() => setInput("Met Sarah about Q3 funding")}
-          className="hover:text-neutral-900 dark:hover:text-neutral-200 transition underline underline-offset-2 flex items-center gap-1"
-        >
-          <Lock className="w-3 h-3 text-amber-500" /> Met Sarah about Q3 funding
-        </button>
-        {onOpenTypeBuilder && (
-          <>
-            <span>•</span>
-            <button
-              type="button"
-              onClick={onOpenTypeBuilder}
-              className="hover:text-amber-600 dark:hover:text-amber-400 transition font-medium text-neutral-700 dark:text-neutral-300 flex items-center gap-1 bg-amber-50/80 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40 cursor-pointer"
-              title="Teach Curio a new custom type"
-            >
-              <Sparkles className="w-3 h-3 text-amber-500" />
-              <span>+ Add Type</span>
-            </button>
-          </>
-        )}
       </div>
     </div>
   );

@@ -263,84 +263,80 @@ export function ShelfLayout({
       onWheel={webglUnavailable ? handleWheel : undefined}
       onTouchStart={webglUnavailable ? handleTouchStart : undefined}
       onTouchEnd={webglUnavailable ? handleTouchEnd : undefined}
-      className="relative w-full overflow-hidden rounded-2xl sm:rounded-3xl border outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+      className="relative w-full overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
       style={{
-        backgroundColor: activePalette.surface,
-        borderColor: activePalette.rule,
-        color: activePalette.ink,
-        transition: "background-color 420ms ease, color 420ms ease, border-color 420ms ease",
+        backgroundColor: "#201819",
+        color: "#F2EFE9",
+        transition: "background-color 600ms ease, color 600ms ease",
       }}
     >
-      {/* Subtle surface atmospheric sheen */}
+      {/* Ambient Cloth-Palette Bindery Stage Glow */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-60"
+        className="pointer-events-none absolute inset-0 opacity-75"
         style={{
-          background: `radial-gradient(circle at 50% 42%, ${activePalette.coverBg}33 0%, transparent 66%)`,
+          background: `radial-gradient(circle at 50% 42%, ${activePalette.coverBg}55 0%, #201819 70%)`,
+          transition: "background 600ms ease",
         }}
       />
 
-      {/* Top editorial ledger bar */}
-      <div
-        className="relative z-10 flex flex-wrap items-center justify-between gap-2 px-4 sm:px-7 py-3 border-b"
-        style={{ borderColor: activePalette.rule }}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <span
-            className="font-mono text-[11px] uppercase tracking-[0.14em] truncate"
-            style={{ color: activePalette.accent }}
-          >
-            {shelfLabel}
-          </span>
-          <span
-            aria-hidden="true"
-            className="text-xs opacity-40"
-            style={{ color: activePalette.muted }}
-          >
-            /
-          </span>
-          <span
-            className="font-mono text-[11px] uppercase tracking-[0.1em]"
-            style={{ color: activePalette.muted }}
-          >
-            {activeSpec.label}
-          </span>
-        </div>
+      {/* Minimal Top Bindery Ledger */}
+      <div className="relative z-10 flex items-center justify-between gap-3 px-5 sm:px-8 pt-4 pb-1 text-xs">
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#A8A196] truncate">
+          {shelfLabel}
+        </span>
 
-        <div className="flex items-center gap-2 font-mono text-[11px] tabular-nums">
-          <button
-            type="button"
-            onClick={() => setActiveByIndex(safeIdx - 1)}
-            disabled={safeIdx <= 0}
-            aria-label="Previous shelf object"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-opacity disabled:opacity-30 cursor-pointer"
-            style={{
-              borderColor: activePalette.rule,
-              backgroundColor: activePalette.surfaceSecondary,
-              color: activePalette.ink,
-            }}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-          </button>
-          <span style={{ color: activePalette.muted }}>
-            {String(safeIdx + 1).padStart(2, "0")} /{" "}
-            {String(items.length).padStart(2, "0")}
-          </span>
-          <button
-            type="button"
-            onClick={() => setActiveByIndex(safeIdx + 1)}
-            disabled={safeIdx >= items.length - 1}
-            aria-label="Next shelf object"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-opacity disabled:opacity-30 cursor-pointer"
-            style={{
-              borderColor: activePalette.rule,
-              backgroundColor: activePalette.surfaceSecondary,
-              color: activePalette.ink,
-            }}
-          >
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
+        <span className="font-mono text-[11px] tabular-nums text-[#A8A196]">
+          {String(safeIdx + 1).padStart(2, "0")} / {String(items.length).padStart(2, "0")}
+        </span>
+
+        {!webglUnavailable ? (
+          <div className="flex items-center gap-3 font-mono text-[11px]">
+            <button
+              type="button"
+              data-testid="press-shelf-flip-spine"
+              onClick={() =>
+                setInspectMode((m) => (m === "spine" ? "front" : "spine"))
+              }
+              className="text-[#F2EFE9] hover:text-[#C89572] transition-colors cursor-pointer"
+            >
+              {inspectMode === "spine" ? "Show Cover" : "Flip Spine"}
+            </button>
+            <button
+              type="button"
+              aria-label="Reset 3D shelf angle"
+              onClick={() => {
+                setInspectMode("front");
+                setResetSignal((n) => n + 1);
+              }}
+              className="text-[#A8A196] hover:text-[#F2EFE9] transition-colors cursor-pointer"
+              title="Reset angle"
+            >
+              Reset
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 font-mono text-[11px]">
+            <button
+              type="button"
+              onClick={() => setActiveByIndex(safeIdx - 1)}
+              disabled={safeIdx <= 0}
+              aria-label="Previous shelf object"
+              className="disabled:opacity-30 hover:text-[#C89572] cursor-pointer"
+            >
+              ← Prev
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveByIndex(safeIdx + 1)}
+              disabled={safeIdx >= items.length - 1}
+              aria-label="Next shelf object"
+              className="disabled:opacity-30 hover:text-[#C89572] cursor-pointer"
+            >
+              Next →
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Interactive Continuous 3D Virtual Bookshelf (WebGL + CSS Fallback) */}
@@ -364,46 +360,6 @@ export function ShelfLayout({
             compact={compact}
             resetSignal={resetSignal}
           />
-          <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-7 pb-2 text-[10px] font-mono uppercase tracking-[0.12em]">
-            <span style={{ color: activePalette.muted }}>
-              Drag shelf or scroll sideways · Tap focused volume to open details
-            </span>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                data-testid="press-shelf-flip-spine"
-                onClick={() =>
-                  setInspectMode((m) => (m === "spine" ? "front" : "spine"))
-                }
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border transition-opacity hover:opacity-85 cursor-pointer"
-                style={{
-                  borderColor: activePalette.rule,
-                  backgroundColor: activePalette.surfaceSecondary,
-                  color: activePalette.ink,
-                }}
-              >
-                <RefreshCw className="h-2.5 w-2.5" />
-                <span>{inspectMode === "spine" ? "Cover" : "Spine"}</span>
-              </button>
-              <button
-                type="button"
-                aria-label="Reset 3D shelf angle"
-                onClick={() => {
-                  setInspectMode("front");
-                  setResetSignal((n) => n + 1);
-                }}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border transition-opacity hover:opacity-85 cursor-pointer"
-                style={{
-                  borderColor: activePalette.rule,
-                  backgroundColor: activePalette.surfaceSecondary,
-                  color: activePalette.ink,
-                }}
-              >
-                <RotateCcw className="h-2.5 w-2.5" />
-                <span>Reset</span>
-              </button>
-            </div>
-          </div>
         </div>
       ) : (
       <div
@@ -714,137 +670,109 @@ export function ShelfLayout({
       </div>
       )}
 
-      {/* Synchronized Display Serif Marquee & Quick Actions */}
-      <div
-        className="relative z-10 px-4 sm:px-7 py-5 border-t flex flex-col md:flex-row md:items-end justify-between gap-4"
-        style={{
-          borderColor: activePalette.rule,
-          backgroundColor: `${activePalette.surfaceSecondary}CC`,
-        }}
-      >
-        <div className="min-w-0 max-w-2xl space-y-1.5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em]">
-            {onSelectCreator &&
-            activeMeta.creator &&
-            activeMeta.creator.toLowerCase() !== "unknown author" ? (
-              <button
-                type="button"
-                onClick={() => onSelectCreator(activeMeta.creator)}
-                className="underline underline-offset-4 decoration-dotted hover:opacity-80 cursor-pointer text-left"
-                style={{ color: activePalette.accent }}
-                title={`View all books by ${activeMeta.creator}`}
-              >
-                {activeMeta.creator}
-              </button>
-            ) : (
-              <span style={{ color: activePalette.accent }}>{activeMeta.creator}</span>
-            )}
-            {activeMeta.isWishlist && (
-              <span
-                className="px-1.5 py-0.5 rounded border border-dashed text-[10px]"
-                style={{ borderColor: activePalette.accent, color: activePalette.accent }}
-              >
-                Wishlist
-              </span>
-            )}
-            {activeMeta.yearOrPrice && (
-              <span className="tabular-nums" style={{ color: activePalette.muted }}>
-                {activeMeta.yearOrPrice}
-              </span>
-            )}
-            {(activeCard.entity?.coreType === "BOOK" ||
-              activeCard.save.typePath === "/product/book") &&
-              resolveBookSources(activeCard.save as any, activeCard.entity as any).map(
-                (src) => (
-                  <span
-                    key={src}
-                    className="px-1.5 py-0.5 rounded border text-[9px] tracking-wider"
-                    style={{
-                      borderColor: activePalette.rule,
-                      color: activePalette.muted,
-                    }}
-                  >
-                    {formatBookSourceLabel(src)}
-                  </span>
-                )
+      {/* Museum Label & Whisper-Quiet Stripe Press Tick-Scale Scrubber */}
+      <div className="relative z-10 px-5 sm:px-8 pt-2 pb-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div className="min-w-0 max-w-2xl">
+            <h3 className="font-serif-editorial text-2xl sm:text-[28px] leading-[1.15] font-normal tracking-tight text-[#F2EFE9]">
+              {activeMeta.title}
+            </h3>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[#A8A196]">
+              {onSelectCreator &&
+              activeMeta.creator &&
+              activeMeta.creator.toLowerCase() !== "unknown author" ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectCreator(activeMeta.creator)}
+                  className="text-[#C89572] hover:underline underline-offset-4 cursor-pointer text-left"
+                  title={`View all books by ${activeMeta.creator}`}
+                >
+                  {activeMeta.creator}
+                </button>
+              ) : (
+                <span>{activeMeta.creator}</span>
               )}
+              {activeMeta.yearOrPrice && (
+                <span className="font-mono tabular-nums">· {activeMeta.yearOrPrice}</span>
+              )}
+              {activeMeta.isWishlist && (
+                <span className="font-mono text-[10px] text-[#C89572]">· Wishlist</span>
+              )}
+              {(activeCard.entity?.coreType === "BOOK" ||
+                activeCard.save.typePath === "/product/book") &&
+                resolveBookSources(activeCard.save as any, activeCard.entity as any).map(
+                  (src) => (
+                    <span key={src} className="font-mono text-[10px] opacity-80">
+                      · {formatBookSourceLabel(src)}
+                    </span>
+                  )
+                )}
+            </div>
           </div>
-          <h3 className="font-serif-editorial text-2xl sm:text-3xl leading-[1.12] font-normal tracking-tight">
-            {activeMeta.title}
-          </h3>
-          {activeMeta.subtitle && (
-            <p
-              className="text-sm leading-relaxed line-clamp-2 max-w-xl"
-              style={{ color: activePalette.muted }}
+
+          <div className="flex items-center gap-4 font-mono text-xs shrink-0">
+            <button
+              type="button"
+              onClick={() => onOpenObject(activeCard, "standard")}
+              className="text-[#A8A196] hover:text-[#F2EFE9] transition-colors cursor-pointer"
             >
-              {activeMeta.subtitle}
-            </p>
-          )}
+              Dossier
+            </button>
+            <button
+              type="button"
+              data-testid="press-open-stage"
+              onClick={() => onOpenObject(activeCard, "press")}
+              className="text-[#C89572] hover:underline underline-offset-4 transition-colors cursor-pointer"
+            >
+              Open Volume →
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => onOpenObject(activeCard, "standard")}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 font-mono text-[11px] uppercase tracking-wider transition-opacity hover:opacity-85 cursor-pointer"
-            style={{
-              borderColor: activePalette.rule,
-              backgroundColor: activePalette.surface,
-              color: activePalette.ink,
-            }}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            Dossier
-          </button>
-          <button
-            type="button"
-            data-testid="press-open-stage"
-            onClick={() => onOpenObject(activeCard, "press")}
-            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-[11px] uppercase tracking-wider font-medium transition-opacity hover:opacity-90 cursor-pointer"
-            style={{
-              backgroundColor: activePalette.accent,
-              color: activePalette.surfaceSecondary,
-            }}
-          >
-            <Box className="h-3.5 w-3.5" />
-            Inspect 3D Stage
-          </button>
-        </div>
-      </div>
-
-      {/* Shelf Position Scrubber for large catalogs */}
-      {items.length > 5 && (
-        <div
-          className="relative z-10 px-4 sm:px-7 py-2.5 border-t flex items-center gap-3"
-          style={{
-            borderColor: activePalette.rule,
-            backgroundColor: activePalette.surfaceSecondary,
-          }}
-        >
-          <span
-            className="font-mono text-[10px] uppercase tracking-wider shrink-0"
-            style={{ color: activePalette.muted }}
-          >
-            Index
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={items.length - 1}
-            value={safeIdx}
+        {/* Hairline Tick-Mark Index Ruler */}
+        {items.length > 1 && (
+          <div
+            role="slider"
+            tabIndex={0}
             aria-label="Jump to item on Press Shelf"
-            onChange={(e) => setActiveByIndex(Number(e.target.value))}
-            className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
-            style={{ accentColor: activePalette.accent }}
-          />
-          <span
-            className="font-mono text-[10px] tabular-nums shrink-0"
-            style={{ color: activePalette.muted }}
+            aria-valuemin={1}
+            aria-valuemax={items.length}
+            aria-valuenow={safeIdx + 1}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+              setActiveByIndex(Math.round(ratio * (items.length - 1)));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") setActiveByIndex(safeIdx + 1);
+              if (e.key === "ArrowLeft") setActiveByIndex(safeIdx - 1);
+            }}
+            className="flex items-end justify-between h-5 pt-1 border-t border-white/10 cursor-pointer select-none"
           >
-            {safeIdx + 1}/{items.length}
-          </span>
-        </div>
-      )}
+            {(() => {
+              const tickCount = Math.min(items.length, 48);
+              const activeTick =
+                items.length <= 1
+                  ? 0
+                  : Math.round((safeIdx / (items.length - 1)) * (tickCount - 1));
+              return Array.from({ length: tickCount }, (_, i) => {
+                const isAct = i === activeTick;
+                return (
+                  <span
+                    key={i}
+                    className="block transition-all duration-150"
+                    style={{
+                      width: "1px",
+                      height: isAct ? "15px" : i % 6 === 0 ? "9px" : "5px",
+                      backgroundColor: isAct ? "#C89572" : "rgba(242, 239, 233, 0.24)",
+                    }}
+                  />
+                );
+              });
+            })()}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

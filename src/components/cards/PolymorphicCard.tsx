@@ -632,13 +632,11 @@ export function PolymorphicCard({
         </div>
       )}
 
-      {/* Quick Action Toolbar (Wish + Board) */}
+      {/* Quick Action Toolbar (Wish + Board + Zero-Connection Pair, hidden at rest on desktop, focusable & tap-accessible) */}
       {!isOptimistic && !readOnly && !isCompactOrMicro && (
         <div
-          className={`absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5 transition-opacity duration-150 ${
-            wished
-              ? "opacity-100"
-              : "opacity-95 sm:opacity-0 sm:group-hover/curio-card:opacity-100 sm:group-focus-within/curio-card:opacity-100"
+          className={`curio-hover-chrome absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5 ${
+            wished ? "!opacity-100 !pointer-events-auto" : ""
           }`}
         >
           <button
@@ -653,8 +651,8 @@ export function PolymorphicCard({
             onClick={toggleWish}
             className={`inline-flex items-center justify-center sm:justify-start gap-1 w-8 h-8 sm:w-auto sm:h-auto sm:px-2 sm:py-1 rounded-full text-[11px] font-medium backdrop-blur-md shadow-sm border transition-colors duration-150 cursor-pointer ${
               wished
-                ? "bg-rose-500 text-white border-rose-400"
-                : "bg-neutral-900/75 text-white border-white/20 dark:bg-neutral-100/90 dark:text-neutral-950"
+                ? "bg-[var(--brand)] text-[var(--primary-foreground)] border-[var(--brand)]"
+                : "bg-card/90 text-foreground border-[var(--gallery-hairline)] hover:border-foreground/25"
             }`}
             title={
               wished
@@ -674,15 +672,26 @@ export function PolymorphicCard({
                 e.stopPropagation();
                 setIsAddToListOpen(true);
               }}
-              className={`inline-flex items-center justify-center sm:justify-start gap-1 w-8 h-8 sm:w-auto sm:h-auto sm:px-2.5 sm:py-1 rounded-full text-[11px] font-medium bg-neutral-900/75 hover:bg-neutral-950 text-white dark:bg-neutral-100/90 dark:hover:bg-white dark:text-neutral-950 backdrop-blur-md shadow-sm border border-white/20 dark:border-neutral-800 transition-all duration-150 cursor-pointer ${
-                wished
-                  ? "sm:opacity-0 sm:group-hover/curio-card:opacity-100 sm:group-focus-within/curio-card:opacity-100"
-                  : ""
-              }`}
+              className="curio-hover-chrome inline-flex items-center justify-center sm:justify-start gap-1 w-8 h-8 sm:w-auto sm:h-auto sm:px-2.5 sm:py-1 rounded-full text-[11px] font-medium bg-card/95 hover:bg-card text-foreground backdrop-blur-md shadow-sm border border-[var(--gallery-hairline)] transition-all duration-150 cursor-pointer"
               title="Add to Curated Board"
             >
-              <FolderPlus className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-neutral-300 dark:text-neutral-700" aria-hidden="true" />
+              <FolderPlus className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-muted-foreground" aria-hidden="true" />
               <span className="hidden sm:inline">Board</span>
+            </button>
+          )}
+          {!save.isPrivateMemo && onConnect && curatedPairs.length === 0 && (
+            <button
+              type="button"
+              data-testid="pair-card-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConnect(item);
+              }}
+              className="curio-hover-chrome inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-primary text-primary-foreground shadow-sm transition-colors duration-150 cursor-pointer"
+              title="Pair with another save"
+            >
+              <Link2 className="w-3 h-3" aria-hidden="true" />
+              <span>+ Pair</span>
             </button>
           )}
         </div>
@@ -697,10 +706,10 @@ export function PolymorphicCard({
         {renderSilhouette()}
       </div>
 
-      {/* Curated Synaptic Pairs (structural WORN_ON & auto co-wear links fold into card wear count & Lightbox drawer) */}
+      {/* Curated Synaptic Pairs (shown cleanly only when curated connections exist; zero empty footer chin at rest) */}
       {!isOptimistic &&
         !isCompactOrMicro &&
-        (curatedPairs.length > 0 || (!readOnly && !save.isPrivateMemo && Boolean(onConnect))) &&
+        curatedPairs.length > 0 &&
         (() => {
           const visibleCurated = showAllInlinePills
             ? curatedPairs
@@ -717,19 +726,9 @@ export function PolymorphicCard({
                     const el = document.getElementById(`save-${targetSaveId}`);
                     if (el) {
                       el.scrollIntoView({ behavior: "smooth", block: "center" });
-                      el.classList.add(
-                        "ring-2",
-                        "ring-neutral-400",
-                        "dark:ring-neutral-500",
-                        "rounded-2xl"
-                      );
+                      el.classList.add("ring-2", "ring-[var(--brand)]", "rounded-xl");
                       setTimeout(() => {
-                        el.classList.remove(
-                          "ring-2",
-                          "ring-neutral-400",
-                          "dark:ring-neutral-500",
-                          "rounded-2xl"
-                        );
+                        el.classList.remove("ring-2", "ring-[var(--brand)]", "rounded-xl");
                       }, 2500);
                     }
                   }}
@@ -747,7 +746,7 @@ export function PolymorphicCard({
                       setShowAllInlinePills(true);
                     }
                   }}
-                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono tabular-nums font-medium text-neutral-600 dark:text-neutral-300 bg-neutral-100/80 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 transition-colors duration-150 cursor-pointer"
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono tabular-nums font-medium text-muted-foreground bg-card border border-[var(--gallery-hairline)] hover:text-foreground transition-colors duration-150 cursor-pointer"
                   title={`Show ${overflowCount} more synaptic pairs`}
                 >
                   +{overflowCount} more
@@ -761,12 +760,8 @@ export function PolymorphicCard({
                     e.stopPropagation();
                     onConnect(item);
                   }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200 border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 transition-colors duration-150 cursor-pointer"
-                  title={
-                    curatedPairs.length > 0
-                      ? "Add another synaptic connection"
-                      : "Pair with another save"
-                  }
+                  className="curio-hover-chrome inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-muted-foreground hover:text-foreground border border-dashed border-border transition-colors duration-150 cursor-pointer"
+                  title="Add another synaptic connection"
                 >
                   <Link2 className="w-2.5 h-2.5" aria-hidden="true" />
                   <span>+ Pair</span>

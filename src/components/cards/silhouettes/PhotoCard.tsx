@@ -41,79 +41,66 @@ export function PhotoCard({
       data-testid="photo-card"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="group relative rounded-2xl bg-black text-white shadow-md hover:shadow-2xl transition-all duration-300 border border-neutral-800 flex flex-col justify-between overflow-hidden"
+      className="curio-gallery-card group relative flex flex-col justify-between overflow-hidden"
     >
-      {/* Full-bleed Photo Container */}
-      <div className="relative aspect-4/3 w-full overflow-hidden bg-neutral-950">
-        <img
-          src={imageUrl}
-          alt={title}
-          referrerPolicy="no-referrer"
-          className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-700 ease-out"
-        />
+      {/* Sartorialist / MACK Books Clean Gallery Print */}
+      <div className="p-2.5 sm:p-3 flex flex-col">
+        <div className="relative aspect-[4/3.6] w-full overflow-hidden rounded-[8px] bg-[var(--well-surface)]">
+          <img
+            src={imageUrl}
+            alt={title}
+            referrerPolicy="no-referrer"
+            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500 ease-out"
+          />
 
-        {/* Top Subtle Gradient Vignette */}
-        <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
-
-        {/* Top Badges: Camera / IG media badge & Expand */}
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px] font-mono">
-          {camera ? (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/10 shadow-xs">
-              <Camera className="w-3 h-3 text-amber-400" />
-              <span className="truncate max-w-[140px]">{camera}</span>
+          {(camera || igBadge) && (
+            <div className="curio-hover-chrome absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-white text-[10px] font-mono border border-white/15">
+              {camera && <Camera className="w-3 h-3 text-[#C89572]" aria-hidden="true" />}
+              <span className="truncate max-w-[140px]">{camera || igBadge}</span>
             </div>
-          ) : igBadge ? (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/10 shadow-xs">
-              <span>{igBadge}</span>
-            </div>
-          ) : (
-            <span />
           )}
+        </div>
 
-          <div className="p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/80 hover:text-white border border-white/10 transition">
-            <Maximize2 className="w-3.5 h-3.5" />
+        {/* Clean Museum Caption on Gallery Stock */}
+        <div className="mt-2.5 px-0.5 flex items-baseline justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium text-foreground leading-snug line-clamp-1">
+              {title}
+            </h3>
+            {photographer && (
+              <p className="text-xs text-muted-foreground truncate mt-0.5">{photographer}</p>
+            )}
           </div>
-        </div>
-
-        {/* Bottom Caption & Optional EXIF HUD Overlay */}
-        <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex flex-col justify-end">
-          <h3 className="font-serif text-lg font-bold text-white mb-0.5 leading-snug drop-shadow-md">
-            {title}
-          </h3>
-          {photographer && (
-            <p className="text-xs font-mono text-neutral-300 mb-2">{photographer}</p>
-          )}
-
           {exifSpecs.length > 0 && (
-            <div className="flex items-center gap-2 text-[10px] font-mono text-neutral-300 bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg w-fit border border-white/10">
-              <Aperture className="w-3 h-3 text-amber-400" />
-              <span>{exifSpecs.join(" · ")}</span>
-            </div>
+            <span className="text-[10px] font-mono tabular-nums text-muted-foreground shrink-0 truncate max-w-[140px]">
+              {exifSpecs.slice(0, 2).join(" · ")}
+            </span>
           )}
         </div>
+
+        {/* Disambiguation trigger */}
+        {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
+          <div className="mt-2">
+            <DisambiguationBar
+              saveId={save.id}
+              candidates={save.candidateFallbacks}
+              initialQuery={title}
+              onSwapped={() => onSwapped?.(save)}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Disambiguation trigger */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <div className="px-4 pt-1.5 bg-neutral-950">
-          <DisambiguationBar
-            saveId={save.id}
-            candidates={save.candidateFallbacks}
-            initialQuery={title}
-            onSwapped={() => onSwapped?.(save)}
+      {/* Hover/Focus-Revealed Footer */}
+      {entity && (
+        <div className="curio-hover-footer">
+          <CardFooterWaterfall
+            entity={entity}
+            primarySource={primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+            isWishlist={Boolean(save.wishlist)}
           />
         </div>
-      )}
-
-      {/* Footer */}
-      {entity && (
-        <CardFooterWaterfall
-          entity={entity}
-          primarySource={primarySource}
-          creatorAffiliateTags={creatorAffiliateTags}
-          isWishlist={Boolean(save.wishlist)}
-          tone="dark"
-        />
       )}
     </div>
   );

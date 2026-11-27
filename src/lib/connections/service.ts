@@ -1,5 +1,6 @@
 import { db, entryConnections, userSaves, globalEntities } from "@/db";
 import { eq, or, and, inArray } from "drizzle-orm";
+import { isAutoClosetCoWearNote } from "./classify";
 
 export const CONNECTION_TYPES = [
   // Sensory & Culinary
@@ -36,6 +37,7 @@ export interface ConnectedItem {
   weight?: number;
   confidence?: number;
   isBidirectional?: boolean;
+  isAutoCoWear?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -191,6 +193,10 @@ export async function getConnectedSaves(saveId: string): Promise<ConnectedItem[]
       .limit(1);
 
     if (saveRecord) {
+      const isAutoCoWear = isAutoClosetCoWearNote(
+        conn.connectionType,
+        conn.contextNote
+      );
       results.push({
         connectionId: conn.id,
         connectionType: conn.connectionType as ConnectionType,
@@ -207,6 +213,7 @@ export async function getConnectedSaves(saveId: string): Promise<ConnectedItem[]
         weight: conn.weight,
         confidence: conn.confidence,
         isBidirectional: conn.isBidirectional,
+        ...(isAutoCoWear ? { isAutoCoWear: true } : {}),
         metadata: conn.metadata || {},
       });
     }
@@ -325,6 +332,11 @@ export async function getConnectedSavesMap(
       ? saveRecord.entity?.title || "Untitled Element"
       : saveRecord.save.privateTitle || saveRecord.entity?.title || "Untitled Element";
 
+    const isAutoCoWear = isAutoClosetCoWearNote(
+      conn.connectionType,
+      conn.contextNote
+    );
+
     return {
       connectionId: conn.id,
       connectionType: conn.connectionType as ConnectionType,
@@ -338,6 +350,7 @@ export async function getConnectedSavesMap(
       weight: conn.weight,
       confidence: conn.confidence,
       isBidirectional: conn.isBidirectional,
+      ...(isAutoCoWear ? { isAutoCoWear: true } : {}),
       metadata: sanitize ? {} : conn.metadata || {},
     };
   };

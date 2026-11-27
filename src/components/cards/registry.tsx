@@ -144,29 +144,29 @@ export function DefaultCompactShell(props: any) {
   return (
     <div
       data-testid="compact-shell"
-      className="flex items-center justify-between gap-3 h-[68px] px-3.5 sm:px-4 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors duration-150"
+      className="curio-gallery-card flex items-center justify-between gap-3 h-[68px] px-3.5 sm:px-4"
     >
       <div className="flex items-center gap-3 min-w-0">
         {heroUrl && (
           <img
             src={heroUrl}
             alt={title}
-            className={`w-10 h-10 rounded-lg shrink-0 bg-neutral-50 dark:bg-neutral-800/80 ${
+            className={`w-10 h-10 rounded-lg shrink-0 bg-[var(--well-surface)] ${
               isCutout ? "object-contain p-1" : "object-cover"
             }`}
           />
         )}
         <div className="min-w-0">
-          <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+          <h4 className="text-sm font-medium text-foreground truncate">
             {title}
           </h4>
           {subtitle && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{subtitle}</p>
+            <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
           )}
         </div>
       </div>
       {trailingReadout && (
-        <span className="text-xs font-mono tabular-nums text-neutral-500 dark:text-neutral-400 shrink-0">
+        <span className="text-xs font-mono tabular-nums text-[var(--brand)] shrink-0">
           {trailingReadout}
         </span>
       )}
@@ -179,12 +179,12 @@ export function DefaultExpandedShell(props: any) {
   return (
     <div
       data-testid="expanded-shell"
-      className="w-full max-w-[440px] p-6 rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-lg flex flex-col gap-4"
+      className="curio-gallery-card w-full max-w-[440px] p-6 flex flex-col gap-4"
     >
-      <h3 className="font-serif text-xl font-bold text-neutral-900 dark:text-neutral-50">
+      <h3 className="font-serif-editorial text-xl font-medium text-foreground">
         {title}
       </h3>
-      <div className="text-xs text-neutral-500 font-mono">
+      <div className="text-xs text-muted-foreground font-mono">
         Expanded In-Situ Spec Inspection
       </div>
     </div>

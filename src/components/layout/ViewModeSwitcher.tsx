@@ -26,19 +26,19 @@ export function ViewModeSwitcher({
   return (
     <div
       data-testid="view-mode-switcher"
-      className={`inline-flex items-center gap-1.5 sm:gap-2 p-1 rounded-2xl bg-neutral-100/80 dark:bg-neutral-800/80 border border-neutral-200/80 dark:border-neutral-700/80 backdrop-blur-md ${className}`}
+      className={`inline-flex items-center gap-1.5 p-1 rounded-xl bg-card border border-[var(--gallery-hairline)] shadow-2xs ${className}`}
     >
       {/* Layout Engine Switcher */}
-      <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-700/60 shadow-2xs">
+      <div className="flex items-center gap-0.5">
         <button
           type="button"
           onClick={() => onLayoutChange("masonry")}
           title="Masonry Layout (Adaptive Aspect Ratios)"
           data-testid="switch-masonry"
-          className={`p-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1 ${
+          className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer flex items-center gap-1 ${
             layout === "masonry"
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <Columns3 className="w-3.5 h-3.5" />
@@ -50,10 +50,10 @@ export function ViewModeSwitcher({
           onClick={() => onLayoutChange("grid")}
           title="Grid Layout (Uniform)"
           data-testid="switch-grid"
-          className={`p-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1 ${
+          className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer flex items-center gap-1 ${
             layout === "grid"
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <LayoutGrid className="w-3.5 h-3.5" />
@@ -65,10 +65,10 @@ export function ViewModeSwitcher({
           onClick={() => onLayoutChange("timeline")}
           title="Chronological Timeline Layout"
           data-testid="switch-timeline"
-          className={`p-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1 ${
+          className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer flex items-center gap-1 ${
             layout === "timeline"
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <Clock className="w-3.5 h-3.5" />
@@ -80,10 +80,10 @@ export function ViewModeSwitcher({
           onClick={() => onLayoutChange("shelf")}
           title="Press Shelf Layout (3D)"
           data-testid="switch-shelf"
-          className={`p-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1 ${
+          className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer flex items-center gap-1 ${
             layout === "shelf"
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <BookOpen className="w-3.5 h-3.5" />
@@ -95,10 +95,10 @@ export function ViewModeSwitcher({
           onClick={() => onLayoutChange("posters")}
           title="Cinema Poster Gallery (3D)"
           data-testid="switch-posters"
-          className={`p-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1 ${
+          className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer flex items-center gap-1 ${
             layout === "posters"
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-              : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <Film className="w-3.5 h-3.5" />
@@ -108,16 +108,16 @@ export function ViewModeSwitcher({
 
       {/* Density Switcher (omitted in 3D Shelf & Posters views where density has no effect) */}
       {showDensity && (
-        <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-700/60 shadow-2xs">
+        <div className="flex items-center gap-0.5 pl-1.5 border-l border-[var(--gallery-hairline)]">
           <button
             type="button"
             onClick={() => onDensityChange("compact")}
             title="Compact Density (Index Rows)"
             data-testid="switch-density-compact"
-            className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
+            className={`p-1 rounded-lg text-xs transition-colors duration-150 cursor-pointer ${
               density === "compact"
-                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-                : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <Minimize2 className="w-3.5 h-3.5" />
@@ -128,10 +128,10 @@ export function ViewModeSwitcher({
             onClick={() => onDensityChange("standard")}
             title="Standard Density"
             data-testid="switch-density-standard"
-            className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
+            className={`p-1 rounded-lg text-xs transition-colors duration-150 cursor-pointer ${
               density === "standard"
-                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-                : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -142,10 +142,10 @@ export function ViewModeSwitcher({
             onClick={() => onDensityChange("expanded")}
             title="Expanded In-Situ Density"
             data-testid="switch-density-expanded"
-            className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
+            className={`p-1 rounded-lg text-xs transition-colors duration-150 cursor-pointer ${
               density === "expanded"
-                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
-                : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <Maximize2 className="w-3.5 h-3.5" />

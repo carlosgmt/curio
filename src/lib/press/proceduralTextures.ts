@@ -169,8 +169,8 @@ export function createSpineCanvas(
   meta: SpineMeta,
   palette: PressPalette
 ): HTMLCanvasElement {
-  const w = 160;
-  const h = Math.round(768 * spec.heightRatio);
+  const w = 256;
+  const h = Math.round(1280 * spec.heightRatio);
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
@@ -179,7 +179,7 @@ export function createSpineCanvas(
   ctx.fillStyle = palette.coverBg;
   ctx.fillRect(0, 0, w, h);
 
-  // Subtle cloth weave along spine
+  // Subtle woven cloth cross-grain along spine
   ctx.fillStyle = "rgba(255,255,255,0.03)";
   for (let y = 0; y < h; y += 6) {
     ctx.fillRect(0, y, w, 1);
@@ -187,19 +187,38 @@ export function createSpineCanvas(
 
   // Rounded buckram spine edge shading
   const spineGrad = ctx.createLinearGradient(0, 0, w, 0);
-  spineGrad.addColorStop(0, "rgba(0,0,0,0.28)");
-  spineGrad.addColorStop(0.16, "rgba(255,255,255,0.08)");
-  spineGrad.addColorStop(0.5, "rgba(255,255,255,0.02)");
+  spineGrad.addColorStop(0, "rgba(0,0,0,0.34)");
+  spineGrad.addColorStop(0.16, "rgba(255,255,255,0.10)");
+  spineGrad.addColorStop(0.5, "rgba(255,255,255,0.03)");
   spineGrad.addColorStop(0.84, "rgba(0,0,0,0.06)");
-  spineGrad.addColorStop(1, "rgba(0,0,0,0.28)");
+  spineGrad.addColorStop(1, "rgba(0,0,0,0.34)");
   ctx.fillStyle = spineGrad;
   ctx.fillRect(0, 0, w, h);
 
+  // Select among 4 Swiss/literary spine rule templates deterministically
+  let hash = 0;
+  for (let i = 0; i < meta.title.length; i++) {
+    hash = (hash * 31 + meta.title.charCodeAt(i)) | 0;
+  }
+  const variant = Math.abs(hash) % 4;
+
   // Editorial foil head and tail rules
   ctx.fillStyle = palette.accent;
-  ctx.globalAlpha = 0.65;
-  ctx.fillRect(22, 42, w - 44, 3);
-  ctx.fillRect(22, h - 45, w - 44, 3);
+  ctx.globalAlpha = 0.72;
+  if (variant === 0 || variant === 2) {
+    ctx.fillRect(32, 58, w - 64, 4);
+    ctx.fillRect(32, h - 62, w - 64, 4);
+  }
+  if (variant === 1) {
+    ctx.fillRect(32, 72, w - 64, 2);
+    ctx.fillRect(32, 82, w - 64, 6);
+    ctx.fillRect(32, h - 84, w - 64, 6);
+    ctx.fillRect(32, h - 70, w - 64, 2);
+  } else if (variant === 3) {
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(24, 44, w - 48, h - 88);
+  }
   ctx.globalAlpha = 1;
 
   ctx.save();
@@ -207,20 +226,20 @@ export function createSpineCanvas(
   ctx.rotate(Math.PI / 2);
   ctx.fillStyle = palette.coverInk;
   ctx.textBaseline = "middle";
-  ctx.font = '500 30px "Newsreader", Georgia, serif';
+  ctx.font = '500 44px "Newsreader", Georgia, serif';
   ctx.textAlign = "left";
   const spineTitle = meta.isWishlist ? `WISHLIST · ${meta.title}` : meta.title;
-  const maxTitleChars = 32;
+  const maxTitleChars = 30;
   const displayTitle =
     spineTitle.length > maxTitleChars
       ? `${spineTitle.slice(0, maxTitleChars - 1)}…`
       : spineTitle;
-  ctx.fillText(displayTitle, -h * 0.37, -4);
+  ctx.fillText(displayTitle, -h * 0.36, variant === 2 ? -10 : -4);
 
   ctx.fillStyle = palette.accent;
-  ctx.font = '500 17px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.font = '500 24px "IBM Plex Mono", ui-monospace, monospace';
   ctx.textAlign = "right";
-  ctx.fillText(meta.creator.toUpperCase().slice(0, 18), h * 0.38, 0);
+  ctx.fillText(meta.creator.toUpperCase().slice(0, 18), h * 0.37, variant === 2 ? 12 : 2);
   ctx.restore();
 
   return canvas;
@@ -236,13 +255,13 @@ export function createBumpCanvas(kind: ArchetypeSpec["materialKind"]): HTMLCanva
   ctx.fillRect(0, 0, size, size);
 
   if (kind === "buckram" || kind === "linen") {
-    const step = kind === "buckram" ? 4 : 6;
+    const step = kind === "buckram" ? 3 : 5;
     for (let y = 0; y < size; y += step) {
-      ctx.fillStyle = y % (step * 2) === 0 ? "#929292" : "#6e6e6e";
+      ctx.fillStyle = y % (step * 2) === 0 ? "#969696" : "#6a6a6a";
       ctx.fillRect(0, y, size, 1);
     }
     for (let x = 0; x < size; x += step) {
-      ctx.fillStyle = x % (step * 2) === 0 ? "rgba(160,160,160,0.45)" : "rgba(90,90,90,0.45)";
+      ctx.fillStyle = x % (step * 2) === 0 ? "rgba(170,170,170,0.45)" : "rgba(85,85,85,0.45)";
       ctx.fillRect(x, 0, 1, size);
     }
   } else if (kind === "paperboard" || kind === "matte_vinyl") {
@@ -259,15 +278,21 @@ export function createBumpCanvas(kind: ArchetypeSpec["materialKind"]): HTMLCanva
 
 export function createPageBlockCanvas(): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 512;
+  canvas.width = 160;
+  canvas.height = 640;
   const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = "#efeae0";
-  ctx.fillRect(0, 0, 128, 512);
-  for (let x = 0; x < 128; x += 3) {
-    ctx.fillStyle = x % 6 === 0 ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.25)";
-    ctx.fillRect(x, 0, 1, 512);
+  ctx.fillStyle = "#EFE9DC";
+  ctx.fillRect(0, 0, 160, 640);
+  for (let x = 0; x < 160; x += 3) {
+    ctx.fillStyle = x % 6 === 0 ? "rgba(24,20,14,0.08)" : "rgba(255,255,255,0.28)";
+    ctx.fillRect(x, 0, 1, 640);
   }
+  const depthVignette = ctx.createLinearGradient(0, 0, 160, 0);
+  depthVignette.addColorStop(0, "rgba(0,0,0,0.14)");
+  depthVignette.addColorStop(0.5, "rgba(0,0,0,0)");
+  depthVignette.addColorStop(1, "rgba(0,0,0,0.14)");
+  ctx.fillStyle = depthVignette;
+  ctx.fillRect(0, 0, 160, 640);
   return canvas;
 }
 

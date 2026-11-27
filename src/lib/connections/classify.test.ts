@@ -76,6 +76,26 @@ describe("connections/classify", () => {
     expect(res.curatedPairs.map((c) => c.connectionId)).toEqual(["c-1", "c-2", "c-3"]);
   });
 
+  it("treats sanitized public edges with isAutoCoWear=true as autoCoWearPairs even when contextNote is null", () => {
+    const sanitizedAuto = makeConn({
+      connectionId: "san-auto-1",
+      connectionType: "PAIRED_WITH",
+      contextNote: null,
+      isAutoCoWear: true,
+    });
+    const sanitizedCurated = makeConn({
+      connectionId: "san-cur-1",
+      connectionType: "PAIRED_WITH",
+      contextNote: null,
+    });
+
+    const res = partitionConnections([sanitizedAuto, sanitizedCurated]);
+    expect(isAutoClosetCoWearConnection(sanitizedAuto)).toBe(true);
+    expect(isAutoClosetCoWearConnection(sanitizedCurated)).toBe(false);
+    expect(res.autoCoWearPairs.map((c) => c.connectionId)).toEqual(["san-auto-1"]);
+    expect(res.curatedPairs.map((c) => c.connectionId)).toEqual(["san-cur-1"]);
+  });
+
   it("handles empty or missing input", () => {
     expect(partitionConnections([])).toEqual({
       wearLinks: [],

@@ -46,91 +46,73 @@ export function CreatorProfileCard({
   return (
     <div
       data-testid="creator-profile-card"
-      className="group relative rounded-2xl bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm hover:shadow-lg transition-all duration-300 border border-stone-200 dark:border-stone-800 flex flex-col justify-between overflow-hidden"
+      className="curio-gallery-card group relative flex flex-col justify-between overflow-hidden"
     >
-      <div className="p-4 sm:p-5 flex flex-col">
-        {/* Top Header Badge */}
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-stone-100 dark:border-stone-800 pr-16 sm:pr-0 gap-2">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-[11px] font-mono font-medium">
-            {getRoleIcon()}
-            <span>{role}</span>
-          </div>
-
-          {eraText && (
-            <span className="flex items-center gap-1 text-[11px] font-mono text-stone-400">
-              <Calendar className="w-3 h-3" />
-              <span>{eraText}</span>
-            </span>
-          )}
-        </div>
-
+      <div className="p-5 flex flex-col">
         {/* Portrait & Identity Block */}
-        <div className="flex items-start gap-4 mb-4">
+        <div className="flex items-start gap-4 mb-3">
           {entity?.heroImageUrl ? (
-            <div className="relative w-20 h-24 rounded-xl overflow-hidden bg-stone-100 dark:bg-stone-800 shrink-0 shadow-xs border border-stone-200/60 dark:border-stone-700">
+            <div className="relative w-18 h-22 rounded-[8px] overflow-hidden bg-[var(--well-surface)] shrink-0">
               <img
                 src={entity.heroImageUrl}
                 alt={name}
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
               />
             </div>
           ) : (
-            <div className="w-20 h-24 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 border border-stone-200 dark:border-stone-700">
-              <User className="w-8 h-8 text-stone-400" />
+            <div className="w-18 h-22 rounded-[8px] bg-[var(--well-surface)] flex items-center justify-center shrink-0 text-muted-foreground">
+              <User className="w-7 h-7 stroke-1" />
             </div>
           )}
 
           <div className="flex-1 min-w-0">
-            <h3 className="font-serif text-xl font-bold text-stone-900 dark:text-stone-100 leading-tight mb-1 truncate">
+            <h3 className="font-serif-editorial text-lg font-medium text-foreground leading-tight truncate">
               {name}
             </h3>
-            {nationality && (
-              <p className="text-xs font-mono text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">
-                {nationality}
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+              {[role.toLowerCase(), nationality, eraText].filter(Boolean).join(" · ")}
+            </p>
+            {bio && (
+              <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed mt-2">
+                {bio}
               </p>
             )}
-            <p className="text-xs font-serif text-stone-600 dark:text-stone-300 line-clamp-3 leading-relaxed">
-              {bio}
-            </p>
           </div>
         </div>
 
-        {/* Notable Works Synaptic Chips */}
+        {/* Notable Works */}
         {notableWorks.length > 0 && (
-          <div className="space-y-1.5 mb-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400 block font-semibold">
-              Key Works:
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {notableWorks.map((work, idx) => (
-                <span
-                  key={idx}
-                  className="px-2 py-0.5 rounded-lg bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-[11px] font-serif italic"
-                >
-                  {work}
-                </span>
-              ))}
-            </div>
+          <div className="pt-2.5 border-t border-[var(--gallery-hairline)] flex flex-wrap gap-1.5">
+            {notableWorks.slice(0, 4).map((work, idx) => (
+              <span
+                key={idx}
+                className="px-2 py-0.5 rounded bg-[var(--well-surface)] text-muted-foreground text-[11px] font-serif italic"
+              >
+                {work}
+              </span>
+            ))}
           </div>
         )}
       </div>
 
       {/* Disambiguation Bar */}
       <DisambiguationBar
-          saveId={save.id}
-          candidates={save.candidateFallbacks || []}
-          onSwapped={onSwapped}
-        />
+        saveId={save.id}
+        candidates={save.candidateFallbacks || []}
+        onSwapped={onSwapped}
+      />
 
-      {/* Footer */}
+      {/* Hover/Focus-Revealed Footer */}
       {entity && (
-        <CardFooterWaterfall
-          entity={entity}
-          primarySource={primarySource}
-          creatorAffiliateTags={creatorAffiliateTags}
-          isWishlist={Boolean(save.wishlist)}
-        />
+        <div className="curio-hover-footer">
+          <CardFooterWaterfall
+            entity={entity}
+            primarySource={primarySource}
+            creatorAffiliateTags={creatorAffiliateTags}
+            isWishlist={Boolean(save.wishlist)}
+          />
+        </div>
       )}
     </div>
   );

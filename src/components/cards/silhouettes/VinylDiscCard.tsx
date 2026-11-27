@@ -56,85 +56,57 @@ export function VinylDiscCard({
   const hasCover = Boolean(entity.heroImageUrl) && !imgError;
 
   return (
-    <div className="group relative rounded-3xl bg-neutral-900 text-white p-4 sm:p-6 shadow-md hover:shadow-xl transition-shadow duration-200 border border-neutral-800 flex flex-col justify-between overflow-hidden">
-      {/* Ambient blurred cover glow */}
-      {hasCover && (
-        <div
-          className="absolute inset-0 opacity-15 blur-2xl scale-110 pointer-events-none"
-          style={{
-            backgroundImage: `url(${entity.heroImageUrl})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
-        />
-      )}
-
-      {/* Top Header Badge */}
-      <div className="flex items-center justify-between mb-4 z-10 pr-16 sm:pr-0">
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono tracking-wider uppercase text-neutral-300 bg-neutral-800/85 px-2.5 py-1 rounded-full border border-neutral-700/60 font-semibold">
-          <Disc3 className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
-          {badgeLabel}
-        </span>
-        {releaseYear && (
-          <span className="text-[11px] font-mono tabular-nums text-neutral-400 font-medium">
-            {releaseYear}
-          </span>
-        )}
-      </div>
-
-      {/* Centerpiece: Clean 1:1 Album Cover Art with subtle tactile border */}
-      <div className="relative my-2 w-full flex items-center justify-center z-10">
-        <div className="relative aspect-square w-full max-w-[240px] sm:max-w-[260px] rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-neutral-950 flex items-center justify-center">
+    <div className="curio-gallery-card group relative flex flex-col justify-between overflow-hidden">
+      <div className="p-3.5 sm:p-4 flex flex-col flex-1">
+        {/* Clean 1:1 Album Sleeve Well */}
+        <div className="relative aspect-square w-full rounded-[8px] overflow-hidden bg-[var(--well-surface)] flex items-center justify-center mb-3">
           {hasCover ? (
             <img
               src={entity.heroImageUrl!}
               alt={entity.title}
               referrerPolicy="no-referrer"
               onError={() => setImgError(true)}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
             />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-neutral-800 via-neutral-900 to-neutral-950 flex flex-col items-center justify-center p-6 text-center">
-              <Disc3 className="w-12 h-12 text-amber-400/80 mb-3" />
-              <span className="text-sm font-bold text-neutral-200 line-clamp-2">{entity.title}</span>
-              <span className="text-xs text-neutral-400 mt-1 line-clamp-1">{artist}</span>
+            <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-[#181715] text-[#F2EFE9]">
+              <Disc3 className="w-10 h-10 text-[#C89572] mb-2" />
+              <span className="font-serif-editorial text-sm line-clamp-2">{entity.title}</span>
+              <span className="text-xs text-[#A8A196] mt-1 line-clamp-1">{artist}</span>
             </div>
           )}
-          {/* Subtle tactile inner edge highlight */}
-          <div className="absolute inset-0 ring-1 ring-inset ring-white/15 rounded-2xl pointer-events-none" />
         </div>
+
+        {/* Museum Label */}
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-sm sm:text-[15px] font-medium text-foreground leading-snug line-clamp-1">
+              {entity.title}
+            </h3>
+            <p className="text-xs text-muted-foreground truncate mt-0.5">
+              {[artist, recordLabel].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+          {(releaseYear || trackCount) && (
+            <span className="text-[10px] font-mono tabular-nums text-muted-foreground shrink-0">
+              {[releaseYear, trackCount ? `${trackCount} trk` : badgeLabel].filter(Boolean).join(" · ")}
+            </span>
+          )}
+        </div>
+
+        {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
+          <div className="mt-2">
+            <DisambiguationBar
+              saveId={save.id}
+              candidates={save.candidateFallbacks}
+              onSwapped={() => onSwapped?.(save)}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Typography & Pressing Specifications */}
-      <div className="mt-4 text-center z-10 space-y-1">
-        <h3 className="text-base sm:text-lg font-bold text-neutral-100 tracking-tight leading-snug line-clamp-1">
-          {entity.title}
-        </h3>
-        <p className="text-xs sm:text-sm text-neutral-300 font-medium line-clamp-1">
-          {artist}
-        </p>
-
-        {/* Spec Strip: Year • Label • Track Count */}
-        <div className="pt-1 flex items-center justify-center gap-2 text-[11px] font-mono text-neutral-400">
-          {recordLabel && <span className="truncate max-w-[140px]">{recordLabel}</span>}
-          {recordLabel && trackCount ? <span>•</span> : null}
-          {trackCount ? <span>{trackCount} tracks</span> : null}
-        </div>
-      </div>
-
-      {/* Discreet Wrong Entity Disambiguation */}
-      {save.candidateFallbacks && save.candidateFallbacks.length > 0 && (
-        <div className="mt-2 flex justify-center z-10">
-          <DisambiguationBar
-            saveId={save.id}
-            candidates={save.candidateFallbacks}
-            onSwapped={() => onSwapped?.(save)}
-          />
-        </div>
-      )}
-
-      {/* Standardized Dual-Slot Waterfall Footer with 3 Actions */}
-      <div className="z-10">
+      {/* Hover/Focus-Revealed Waterfall Footer */}
+      <div className="curio-hover-footer">
         <CardFooterWaterfall
           entity={{
             ...entity,
@@ -144,8 +116,6 @@ export function VinylDiscCard({
           creatorAffiliateTags={creatorAffiliateTags}
           customUtilityLabel="Play on Spotify"
           isWishlist={Boolean(save.wishlist)}
-          tone="dark"
-          flush
         />
       </div>
     </div>

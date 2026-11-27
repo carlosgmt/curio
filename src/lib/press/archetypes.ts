@@ -275,6 +275,16 @@ export function getDeterministicClothPalette(card: CardData, overrideArchetype?:
   return CURATED_CLOTH_PALETTES[hashString(seed) % CURATED_CLOTH_PALETTES.length];
 }
 
+/**
+ * Deterministic Stripe Press edition trim-height factor (0.89..1.06) so neighboring
+ * clothbound hardcovers read like collected pocket essays, octavos, and quarto monographs.
+ */
+export function getEditionTrimFactor(seedKey: string): number {
+  const bucket = hashString(`trim:${seedKey}`) % 5;
+  const factors = [0.89, 0.94, 1.0, 1.03, 1.06] as const;
+  return factors[bucket] ?? 1.0;
+}
+
 export function resolveSameOriginImageUrl(rawUrl?: string | null): string | null {
   const s = (rawUrl || "").trim();
   if (!s) return null;

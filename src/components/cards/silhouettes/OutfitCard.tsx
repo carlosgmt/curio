@@ -93,69 +93,38 @@ export function OutfitCard({
   return (
     <div
       data-testid="outfit-card"
-      className="group relative rounded-2xl bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-sm hover:shadow-lg transition-shadow duration-200 border border-neutral-200/90 dark:border-neutral-800 flex flex-col justify-between overflow-hidden"
+      className="curio-gallery-card group relative flex flex-col justify-between overflow-hidden"
     >
       {/* Visual Header / Garment Photos Canvas */}
-      <div className="p-4 sm:p-5 flex flex-col flex-1">
-        {/* Header Metadata: Wear Date & Weather */}
-        <div className="flex items-center justify-between gap-2 mb-2.5 pr-16 sm:pr-0">
-          <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums uppercase tracking-wider text-neutral-500 dark:text-neutral-400 min-w-0">
-            <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" aria-hidden="true" />
-            <span className="truncate">
-              {datesWorn[0] ? datesWorn[0].slice(0, 10) : "Undated"}
-            </span>
-            {timesWorn > 1 && (
-              <span className="text-neutral-600 dark:text-neutral-300 font-semibold">
-                · {timesWorn}×
-              </span>
-            )}
-          </div>
-
-          {weather && (
-            <div className="flex items-center gap-1 text-[11px] font-mono tabular-nums text-neutral-600 dark:text-neutral-300 shrink-0">
-              {renderWeatherIcon(weather)}
-              <span className="truncate max-w-[120px]">{weather}</span>
-              {temp !== undefined && temp !== null && !String(weather).includes("°") && (
-                <span>· {temp}°C</span>
-              )}
-            </div>
-          )}
-        </div>
-
+      <div className="p-3.5 sm:p-4 flex flex-col flex-1">
         {/* Outfit Photo Visual Hero */}
         {activePhoto ? (
-          <div
-            className={`relative aspect-4/3 w-full rounded-xl overflow-hidden mb-3 border border-neutral-100 dark:border-neutral-800 ${
-              isTransparentAsset(activePhoto.url)
-                ? "bg-gradient-to-b from-neutral-50 via-neutral-100/80 to-neutral-200/50 dark:from-neutral-800/70 dark:to-neutral-900 flex items-center justify-center"
-                : "bg-neutral-100 dark:bg-neutral-800"
-            }`}
-          >
+          <div className="relative aspect-[4/3.6] w-full rounded-[8px] overflow-hidden mb-3 bg-[var(--well-surface)] flex items-center justify-center">
             <img
               src={activePhoto.url}
               alt={activePhoto.title}
-              className={`w-full h-full group-hover:scale-102 transition-transform duration-500 ${
+              className={`w-full h-full group-hover:scale-[1.02] transition-transform duration-300 ${
                 isTransparentAsset(activePhoto.url)
-                  ? "object-contain p-3 drop-shadow-md"
+                  ? "object-contain p-3 drop-shadow-[0_10px_18px_rgba(24,22,18,0.14)]"
                   : "object-cover"
               }`}
             />
             {selectedPhotoIdx > 0 && (
-              <div className="absolute bottom-2 left-2 right-2 px-2.5 py-1 rounded-lg bg-black/65 backdrop-blur-md text-white text-[10px] font-mono flex items-center justify-between gap-2">
+              <div className="absolute bottom-2 left-2 right-2 px-2.5 py-1 rounded-md bg-black/70 backdrop-blur-md text-white text-[10px] font-mono flex items-center justify-between gap-2">
                 <span className="truncate font-semibold">{activePhoto.brand}</span>
                 <span className="truncate opacity-80">{activePhoto.title}</span>
               </div>
             )}
           </div>
         ) : (
-          <div className="w-full aspect-16/9 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-400 mb-3 border border-dashed border-neutral-200 dark:border-neutral-700">
-            <Shirt className="w-8 h-8 stroke-1 text-neutral-400" aria-hidden="true" />
+          <div className="w-full aspect-[4/3] rounded-[8px] bg-[var(--well-surface)] flex items-center justify-center text-muted-foreground mb-3">
+            <Shirt className="w-8 h-8 stroke-1" aria-hidden="true" />
           </div>
         )}
 
         {/* Multi-Garment Photo Thumbnails Strip (capped at 5 + N) */}
         {garmentPhotos.length > 1 && (
-          <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-0.5 scrollbar-none">
+          <div className="flex items-center gap-1.5 mb-2.5 overflow-x-auto pb-0.5 scrollbar-none">
             {visibleThumbPhotos.map((photo, idx) => (
               <button
                 key={idx}
@@ -164,10 +133,10 @@ export function OutfitCard({
                   e.stopPropagation();
                   setSelectedPhotoIdx(idx);
                 }}
-                className={`relative w-10 h-10 rounded-lg overflow-hidden shrink-0 border transition-colors duration-150 cursor-pointer bg-neutral-100 dark:bg-neutral-800 ${
+                className={`relative w-9 h-9 rounded-md overflow-hidden shrink-0 border transition-colors duration-150 cursor-pointer bg-[var(--well-surface)] ${
                   selectedPhotoIdx === idx
-                    ? "border-neutral-900 dark:border-white ring-1 ring-neutral-900/20 dark:ring-white/20"
-                    : "border-neutral-200 dark:border-neutral-700 opacity-70 hover:opacity-100"
+                    ? "border-[var(--brand)] ring-1 ring-[var(--brand)]/25"
+                    : "border-[var(--gallery-hairline)] opacity-75 hover:opacity-100"
                 }`}
               >
                 <img
@@ -180,41 +149,45 @@ export function OutfitCard({
               </button>
             ))}
             {overflowThumbCount > 0 && (
-              <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-[10px] font-mono tabular-nums text-neutral-500 dark:text-neutral-400 shrink-0">
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-[var(--well-surface)] border border-[var(--gallery-hairline)] text-[10px] font-mono tabular-nums text-muted-foreground shrink-0">
                 +{overflowThumbCount}
               </span>
             )}
           </div>
         )}
 
-        {/* Outfit Title */}
-        <h3 className="font-serif text-base sm:text-lg font-bold text-neutral-900 dark:text-neutral-50 mb-1 leading-snug">
-          {title}
-        </h3>
+        {/* Outfit Title & Date / Worn Count */}
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-sm sm:text-[15px] font-medium text-foreground leading-snug line-clamp-1">
+            {title}
+          </h3>
+          <span className="text-[11px] font-mono tabular-nums text-muted-foreground shrink-0">
+            {datesWorn[0] ? datesWorn[0].slice(0, 10) : ""}
+            {timesWorn > 1 ? `${datesWorn[0] ? " · " : ""}${timesWorn}×` : ""}
+          </span>
+        </div>
 
-        {location && (
-          <p className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center gap-1">
-            <MapPin className="w-3 h-3 text-neutral-400 shrink-0" aria-hidden="true" />
-            <span className="truncate">{location}</span>
+        {(weather || location) && (
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {[
+              weather ? `${weather}${temp !== undefined && temp !== null && !String(weather).includes("°") ? ` · ${temp}°C` : ""}` : null,
+              location,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
         )}
 
         {notes && (
-          <p className="text-xs text-neutral-600 dark:text-neutral-300 italic mb-2.5 line-clamp-2">
+          <p className="text-xs text-muted-foreground italic mt-1.5 line-clamp-2">
             &ldquo;{notes}&rdquo;
           </p>
         )}
 
         {/* Constituent Garments: max 3 flush hairline rows + overflow count */}
         {items.length > 0 && (
-          <div className="mt-1 pt-2.5 border-t border-neutral-100 dark:border-neutral-800">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 tabular-nums">
-                Pieces ({items.length})
-              </span>
-            </div>
-
-            <div className="divide-y divide-neutral-100 dark:divide-neutral-800/80">
+          <div className="mt-2.5 pt-2 border-t border-[var(--gallery-hairline)]">
+            <div className="divide-y divide-[var(--gallery-hairline)]">
               {visibleItems.map((item, idx) => (
                 <div
                   key={item.id ?? idx}
@@ -225,32 +198,28 @@ export function OutfitCard({
                       <img
                         src={item.photoUrl}
                         alt={item.title}
-                        className={`w-6 h-6 rounded-md shrink-0 bg-neutral-50 dark:bg-neutral-800 ${
+                        className={`w-5 h-5 rounded shrink-0 bg-[var(--well-surface)] ${
                           isTransparentAsset(item.photoUrl) ? "object-contain p-0.5" : "object-cover"
                         }`}
                       />
                     ) : (
                       <div
-                        className="w-3 h-3 rounded-full shrink-0 border border-neutral-300 dark:border-neutral-600"
+                        className="w-2.5 h-2.5 rounded-full shrink-0 border border-[var(--gallery-hairline)]"
                         style={{ backgroundColor: item.colorHex || "#2b2b2b" }}
                       />
                     )}
-                    <span className="font-medium text-neutral-800 dark:text-neutral-200 truncate">
-                      {item.title}
-                    </span>
+                    <span className="text-foreground/90 truncate">{item.title}</span>
                   </div>
-
                   {item.category && (
-                    <span className="text-[10px] font-mono text-neutral-400 shrink-0">
+                    <span className="text-[10px] font-mono text-muted-foreground shrink-0">
                       {item.category}
                     </span>
                   )}
                 </div>
               ))}
             </div>
-
             {overflowItemCount > 0 && (
-              <p className="pt-1 text-[11px] font-mono tabular-nums text-neutral-400">
+              <p className="pt-1 text-[11px] font-mono tabular-nums text-muted-foreground">
                 +{overflowItemCount} more {overflowItemCount === 1 ? "piece" : "pieces"}
               </p>
             )}
@@ -258,13 +227,15 @@ export function OutfitCard({
         )}
       </div>
 
-      {/* Footer Waterfall */}
-      <CardFooterWaterfall
-        entity={entity}
-        primarySource={primarySource}
-        creatorAffiliateTags={creatorAffiliateTags}
-        isWishlist={Boolean(save.wishlist)}
-      />
+      {/* Hover/Focus-Revealed Footer */}
+      <div className="curio-hover-footer">
+        <CardFooterWaterfall
+          entity={entity}
+          primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
+          isWishlist={Boolean(save.wishlist)}
+        />
+      </div>
     </div>
   );
 }

@@ -16,7 +16,7 @@ export function GridLayout<T = any>({
   return (
     <div
       data-testid="grid-layout"
-      className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1440px]:grid-cols-4 gap-4 sm:gap-6 ${className}`}
+      className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 lg:gap-9 ${className}`}
     >
       {items.map((item, index) => (
         <div

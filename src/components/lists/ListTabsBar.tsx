@@ -68,25 +68,27 @@ export function ListTabsBar({
   }, [lists, activeListSlug]);
 
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto pb-3 mb-6 scrollbar-none">
+    <nav
+      aria-label="Curated boards"
+      className="flex items-center gap-5 sm:gap-6 overflow-x-auto border-b border-border pb-0 mb-8 scrollbar-none"
+    >
       {/* "All my stuff" Tab */}
       <button
         type="button"
         onClick={() => onSelectList(null)}
-        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer shrink-0 ${
+        className={`group inline-flex items-baseline gap-1.5 pb-2.5 -mb-px text-xs sm:text-[13px] whitespace-nowrap border-b-[1.5px] transition-colors duration-150 cursor-pointer shrink-0 ${
           activeListSlug === null && !wishlistActive
-            ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
-            : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+            ? "border-[var(--brand)] text-foreground font-medium"
+            : "border-transparent text-muted-foreground hover:text-foreground"
         }`}
       >
-        <Layers className="w-3.5 h-3.5" />
         <span>All my stuff</span>
         {totalAllSavesCount !== undefined && (
           <span
-            className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+            className={`text-[11px] font-mono tabular-nums ${
               activeListSlug === null && !wishlistActive
-                ? "bg-neutral-700 text-white dark:bg-neutral-200 dark:text-neutral-900"
-                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500"
+                ? "text-[var(--brand)]"
+                : "text-muted-foreground/75"
             }`}
           >
             {totalAllSavesCount}
@@ -100,22 +102,34 @@ export function ListTabsBar({
           type="button"
           data-testid="wishlist-filter"
           onClick={onToggleWishlist}
-          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer shrink-0 ${
+          className={`inline-flex items-baseline gap-1.5 pb-2.5 -mb-px text-xs sm:text-[13px] whitespace-nowrap border-b-[1.5px] transition-colors duration-150 cursor-pointer shrink-0 ${
             wishlistActive
-              ? "bg-rose-500 text-white shadow-xs"
-              : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+              ? "border-[var(--brand)] text-foreground font-medium"
+              : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          <Heart className={`w-3.5 h-3.5 ${wishlistActive ? "fill-current" : "text-rose-500"}`} />
+          <Heart
+            className={`w-3 h-3 self-center ${
+              wishlistActive ? "fill-[var(--brand)] text-[var(--brand)]" : "text-muted-foreground"
+            }`}
+            aria-hidden="true"
+          />
           <span>Wishlist</span>
-          {wishlistCount !== undefined && <span className="text-[10px] font-mono opacity-80">{wishlistCount}</span>}
+          {wishlistCount !== undefined && (
+            <span
+              className={`text-[11px] font-mono tabular-nums ${
+                wishlistActive ? "text-[var(--brand)]" : "text-muted-foreground/75"
+              }`}
+            >
+              {wishlistCount}
+            </span>
+          )}
         </button>
       )}
 
       {/* User Curated Boards */}
       {displayLists.map((list) => {
         const isActive = activeListSlug === list.slug;
-        const hasAutoRules = !!list.autoRules;
         const subBoardCount = childCountMap.get(list.id) || 0;
         const isNested = Boolean(list.parentId);
 
@@ -124,44 +138,27 @@ export function ListTabsBar({
             key={list.id}
             type="button"
             onClick={() => onSelectList(list.slug)}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer shrink-0 ${
+            className={`inline-flex items-baseline gap-1.5 pb-2.5 -mb-px text-xs sm:text-[13px] whitespace-nowrap border-b-[1.5px] transition-colors duration-150 cursor-pointer shrink-0 ${
               isActive
-                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
-                : "bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+                ? "border-[var(--brand)] text-foreground font-medium"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {isNested && <span className="text-neutral-400 text-[10px]">↳</span>}
-            {list.slug === "books" ? (
-              <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            ) : list.slug === "films" ? (
-              <Film className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            ) : hasAutoRules ? (
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            ) : (
-              <Folder className="w-3.5 h-3.5 text-neutral-500" />
-            )}
+            {isNested && <span className="text-muted-foreground text-[10px]">↳</span>}
             <span>{list.title}</span>
 
-            {/* Sub-boards indicator */}
             {subBoardCount > 0 && (
               <span
-                className={`text-[9px] px-1 py-0.2 rounded-md font-mono ${
-                  isActive
-                    ? "bg-neutral-700 text-white dark:bg-neutral-300 dark:text-neutral-900"
-                    : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500"
-                }`}
+                className="text-[10px] font-mono tabular-nums text-muted-foreground/70"
                 title={`${subBoardCount} sub-boards`}
               >
                 +{subBoardCount}
               </span>
             )}
 
-            {/* Card count badge */}
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                isActive
-                  ? "bg-neutral-700 text-white dark:bg-neutral-200 dark:text-neutral-900"
-                  : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500"
+              className={`text-[11px] font-mono tabular-nums ${
+                isActive ? "text-[var(--brand)]" : "text-muted-foreground/75"
               }`}
             >
               {rolledUpCountMap.get(list.id) ?? list.itemCount}
@@ -174,11 +171,11 @@ export function ListTabsBar({
       <button
         type="button"
         onClick={onCreateListClick}
-        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 transition cursor-pointer shrink-0"
+        className="inline-flex items-center gap-1 pb-2.5 -mb-px ml-auto text-xs font-mono whitespace-nowrap text-muted-foreground hover:text-[var(--brand)] border-b-[1.5px] border-transparent transition-colors duration-150 cursor-pointer shrink-0"
       >
-        <Plus className="w-3.5 h-3.5" />
+        <Plus className="w-3 h-3" aria-hidden="true" />
         <span>New Board</span>
       </button>
-    </div>
+    </nav>
   );
 }

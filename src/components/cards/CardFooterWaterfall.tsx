@@ -148,15 +148,15 @@ export function CardFooterWaterfall({
 
   const containerClass = flush
     ? `w-full pt-2.5 mt-3 border-t flex items-center justify-between gap-2 text-xs ${
-        isDarkSurface ? "border-neutral-800/80" : "border-neutral-100 dark:border-neutral-800/80"
+        isDarkSurface ? "border-white/10" : "border-[var(--gallery-hairline)]"
       }`
-    : `w-full px-4 sm:px-5 py-2.5 border-t flex items-center justify-between gap-2 text-xs ${
-        isDarkSurface ? "border-neutral-800/80" : "border-neutral-100 dark:border-neutral-800/80"
+    : `w-full px-3.5 sm:px-4 py-2.5 border-t flex items-center justify-between gap-2 text-xs ${
+        isDarkSurface ? "border-white/10" : "border-[var(--gallery-hairline)]"
       }`;
 
   const mutedLinkClass = isDarkSurface
-    ? "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800/80 font-medium transition-colors duration-150 cursor-pointer shrink-0"
-    : "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 font-medium transition-colors duration-150 cursor-pointer shrink-0";
+    ? "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 font-medium transition-colors duration-150 cursor-pointer shrink-0"
+    : "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/70 font-medium transition-colors duration-150 cursor-pointer shrink-0";
 
   if (isOwnedSynced) {
     const closetTarget =

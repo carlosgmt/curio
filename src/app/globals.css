@@ -55,39 +55,41 @@
 :root {
   --radius: 0.75rem;
 
-  --background: #fafaf9;
-  --foreground: #1a1a19;
-  --card: #ffffff;
-  --card-foreground: #1a1a19;
-  --popover: #ffffff;
-  --popover-foreground: #1a1a19;
+  --background: #F2EFE9;
+  --foreground: #1C1C1C;
+  --card: #FFFFFF;
+  --card-foreground: #1C1C1C;
+  --popover: #FFFFFF;
+  --popover-foreground: #1C1C1C;
 
-  --primary: #1a1a19;
-  --primary-foreground: #fafaf9;
-  --secondary: #f4f4f2;
-  --secondary-foreground: #1a1a19;
-  --muted: #f4f4f2;
-  --muted-foreground: #706e68; /* was #8f8d86 (3.0–3.3:1); now ≥4.6:1 on card, page and secondary */
-  --accent: #eef1fd;
-  --accent-foreground: #3b5bdb;
-  --destructive: #e03131;
+  --primary: #1C1C1C;
+  --primary-foreground: #FAF9F6;
+  --secondary: #EAE5DC;
+  --secondary-foreground: #1C1C1C;
+  --muted: #EAE5DC;
+  --muted-foreground: #686259; /* >= 4.6:1 WCAG AA on #FFFFFF and #F2EFE9 */
+  --accent: #F4ECE4;
+  --accent-foreground: #8C5A3C;
+  --destructive: #c92a2a;
 
-  --border: #e8e7e4;
-  --input: #e8e7e4;
-  --ring: #3b5bdb;
+  --border: #DFDAD0;
+  --input: #DFDAD0;
+  --ring: #8C5A3C;
 
-  --brand: #3b5bdb;
-  --brand-soft: #eef1fd;
-  --ink-2: #57564f;
-  --line-strong: #d6d4cf;
-  --positive: #2f9e44;
-  --caution: #e8590c;
-  --caution-text: #bb4c19; /* caution hue at text contrast: 4.6:1 on the caution tint */
-  --swatch-outline: rgb(26 26 25 / 0.06);
+  --brand: #8C5A3C;
+  --brand-soft: #F4ECE4;
+  --ink-2: #524E47;
+  --line-strong: #CFC8BC;
+  --gallery-hairline: rgb(28 26 23 / 0.07);
+  --well-surface: #F6F4EE;
+  --positive: #2b8a3e;
+  --caution: #d9480f;
+  --caution-text: #a63a0e;
+  --swatch-outline: rgb(28 26 23 / 0.08);
 
-  --shadow-rest: 0 1px 2px rgb(26 26 25 / 0.04), 0 1px 1px rgb(26 26 25 / 0.03);
-  --shadow-lift: 0 1px 2px rgb(26 26 25 / 0.04), 0 8px 24px -6px rgb(26 26 25 / 0.08);
-  --shadow-float: 0 2px 4px rgb(26 26 25 / 0.04), 0 20px 48px -12px rgb(26 26 25 / 0.14);
+  --shadow-rest: 0 1px 2px rgb(24 22 18 / 0.05), 0 10px 26px -6px rgb(24 22 18 / 0.10), inset 0 1px 0 rgb(255 255 255 / 1);
+  --shadow-lift: 0 4px 12px rgb(24 22 18 / 0.08), 0 22px 42px -10px rgb(24 22 18 / 0.16), inset 0 1px 0 rgb(255 255 255 / 1);
+  --shadow-float: 0 6px 16px rgb(24 22 18 / 0.08), 0 28px 56px -12px rgb(24 22 18 / 0.20), inset 0 1px 0 rgb(255 255 255 / 1);
 
   color-scheme: light;
 }
@@ -103,6 +105,20 @@
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
     font-feature-settings: "ss01", "cv11";
+    caret-color: var(--brand);
+  }
+  h1, h2, h3, h4 {
+    text-wrap: balance;
+  }
+  p, blockquote {
+    text-wrap: pretty;
+  }
+  dialog:modal {
+    overscroll-behavior: contain;
+  }
+  dialog::backdrop {
+    overflow: hidden;
+    overscroll-behavior: contain;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -209,31 +225,106 @@ body.demo-idle * {
 }
 
 .dark {
-  --background: #141413;
-  --foreground: #f4f4f2;
-  --card: #1c1c1b;
-  --card-foreground: #f4f4f2;
-  --popover: #1c1c1b;
-  --popover-foreground: #f4f4f2;
+  --background: #121110;
+  --foreground: #F2EFE9;
+  --card: #1C1A17;
+  --card-foreground: #F2EFE9;
+  --popover: #1C1A17;
+  --popover-foreground: #F2EFE9;
 
-  --primary: #f4f4f2;
-  --primary-foreground: #141413;
-  --secondary: #262624;
-  --secondary-foreground: #f4f4f2;
-  --muted: #262624;
-  --muted-foreground: #a8a69e;
-  --accent: #23283b;
-  --accent-foreground: #8ea8ff;
+  --primary: #F2EFE9;
+  --primary-foreground: #121110;
+  --secondary: #25221E;
+  --secondary-foreground: #F2EFE9;
+  --muted: #25221E;
+  --muted-foreground: #A8A196;
+  --accent: #2A211B;
+  --accent-foreground: #C89572;
   --destructive: #fa5252;
 
-  --border: #2e2e2b;
-  --input: #2e2e2b;
-  --ring: var(--brand);
+  --border: #2B2823;
+  --input: #2B2823;
+  --ring: #C89572;
 
-  --ink-2: #c4c2b9;
-  --line-strong: #3d3d38;
+  --brand: #C89572;
+  --brand-soft: #2A211B;
+  --ink-2: #B9B2A7;
+  --line-strong: #3A352E;
+  --gallery-hairline: rgb(255 255 255 / 0.08);
+  --well-surface: #161412;
+
+  --shadow-rest: 0 2px 4px rgb(0 0 0 / 0.42), 0 14px 30px -6px rgb(0 0 0 / 0.58), inset 0 1px 0 rgb(255 255 255 / 0.09);
+  --shadow-lift: 0 6px 16px rgb(0 0 0 / 0.52), 0 26px 48px -8px rgb(0 0 0 / 0.72), inset 0 1px 0 rgb(255 255 255 / 0.14);
+  --shadow-float: 0 8px 20px rgb(0 0 0 / 0.58), 0 32px 64px -12px rgb(0 0 0 / 0.80), inset 0 1px 0 rgb(255 255 255 / 0.14);
 
   color-scheme: dark;
+}
+
+/* Clean Gallery Elevation & Hover-Revealed Chrome */
+.curio-gallery-card {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--gallery-hairline);
+  border-radius: 12px;
+  box-shadow: var(--shadow-rest);
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out), border-color 150ms var(--ease-out);
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .group\/curio-card:hover .curio-gallery-card,
+  .curio-gallery-card:hover,
+  .curio-gallery-card:focus-within {
+    transform: translateY(-2.5px);
+    box-shadow: var(--shadow-lift);
+  }
+}
+
+.curio-hover-chrome {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms var(--ease-out);
+}
+.group\/curio-card:focus-within .curio-hover-chrome,
+.group:focus-within .curio-hover-chrome,
+.curio-gallery-card:focus-within .curio-hover-chrome {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: hover) {
+  .group\/curio-card:hover .curio-hover-chrome,
+  .group:hover .curio-hover-chrome,
+  .curio-gallery-card:hover .curio-hover-chrome {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.curio-hover-footer {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+.group\/curio-card:focus-within .curio-hover-footer,
+.group:focus-within .curio-hover-footer,
+.curio-gallery-card:focus-within .curio-hover-footer {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+@media (hover: hover) {
+  .group\/curio-card:hover .curio-hover-footer,
+  .group:hover .curio-hover-footer,
+  .curio-gallery-card:hover .curio-hover-footer {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
 }
 
 [data-palette="indigo"] {

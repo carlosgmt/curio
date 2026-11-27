@@ -79,94 +79,62 @@ export function ProductCard({
   return (
     <div
       data-testid="product-card"
-      className="group relative rounded-2xl bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-xs hover:shadow-lg transition-shadow duration-200 border border-neutral-200/80 dark:border-neutral-800 flex flex-col justify-between overflow-hidden"
+      className="curio-gallery-card group relative flex flex-col justify-between overflow-hidden"
     >
       {/* Main Body */}
-      <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between">
-        {/* Quiet Hairline Header: Brand & Owned/Retailer or Explicit Availability */}
-        <div className="pb-2.5 mb-3 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-2 pr-16 sm:pr-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {isGarment ? (
-              <Shirt className="w-3.5 h-3.5 text-neutral-500 shrink-0" aria-hidden="true" />
-            ) : isCosmetics ? (
-              <Sparkles className="w-3.5 h-3.5 text-rose-500 shrink-0" aria-hidden="true" />
-            ) : isElectronics ? (
-              <Cpu className="w-3.5 h-3.5 text-blue-500 shrink-0" aria-hidden="true" />
-            ) : (
-              <Tag className="w-3.5 h-3.5 text-amber-500 shrink-0" aria-hidden="true" />
-            )}
-            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300 truncate">
-              {brand}
-            </span>
-          </div>
-
-          {isPurchaseHub ? (
-            <span className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 truncate shrink-0">
-              {retailer || "Owned"}
-            </span>
-          ) : explicitAvailability ? (
-            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500 dark:text-neutral-400 shrink-0">
-              {String(explicitAvailability).replace(/_/g, " ")}
-            </span>
-          ) : null}
-        </div>
-
-        {/* Product Image Stage */}
-        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-neutral-100 dark:bg-neutral-800/60 mb-3 border border-neutral-200/50 dark:border-neutral-700/50 flex items-center justify-center">
+      <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between">
+        {/* Studio Image Well */}
+        <div className="relative aspect-[4/3.4] w-full overflow-hidden rounded-[8px] bg-[var(--well-surface)] mb-3 flex items-center justify-center">
           {entity.heroImageUrl ? (
             <img
               src={entity.heroImageUrl}
               alt={entity.title}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-103"
+              className="w-full h-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
             />
           ) : (
-            <div className="flex flex-col items-center justify-center text-neutral-400 p-4 text-center">
-              <ShoppingBag className="w-8 h-8 mb-1.5 opacity-60" aria-hidden="true" />
+            <div className="flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
+              <ShoppingBag className="w-7 h-7 mb-1.5 opacity-60" aria-hidden="true" />
               <span className="text-xs font-mono">{brand}</span>
             </div>
           )}
         </div>
 
-        {/* Title, Single Price Placement & Model */}
+        {/* Title, Single Price Placement & Clean Spec Metadata */}
         <div>
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className="font-sans text-base font-bold text-neutral-900 dark:text-neutral-50 tracking-tight leading-snug line-clamp-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-sm sm:text-[15px] font-medium text-foreground tracking-tight leading-snug line-clamp-2">
               {entity.title}
             </h3>
             {formattedPrice && (
               <span
                 data-testid="product-card-price"
-                className="text-xs font-mono tabular-nums font-semibold text-neutral-800 dark:text-neutral-200 shrink-0 pt-0.5"
+                className="text-xs font-mono tabular-nums font-medium text-[var(--brand)] shrink-0"
               >
                 {formattedPrice}
               </span>
             )}
           </div>
 
-          {model && (
-            <p className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 truncate">
-              Model {model}
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {[
+              brand,
+              isPurchaseHub ? retailer || "Owned" : explicitAvailability ? String(explicitAvailability).replace(/_/g, " ") : null,
+              model ? `Model ${model}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+
+          {/* Capped Specs (max 2, inline tabular text) */}
+          {specChips.length > 0 && (
+            <p className="mt-1 text-[11px] font-mono tabular-nums text-muted-foreground/85 truncate">
+              {specChips.map((chip) => chip.label).join(" · ")}
             </p>
           )}
 
-          {/* Capped Specs (max 2) */}
-          {specChips.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[10px] font-mono">
-              {specChips.map((chip, idx) => (
-                <span
-                  key={idx}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border border-neutral-200/60 dark:border-neutral-700/60"
-                >
-                  {chip.icon}
-                  <span className="truncate max-w-[140px]">{chip.label}</span>
-                </span>
-              ))}
-            </div>
-          )}
-
           {entity.summary && !isPurchaseHub && (
-            <p className="text-xs text-neutral-600 dark:text-neutral-400 line-clamp-2 mb-1 leading-relaxed">
+            <p className="text-xs text-muted-foreground line-clamp-2 mt-1.5 leading-relaxed">
               {entity.summary}
             </p>
           )}
@@ -184,19 +152,21 @@ export function ProductCard({
         />
       </div>
 
-      {/* Universal Commercial / Owned Footer */}
-      <CardFooterWaterfall
-        entity={{
-          ...entity,
-          priceCents,
-          currency,
-        }}
-        primarySource={primarySource}
-        creatorAffiliateTags={creatorAffiliateTags}
-        customUtilityLabel="Buy Online"
-        isWishlist={Boolean(save.wishlist)}
-        hidePrice
-      />
+      {/* Hover/Focus-Revealed Commercial / Owned Footer */}
+      <div className="curio-hover-footer">
+        <CardFooterWaterfall
+          entity={{
+            ...entity,
+            priceCents,
+            currency,
+          }}
+          primarySource={primarySource}
+          creatorAffiliateTags={creatorAffiliateTags}
+          customUtilityLabel="Buy Online"
+          isWishlist={Boolean(save.wishlist)}
+          hidePrice
+        />
+      </div>
     </div>
   );
 }

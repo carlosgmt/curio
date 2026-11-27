@@ -20,7 +20,7 @@ services:
       - PURCHASE_HUB_API_URL=http://host.docker.internal:8760
       - CHEF_API_URL=http://host.docker.internal:8720
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-      - REBUILD_VERSION=20
+      - REBUILD_VERSION=21
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     env_file:
       - ${SECRETS_PATH:-/secrets}/curio.env

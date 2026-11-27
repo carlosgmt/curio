@@ -57,7 +57,7 @@ export function VideoGameCard({
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-[#F2EFE9]">
-                <Gamepad2 className="w-10 h-10 text-[#C89572] mb-2" aria-hidden="true" />
+                <Gamepad2 className="w-10 h-10 text-[#4CA382] mb-2" aria-hidden="true" />
                 <span className="font-serif-editorial text-sm">{entity.title}</span>
               </div>
             )}

@@ -7,6 +7,11 @@ import { getOrCreateDefaultUser, ingestCapture } from "@/lib/ingest/cascade";
 import { hybridSearch, generateEmbedding } from "@/lib/search/vector";
 import { getDatabaseTelemetry } from "@/lib/system/telemetry";
 import { getPrecomputedClusters } from "@/lib/graph/clustering";
+import {
+  getUserMcpScopes,
+  resolveBoardMcpDomain,
+  resolveItemMcpDomain,
+} from "@/lib/mcp/scopes";
 import { eq, and, desc } from "drizzle-orm";
 
 export function createCurioMcpServer() {
@@ -135,6 +140,7 @@ export function createCurioMcpServer() {
       try {
         const user = await getOrCreateDefaultUser();
         const limit = args.limit || 10;
+        const { scopes, isConfigured } = getUserMcpScopes(user.id);
 
         const results = await hybridSearch({
           userId: user.id,
@@ -144,7 +150,19 @@ export function createCurioMcpServer() {
         });
 
         const filtered = results
-          .filter((item) => (args.includePrivate ? true : !item.isPrivateMemo))
+          .filter((item) => {
+            if (item.isPrivateMemo) {
+              return isConfigured ? scopes.privateMemos : Boolean(args.includePrivate);
+            }
+            const domain = resolveItemMcpDomain({
+              typePath: item.typePath,
+              coreType: item.coreType,
+              isPrivateMemo: item.isPrivateMemo,
+              tags: item.save?.autoTags,
+              extendedAttributes: item.entity?.extendedAttributes,
+            });
+            return !domain || scopes[domain];
+          })
           .slice(0, limit)
           .map((item) => ({
             saveId: item.saveId,
@@ -261,7 +279,12 @@ export function createCurioMcpServer() {
         }
         query += ` ORDER BY sl.created_at DESC`;
 
-        const boards = sqlite.prepare(query).all(...params) as Array<any>;
+        const allBoards = sqlite.prepare(query).all(...params) as Array<any>;
+        const { scopes } = getUserMcpScopes(user.id);
+        const boards = allBoards.filter((b) => {
+          const domain = resolveBoardMcpDomain(String(b.slug || ""));
+          return !domain || scopes[domain];
+        });
 
         return {
           content: [

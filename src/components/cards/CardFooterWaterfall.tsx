@@ -18,11 +18,8 @@ import {
 } from "lucide-react";
 
 import { buildAffiliateUrl, type UserAffiliateTags } from "@/lib/commerce/affiliate";
-import {
-  resolveCardUtility,
-  resolveTypeActionProviders,
-  type ActionProviderSlot,
-} from "@/lib/commerce/utilityDeepLinks";
+import { type ActionProviderSlot } from "@/lib/commerce/utilityDeepLinks";
+import { resolveAuthenticFooterActions } from "@/lib/cards/capabilities";
 
 export { buildAffiliateUrl, type UserAffiliateTags };
 
@@ -75,17 +72,13 @@ export function CardFooterWaterfall({
   const isOwnedSynced = (isClosetItem || isPurchaseHubItem) && !isWishlist;
   const isDarkSurface = tone === "dark";
 
-  const utility = resolveCardUtility({
-    entity,
-    customUtilityLabel,
-    primarySource,
-    onUtilityClick,
-  });
+  const authenticActions = resolveAuthenticFooterActions(entity, primarySource, isWishlist);
+  const infoSlot = authenticActions.find((a) => a.slot === "info") || null;
+  const experienceSlot = authenticActions.find((a) => a.slot === "experience") || null;
+  const buySlot = authenticActions.find((a) => a.slot === "buy") || null;
+  const ownedSlot = authenticActions.find((a) => a.slot === "owned") || null;
 
-  const providers = resolveTypeActionProviders(entity, primarySource);
-  const { infoAction, playAction, buyAction } = providers;
-
-  const renderSlotIcon = (iconName: ActionProviderSlot["iconName"] | typeof utility.iconName) => {
+  const renderSlotIcon = (iconName: ActionProviderSlot["iconName"]) => {
     switch (iconName) {
       case "info":
         return <Info className="w-3.5 h-3.5" />;
@@ -114,14 +107,13 @@ export function CardFooterWaterfall({
     }
   };
 
-  // Monetized / Buy Slot (never links to Wikipedia)
   const priceCents = primarySource?.priceCents ?? entity.priceCents;
   const currency = primarySource?.currency || entity.currency || "USD";
   const sellerName =
     primarySource?.sellerName ||
-    buyAction?.providerName ||
+    buySlot?.providerName ||
     (entity.ucpSkuId ? "Google UCP" : "Shop");
-  const targetUrl = buyAction?.href || "#";
+  const targetUrl = buySlot?.href || "#";
   const outboundUrl = buildAffiliateUrl(
     targetUrl,
     sellerName,
@@ -142,9 +134,10 @@ export function CardFooterWaterfall({
   const formattedPrice = hidePrice ? null : formatPrice(priceCents, currency);
   const isUcp = Boolean(entity.ucpSkuId);
 
-  const experienceHref = playAction?.href || utility.href;
-  const experienceLabel = customUtilityLabel || playAction?.label || utility.label;
-  const experienceIcon = playAction?.iconName || utility.iconName;
+  const experienceHref = experienceSlot?.href || "#";
+  const experienceLabel =
+    experienceSlot && customUtilityLabel ? customUtilityLabel : experienceSlot?.label || "";
+  const experienceIcon = experienceSlot?.iconName || "external-link";
 
   const containerClass = flush
     ? `w-full pt-2.5 mt-3 border-t flex items-center justify-between gap-2 text-xs ${
@@ -240,34 +233,29 @@ export function CardFooterWaterfall({
     );
   }
 
+  if (authenticActions.length === 0) {
+    return null;
+  }
+
   return (
     <div className={containerClass}>
-      {/* Left + Center Slots: 1. More Info & 2. Play/Experience Action */}
+      {/* Left + Center Slots: Authentic Info / Experience Links */}
       <div className="flex items-center gap-1 min-w-0">
-        {infoAction.href !== "#" ? (
+        {infoSlot && (
           <a
-            href={infoAction.href}
+            href={infoSlot.href}
             target="_blank"
             rel="noreferrer"
-            title={`${infoAction.label} (${infoAction.providerName})`}
+            title={`${infoSlot.label} (${infoSlot.providerName})`}
             onClick={(e) => e.stopPropagation()}
             className={mutedLinkClass}
           >
-            {renderSlotIcon("info")}
-            <span className="hidden sm:inline">{infoAction.label}</span>
+            {renderSlotIcon(infoSlot.iconName)}
+            <span className="truncate max-w-[100px]">{infoSlot.label}</span>
           </a>
-        ) : (
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium ${
-              isDarkSurface ? "text-neutral-400" : "text-neutral-500 dark:text-neutral-400"
-            }`}
-          >
-            {renderSlotIcon(infoAction.iconName)}
-            <span>{infoAction.label}</span>
-          </span>
         )}
 
-        {playAction &&
+        {experienceSlot &&
           (onUtilityClick ? (
             <button
               type="button"
@@ -275,7 +263,7 @@ export function CardFooterWaterfall({
                 e.stopPropagation();
                 onUtilityClick();
               }}
-              title={`${experienceLabel} (${playAction.providerName})`}
+              title={`${experienceLabel} (${experienceSlot.providerName})`}
               className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium transition-colors duration-150 cursor-pointer min-w-0 ${
                 isDarkSurface
                   ? "text-neutral-300 hover:text-white hover:bg-neutral-800/80"
@@ -290,7 +278,7 @@ export function CardFooterWaterfall({
               href={experienceHref}
               target="_blank"
               rel="noreferrer"
-              title={`${experienceLabel} (${playAction.providerName})`}
+              title={`${experienceLabel} (${experienceSlot.providerName})`}
               onClick={(e) => e.stopPropagation()}
               className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium transition-colors duration-150 cursor-pointer min-w-0 ${
                 isDarkSurface
@@ -304,37 +292,54 @@ export function CardFooterWaterfall({
           ))}
       </div>
 
-      {/* Right Slot: 3. Buy / Acquire Action (never points to Wikipedia) */}
-      {buyAction && (
+      {/* Right Slot: Synced App Deep-Link (Open in Chef) or Verified Merchant CTA */}
+      {ownedSlot ? (
         <a
-          href={outboundUrl}
+          href={ownedSlot.href}
           target="_blank"
           rel="noreferrer"
-          title={`${buyAction.label} via ${sellerName}`}
           onClick={(e) => e.stopPropagation()}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-medium shadow-2xs transition-colors duration-150 active:scale-95 cursor-pointer text-xs shrink-0 ${
-            isUcp
-              ? "bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600"
-              : isDarkSurface
-              ? "bg-white hover:bg-neutral-200 text-neutral-950"
-              : "bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+          className={`inline-flex items-center gap-1 text-[11px] font-mono font-medium transition-colors duration-150 cursor-pointer shrink-0 ${
+            isDarkSurface
+              ? "text-neutral-300 hover:text-white"
+              : "text-neutral-600 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white"
           }`}
         >
-          {isUcp ? (
-            <Zap className="w-3.5 h-3.5 fill-current" />
-          ) : (
-            renderSlotIcon(buyAction.iconName)
-          )}
-          <span className="tabular-nums">
-            {isUcp
-              ? formattedPrice
-                ? `1-Click ${formattedPrice}`
-                : "Google Pay"
-              : formattedPrice
-              ? `Buy ${formattedPrice}`
-              : buyAction.label}
-          </span>
+          <span>{ownedSlot.label}</span>
+          <ExternalLink className="w-3 h-3 opacity-70" aria-hidden="true" />
         </a>
+      ) : (
+        buySlot && (
+          <a
+            href={outboundUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={`${buySlot.label} via ${sellerName}`}
+            onClick={(e) => e.stopPropagation()}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-medium shadow-2xs transition-colors duration-150 active:scale-95 cursor-pointer text-xs shrink-0 ${
+              isUcp
+                ? "bg-[var(--brand)] hover:opacity-90 text-[var(--brand-foreground)]"
+                : isDarkSurface
+                ? "bg-white hover:bg-neutral-200 text-neutral-950"
+                : "bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+            }`}
+          >
+            {isUcp ? (
+              <Zap className="w-3.5 h-3.5 fill-current" />
+            ) : (
+              renderSlotIcon(buySlot.iconName)
+            )}
+            <span className="tabular-nums">
+              {isUcp
+                ? formattedPrice
+                  ? `1-Click ${formattedPrice}`
+                  : "Google Pay"
+                : formattedPrice
+                ? `Buy ${formattedPrice}`
+                : buySlot.label}
+            </span>
+          </a>
+        )
       )}
     </div>
   );

@@ -43,7 +43,7 @@ export function MoviePosterCard({
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-[#F2EFE9]">
-              <Clapperboard className="w-10 h-10 text-[#C89572] mb-3" />
+              <Clapperboard className="w-10 h-10 text-[#4CA382] mb-3" />
               <span className="font-serif-editorial text-lg tracking-wide">
                 {entity.title}
               </span>

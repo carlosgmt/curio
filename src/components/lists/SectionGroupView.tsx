@@ -17,6 +17,7 @@ export interface SectionGroupViewProps {
   density?: SilhouetteDensity;
   readOnly?: boolean;
   hideShelfBuckets?: boolean;
+  hideSubBoardsFooter?: boolean;
   shelfLabelOverride?: string;
   galleryLabelOverride?: string;
   onSelectCreator?: (creator: string) => void;
@@ -41,6 +42,7 @@ export function SectionGroupView({
   density = "standard",
   readOnly = false,
   hideShelfBuckets = false,
+  hideSubBoardsFooter = false,
   shelfLabelOverride,
   galleryLabelOverride,
   onSelectCreator,
@@ -387,7 +389,7 @@ export function SectionGroupView({
       })}
 
       {/* Nested Sub-Boards Section */}
-      {childrenBoards && childrenBoards.length > 0 && (
+      {!hideSubBoardsFooter && childrenBoards && childrenBoards.length > 0 && (
         <div className="space-y-6 pt-4 border-t border-neutral-200 dark:border-neutral-800">
           <div className="flex items-center justify-between pb-2">
             <div className="flex items-center gap-2">

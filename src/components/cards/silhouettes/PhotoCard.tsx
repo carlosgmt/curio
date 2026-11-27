@@ -55,7 +55,7 @@ export function PhotoCard({
 
           {(camera || igBadge) && (
             <div className="curio-hover-chrome absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-white text-[10px] font-mono border border-white/15">
-              {camera && <Camera className="w-3 h-3 text-[#C89572]" aria-hidden="true" />}
+              {camera && <Camera className="w-3 h-3 text-[#4CA382]" aria-hidden="true" />}
               <span className="truncate max-w-[140px]">{camera || igBadge}</span>
             </div>
           )}

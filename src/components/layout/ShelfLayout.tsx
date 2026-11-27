@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { ArrowLeft, ArrowRight, Box, Eye, RefreshCw, RotateCcw } from "lucide-react";
 import type { CardData } from "@/components/cards/PolymorphicCard";
 import type { VirtualBookshelfItem } from "./VirtualBookshelf3D";
+import { HairlineTickRuler } from "@/components/ui/HairlineTickRuler";
 
 const VirtualBookshelf3D = dynamic(() => import("./VirtualBookshelf3D"), {
   ssr: false,
@@ -152,6 +153,12 @@ export function ShelfLayout({
     () => (activeCard ? getArchetypeSpec(activeCard) : null),
     [activeCard]
   );
+  const isVinylCrate = useMemo(
+    () =>
+      shelfLabel.toUpperCase().includes("VINYL") ||
+      (items.length > 0 && items.every((c) => getArchetypeSpec(c).id === "vinyl_sleeve")),
+    [items, shelfLabel]
+  );
   const shelfItems3D = useMemo<VirtualBookshelfItem[]>(
     () =>
       items.map((card) => {
@@ -283,7 +290,7 @@ export function ShelfLayout({
       {/* Minimal Top Bindery Ledger */}
       <div className="relative z-10 flex items-center justify-between gap-3 px-5 sm:px-8 pt-4 pb-1 text-xs">
         <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#A8A196] truncate">
-          {shelfLabel}
+          {isVinylCrate && shelfLabel === "CURIO PRESS ARCHIVE" ? "CURIO VINYL CRATE" : shelfLabel}
         </span>
 
         <span className="font-mono text-[11px] tabular-nums text-[#A8A196]">
@@ -298,7 +305,7 @@ export function ShelfLayout({
               onClick={() =>
                 setInspectMode((m) => (m === "spine" ? "front" : "spine"))
               }
-              className="text-[#F2EFE9] hover:text-[#C89572] transition-colors cursor-pointer"
+              className="text-[#F2EFE9] hover:text-[#4CA382] transition-colors cursor-pointer"
             >
               {inspectMode === "spine" ? "Show Cover" : "Flip Spine"}
             </button>
@@ -322,7 +329,7 @@ export function ShelfLayout({
               onClick={() => setActiveByIndex(safeIdx - 1)}
               disabled={safeIdx <= 0}
               aria-label="Previous shelf object"
-              className="disabled:opacity-30 hover:text-[#C89572] cursor-pointer"
+              className="disabled:opacity-30 hover:text-[#4CA382] cursor-pointer"
             >
               ← Prev
             </button>
@@ -331,7 +338,7 @@ export function ShelfLayout({
               onClick={() => setActiveByIndex(safeIdx + 1)}
               disabled={safeIdx >= items.length - 1}
               aria-label="Next shelf object"
-              className="disabled:opacity-30 hover:text-[#C89572] cursor-pointer"
+              className="disabled:opacity-30 hover:text-[#4CA382] cursor-pointer"
             >
               Next →
             </button>
@@ -684,8 +691,8 @@ export function ShelfLayout({
                 <button
                   type="button"
                   onClick={() => onSelectCreator(activeMeta.creator)}
-                  className="text-[#C89572] hover:underline underline-offset-4 cursor-pointer text-left"
-                  title={`View all books by ${activeMeta.creator}`}
+                  className="text-[#4CA382] hover:underline underline-offset-4 cursor-pointer text-left"
+                  title={`View all items by ${activeMeta.creator}`}
                 >
                   {activeMeta.creator}
                 </button>
@@ -696,7 +703,7 @@ export function ShelfLayout({
                 <span className="font-mono tabular-nums">· {activeMeta.yearOrPrice}</span>
               )}
               {activeMeta.isWishlist && (
-                <span className="font-mono text-[10px] text-[#C89572]">· Wishlist</span>
+                <span className="font-mono text-[10px] text-[#4CA382]">· Wishlist</span>
               )}
               {(activeCard.entity?.coreType === "BOOK" ||
                 activeCard.save.typePath === "/product/book") &&
@@ -722,56 +729,21 @@ export function ShelfLayout({
               type="button"
               data-testid="press-open-stage"
               onClick={() => onOpenObject(activeCard, "press")}
-              className="text-[#C89572] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              className="text-[#4CA382] hover:underline underline-offset-4 transition-colors cursor-pointer"
             >
-              Open Volume →
+              {isVinylCrate ? "Open Sleeve →" : "Open Volume →"}
             </button>
           </div>
         </div>
 
         {/* Hairline Tick-Mark Index Ruler */}
-        {items.length > 1 && (
-          <div
-            role="slider"
-            tabIndex={0}
-            aria-label="Jump to item on Press Shelf"
-            aria-valuemin={1}
-            aria-valuemax={items.length}
-            aria-valuenow={safeIdx + 1}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
-              setActiveByIndex(Math.round(ratio * (items.length - 1)));
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowRight") setActiveByIndex(safeIdx + 1);
-              if (e.key === "ArrowLeft") setActiveByIndex(safeIdx - 1);
-            }}
-            className="flex items-end justify-between h-5 pt-1 border-t border-white/10 cursor-pointer select-none"
-          >
-            {(() => {
-              const tickCount = Math.min(items.length, 48);
-              const activeTick =
-                items.length <= 1
-                  ? 0
-                  : Math.round((safeIdx / (items.length - 1)) * (tickCount - 1));
-              return Array.from({ length: tickCount }, (_, i) => {
-                const isAct = i === activeTick;
-                return (
-                  <span
-                    key={i}
-                    className="block transition-all duration-150"
-                    style={{
-                      width: "1px",
-                      height: isAct ? "15px" : i % 6 === 0 ? "9px" : "5px",
-                      backgroundColor: isAct ? "#C89572" : "rgba(242, 239, 233, 0.24)",
-                    }}
-                  />
-                );
-              });
-            })()}
-          </div>
-        )}
+        <HairlineTickRuler
+          total={items.length}
+          activeIndex={safeIdx}
+          onChange={setActiveByIndex}
+          ariaLabel={isVinylCrate ? "Scrub vinyl crate" : "Scrub Press Shelf"}
+          accentColor="#4CA382"
+        />
       </div>
     </section>
   );

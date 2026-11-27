@@ -481,7 +481,7 @@ export default function VirtualBookshelf3D({
 
           // Woven head and tail bands tucked cleanly at spine ends of page block
           const bandMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(item.palette.accent || "#C89572"),
+            color: new THREE.Color(item.palette.accent || "#4CA382"),
             roughness: 0.72,
             metalness: 0.12,
           });

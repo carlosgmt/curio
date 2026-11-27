@@ -45,6 +45,8 @@ import { FilmInspectorDrawer } from "./FilmInspectorDrawer";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { BoardExhibitionModal } from "@/components/lists/BoardExhibitionModal";
 import { AuthModal } from "@/components/auth/AuthModal";
+import { CurioMark } from "@/components/layout/CurioLogo";
+import { HairlineTickRuler } from "@/components/ui/HairlineTickRuler";
 
 const VirtualPosterWall3D = dynamic(
   () => import("@/components/layout/VirtualPosterWall3D"),
@@ -432,12 +434,12 @@ export function PersonalCinemaView() {
           <Link
             href="/"
             aria-label="Back to Curio"
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1.5 text-foreground hover:opacity-80 transition-opacity shrink-0"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <CurioMark size={18} variant="compact" />
           </Link>
           <span className="truncate font-serif text-sm text-foreground">
-            Personal Cinema
+            Cinema
           </span>
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground shrink-0">
             · {stats?.total ?? films.length}
@@ -861,50 +863,15 @@ export function PersonalCinemaView() {
                 </div>
 
                 {shelfFilms.length > 3 && (
-                  <div
-                    role="slider"
-                    tabIndex={0}
-                    aria-label="Scrub cinema shelf"
-                    aria-valuemin={1}
-                    aria-valuemax={shelfFilms.length}
-                    aria-valuenow={activeShelfIdx + 1}
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const ratio = Math.max(
-                        0,
-                        Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width))
-                      );
-                      setActiveShelfByIndex(Math.round(ratio * (shelfFilms.length - 1)));
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "ArrowRight") setActiveShelfByIndex(activeShelfIdx + 1);
-                      if (e.key === "ArrowLeft") setActiveShelfByIndex(activeShelfIdx - 1);
-                    }}
-                    className="flex items-end justify-between h-5 pt-1 border-t cursor-pointer select-none"
-                    style={{ borderColor: activePalette.rule }}
-                  >
-                    {(() => {
-                      const tickCount = Math.min(shelfFilms.length, 48);
-                      const activeTick =
-                        shelfFilms.length <= 1
-                          ? 0
-                          : Math.round((activeShelfIdx / (shelfFilms.length - 1)) * (tickCount - 1));
-                      return Array.from({ length: tickCount }, (_, i) => {
-                        const isAct = i === activeTick;
-                        return (
-                          <span
-                            key={i}
-                            className="block transition-all duration-150"
-                            style={{
-                              width: "1px",
-                              height: isAct ? "15px" : i % 6 === 0 ? "9px" : "5px",
-                              backgroundColor: isAct ? activePalette.accent : activePalette.rule,
-                            }}
-                          />
-                        );
-                      });
-                    })()}
-                  </div>
+                  <HairlineTickRuler
+                    total={shelfFilms.length}
+                    activeIndex={activeShelfIdx}
+                    onChange={setActiveShelfByIndex}
+                    ariaLabel="Scrub cinema shelf"
+                    accentColor={activePalette.accent}
+                    ruleColor={activePalette.rule}
+                    tickColor={activePalette.rule}
+                  />
                 )}
               </div>
             )}

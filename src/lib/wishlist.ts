@@ -3,6 +3,7 @@ export function wishLabel(typePath?: string | null, coreType?: string | null): s
   const p = (typePath || "").toLowerCase();
   const c = (coreType || "").toUpperCase();
   if (p.includes("place") || c === "PLACE" || p.includes("travel")) return "Want to visit";
+  if (p.includes("recipe") || p.includes("culinary") || c === "CULINARY") return "Want to cook";
   if (p.includes("film") || p.includes("movie") || p.includes("series") || p.includes("tv") || c === "MEDIA") return "Want to watch";
   if (p.includes("music") || p.includes("album") || p.includes("song") || p.includes("vinyl")) return "Want to listen";
   if (p.includes("book") || p.includes("article") || p.includes("quote")) return "Want to read";

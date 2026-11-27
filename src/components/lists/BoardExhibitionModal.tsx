@@ -142,7 +142,7 @@ export function BoardExhibitionModal({
             surfaceSecondary: "#0B0A09",
             ink: "#F2EFE9",
             muted: "#A8A196",
-            accent: "#C89572",
+            accent: "#4CA382",
             rule: "#2E2A25",
             coverBg: "#2B343E",
             coverInk: "#F2EFE9",
@@ -339,7 +339,7 @@ export function BoardExhibitionModal({
                     className="flex-1 rounded-full transition-all duration-150"
                     style={{
                       height: isAct ? "3px" : "1.5px",
-                      backgroundColor: isAct ? "#C89572" : "rgba(242, 239, 233, 0.22)",
+                      backgroundColor: isAct ? "#4CA382" : "rgba(242, 239, 233, 0.22)",
                     }}
                   />
                 );
@@ -365,7 +365,7 @@ export function BoardExhibitionModal({
                   type="button"
                   onClick={toggleActiveWish}
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full transition cursor-pointer ${
-                    isWished ? "text-[#C89572]" : "text-[#F2EFE9] hover:text-[#C89572]"
+                    isWished ? "text-[#4CA382]" : "text-[#F2EFE9] hover:text-[#4CA382]"
                   }`}
                 >
                   <Heart className={`w-3 h-3 ${isWished ? "fill-current" : ""}`} aria-hidden="true" />
@@ -381,7 +381,7 @@ export function BoardExhibitionModal({
                     dialogRef.current?.close();
                     onInspectCard(current);
                   }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[#F2EFE9] hover:text-[#C89572] transition cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[#F2EFE9] hover:text-[#4CA382] transition cursor-pointer"
                 >
                   <Maximize2 className="w-3 h-3" aria-hidden="true" />
                   <span>Dossier</span>

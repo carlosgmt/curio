@@ -1,18 +1,36 @@
 "use client";
 
 import React from "react";
-import { Folder, Sparkles, Plus, Layers, Heart, BookOpen, Film } from "lucide-react";
+import { Plus, Heart, Lock, Globe } from "lucide-react";
 import type { SmartList } from "@/db";
 
 export interface ListTabsBarProps {
   lists: Array<SmartList & { itemCount: number }>;
-  activeListSlug: string | null; // null = "All Curations"
+  activeListSlug: string | null; // null = Stream
   totalAllSavesCount?: number;
   onSelectList: (slug: string | null) => void;
   onCreateListClick: () => void;
   wishlistActive?: boolean;
   wishlistCount?: number;
   onToggleWishlist?: () => void;
+}
+
+export function resolveRootBoardForSlug(
+  lists: Array<SmartList & { itemCount: number }>,
+  activeSlug: string | null
+): (SmartList & { itemCount: number }) | null {
+  if (!activeSlug) return null;
+  const byId = new Map(lists.map((l) => [l.id, l]));
+  let current = lists.find((l) => l.slug === activeSlug) || null;
+  if (!current) return null;
+  const visited = new Set<string>();
+  while (current.parentId && !visited.has(current.id)) {
+    visited.add(current.id);
+    const parent = byId.get(current.parentId);
+    if (!parent) break;
+    current = parent;
+  }
+  return current;
 }
 
 export function ListTabsBar({
@@ -57,22 +75,24 @@ export function ListTabsBar({
     return { childCountMap: childMap, rolledUpCountMap: memo };
   }, [lists]);
 
-  // Display root boards by default, but always include the currently active board even if nested
+  const activeRootBoard = React.useMemo(
+    () => resolveRootBoardForSlug(lists, activeListSlug),
+    [lists, activeListSlug]
+  );
+
+  // Level A shows only top-level root boards (sub-boards appear in Level B SubBoardsBar).
+  // Orphans whose parentId isn't in `lists` are surfaced cleanly as fallback roots.
   const displayLists = React.useMemo(() => {
-    const roots = lists.filter((l) => !l.parentId);
-    const active = lists.find((l) => l.slug === activeListSlug);
-    if (active && active.parentId && !roots.some((r) => r.id === active.id)) {
-      return [...roots, active];
-    }
-    return roots;
-  }, [lists, activeListSlug]);
+    const idSet = new Set(lists.map((l) => l.id));
+    return lists.filter((l) => !l.parentId || !idSet.has(l.parentId));
+  }, [lists]);
 
   return (
     <nav
-      aria-label="Curated boards"
-      className="flex items-center gap-5 sm:gap-6 overflow-x-auto border-b border-border pb-0 mb-8 scrollbar-none"
+      aria-label="Top-level boards"
+      className="flex items-center gap-5 sm:gap-6 overflow-x-auto border-b border-border pb-0 mb-4 scrollbar-none"
     >
-      {/* "All my stuff" Tab */}
+      {/* "Stream" Root Tab */}
       <button
         type="button"
         onClick={() => onSelectList(null)}
@@ -82,7 +102,7 @@ export function ListTabsBar({
             : "border-transparent text-muted-foreground hover:text-foreground"
         }`}
       >
-        <span>All my stuff</span>
+        <span>Stream</span>
         {totalAllSavesCount !== undefined && (
           <span
             className={`text-[11px] font-mono tabular-nums ${
@@ -127,11 +147,11 @@ export function ListTabsBar({
         </button>
       )}
 
-      {/* User Curated Boards */}
+      {/* User Curated Root Boards */}
       {displayLists.map((list) => {
-        const isActive = activeListSlug === list.slug;
+        const isActive =
+          activeListSlug === list.slug || activeRootBoard?.id === list.id;
         const subBoardCount = childCountMap.get(list.id) || 0;
-        const isNested = Boolean(list.parentId);
 
         return (
           <button
@@ -144,7 +164,6 @@ export function ListTabsBar({
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {isNested && <span className="text-muted-foreground text-[10px]">↳</span>}
             <span>{list.title}</span>
 
             {subBoardCount > 0 && (
@@ -177,5 +196,106 @@ export function ListTabsBar({
         <span>New Board</span>
       </button>
     </nav>
+  );
+}
+
+export interface SubBoardsBarProps {
+  rootBoard: SmartList & { itemCount: number };
+  subBoards: Array<SmartList & { itemCount: number }>;
+  activeListSlug: string;
+  isPublic?: boolean;
+  onSelectList: (slug: string) => void;
+  onAddSubBoard?: () => void;
+  rightActions?: React.ReactNode;
+}
+
+/**
+ * Level B: Sub-boards of the selected top-level board + contextual board tools & 3-state exposure cue.
+ */
+export function SubBoardsBar({
+  rootBoard,
+  subBoards,
+  activeListSlug,
+  isPublic = false,
+  onSelectList,
+  onAddSubBoard,
+  rightActions,
+}: SubBoardsBarProps) {
+  return (
+    <div
+      data-testid="sub-boards-bar"
+      className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-border/70"
+    >
+      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+        {subBoards.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => onSelectList(rootBoard.slug)}
+              className={`px-3 py-1 rounded-full text-xs font-mono whitespace-nowrap transition-colors duration-150 cursor-pointer border ${
+                activeListSlug === rootBoard.slug
+                  ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                  : "bg-card text-muted-foreground border-border hover:text-foreground"
+              }`}
+            >
+              All {rootBoard.title}
+            </button>
+
+            {subBoards.map((sub) => {
+              const isSubActive = activeListSlug === sub.slug;
+              return (
+                <button
+                  key={sub.id}
+                  type="button"
+                  onClick={() => onSelectList(sub.slug)}
+                  className={`inline-flex items-baseline gap-1.5 px-3 py-1 rounded-full text-xs font-mono whitespace-nowrap transition-colors duration-150 cursor-pointer border ${
+                    isSubActive
+                      ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                      : "bg-card text-muted-foreground border-border hover:text-foreground"
+                  }`}
+                >
+                  <span>{sub.title}</span>
+                  <span className="text-[10px] tabular-nums opacity-75">
+                    {sub.itemCount}
+                  </span>
+                </button>
+              );
+            })}
+          </>
+        )}
+
+        {onAddSubBoard && (
+          <button
+            type="button"
+            onClick={onAddSubBoard}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono text-muted-foreground hover:text-[var(--brand)] border border-dashed border-border hover:border-[var(--brand)]/50 transition-colors cursor-pointer shrink-0"
+          >
+            <Plus className="w-3 h-3" aria-hidden="true" />
+            <span>Sub-Board</span>
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 ml-auto">
+        <span
+          className={`inline-flex items-center gap-1 text-[11px] font-mono ${
+            isPublic ? "text-[var(--brand)]" : "text-muted-foreground"
+          }`}
+        >
+          {isPublic ? (
+            <>
+              <Globe className="w-3 h-3" aria-hidden="true" />
+              <span>Shared · Editorial</span>
+            </>
+          ) : (
+            <>
+              <Lock className="w-3 h-3" aria-hidden="true" />
+              <span>Private · Local Vault</span>
+            </>
+          )}
+        </span>
+        {rightActions}
+      </div>
+    </div>
   );
 }

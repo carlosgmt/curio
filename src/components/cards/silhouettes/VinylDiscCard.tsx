@@ -70,7 +70,7 @@ export function VinylDiscCard({
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-[#181715] text-[#F2EFE9]">
-              <Disc3 className="w-10 h-10 text-[#C89572] mb-2" />
+              <Disc3 className="w-10 h-10 text-[#4CA382] mb-2" />
               <span className="font-serif-editorial text-sm line-clamp-2">{entity.title}</span>
               <span className="text-xs text-[#A8A196] mt-1 line-clamp-1">{artist}</span>
             </div>

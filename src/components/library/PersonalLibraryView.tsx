@@ -47,6 +47,8 @@ import { OpenBook3DModal } from "./OpenBook3DModal";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { BoardExhibitionModal } from "@/components/lists/BoardExhibitionModal";
 import { AuthModal } from "@/components/auth/AuthModal";
+import { CurioMark } from "@/components/layout/CurioLogo";
+import { HairlineTickRuler } from "@/components/ui/HairlineTickRuler";
 
 const VirtualBookshelf3D = dynamic(
   () => import("@/components/layout/VirtualBookshelf3D"),
@@ -460,12 +462,12 @@ export function PersonalLibraryView() {
           <Link
             href="/"
             aria-label="Back to Curio"
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1.5 text-foreground hover:opacity-80 transition-opacity shrink-0"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <CurioMark size={18} variant="compact" />
           </Link>
           <span className="truncate font-serif text-sm text-foreground">
-            Personal Library
+            Library
           </span>
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground shrink-0">
             · {stats?.total ?? books.length}
@@ -938,50 +940,15 @@ export function PersonalLibraryView() {
                 </div>
 
                 {shelfBooks.length > 3 && (
-                  <div
-                    role="slider"
-                    tabIndex={0}
-                    aria-label="Scrub bookshelf"
-                    aria-valuemin={1}
-                    aria-valuemax={shelfBooks.length}
-                    aria-valuenow={activeShelfIdx + 1}
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const ratio = Math.max(
-                        0,
-                        Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width))
-                      );
-                      setActiveShelfByIndex(Math.round(ratio * (shelfBooks.length - 1)));
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "ArrowRight") setActiveShelfByIndex(activeShelfIdx + 1);
-                      if (e.key === "ArrowLeft") setActiveShelfByIndex(activeShelfIdx - 1);
-                    }}
-                    className="flex items-end justify-between h-5 pt-1 border-t cursor-pointer select-none"
-                    style={{ borderColor: activePalette.rule }}
-                  >
-                    {(() => {
-                      const tickCount = Math.min(shelfBooks.length, 48);
-                      const activeTick =
-                        shelfBooks.length <= 1
-                          ? 0
-                          : Math.round((activeShelfIdx / (shelfBooks.length - 1)) * (tickCount - 1));
-                      return Array.from({ length: tickCount }, (_, i) => {
-                        const isAct = i === activeTick;
-                        return (
-                          <span
-                            key={i}
-                            className="block transition-all duration-150"
-                            style={{
-                              width: "1px",
-                              height: isAct ? "15px" : i % 6 === 0 ? "9px" : "5px",
-                              backgroundColor: isAct ? activePalette.accent : activePalette.rule,
-                            }}
-                          />
-                        );
-                      });
-                    })()}
-                  </div>
+                  <HairlineTickRuler
+                    total={shelfBooks.length}
+                    activeIndex={activeShelfIdx}
+                    onChange={setActiveShelfByIndex}
+                    ariaLabel="Scrub bookshelf"
+                    accentColor={activePalette.accent}
+                    ruleColor={activePalette.rule}
+                    tickColor={activePalette.rule}
+                  />
                 )}
               </div>
             )}

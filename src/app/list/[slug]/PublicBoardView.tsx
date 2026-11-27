@@ -2,13 +2,14 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Share2, Check, ArrowLeft, BookmarkPlus, ShoppingBag, Loader2, Maximize2, SlidersHorizontal } from "lucide-react";
+import { Share2, Check, BookmarkPlus, ShoppingBag, Loader2, Maximize2, SlidersHorizontal } from "lucide-react";
 import type { CardData } from "@/components/cards/PolymorphicCard";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
 import { SplitBagCheckoutDrawer } from "@/components/commerce/SplitBagCheckoutDrawer";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
 import { BoardFilterSheet } from "@/components/lists/BoardFilterSheet";
 import { BoardExhibitionModal } from "@/components/lists/BoardExhibitionModal";
+import { CurioLogo, CurioMark } from "@/components/layout/CurioLogo";
 import type { ListWithSections } from "@/lib/lists/service";
 import { apiFetch } from "@/lib/apiClient";
 
@@ -90,10 +91,10 @@ export function PublicBoardView({
         <div className="flex items-center gap-2 min-w-0">
           <Link
             href="/"
-            aria-label="Back to Curio Board Feed"
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Back to Curio Stream"
+            className="inline-flex items-center gap-1.5 text-foreground hover:opacity-80 transition-opacity shrink-0"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <CurioMark size={18} variant="compact" />
           </Link>
           <span className="truncate font-serif text-sm text-foreground">
             {list.title}
@@ -127,13 +128,12 @@ export function PublicBoardView({
       </div>
 
       {/* Desktop Top Navigation */}
-      <div className="hidden md:flex max-w-6xl mx-auto px-6 lg:px-8 pt-8 pb-4 items-center justify-between border-b border-border/80 mb-10">
+      <div className="hidden md:flex max-w-6xl mx-auto px-6 lg:px-8 pt-6 pb-4 items-center justify-between border-b border-border/80 mb-10">
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-2.5 text-foreground hover:opacity-85 transition-opacity"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Curio Board Feed</span>
+          <CurioLogo size={24} />
         </Link>
 
         <div className="flex items-center gap-2">
@@ -206,8 +206,8 @@ export function PublicBoardView({
 
       {/* Editorial Board Hero Header */}
       <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center pt-6 md:pt-2 mb-10 md:mb-14">
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-3 tabular-nums">
-          Editorial Collection · {itemCount} {itemCount === 1 ? "Item" : "Items"}
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--brand)] mb-3 tabular-nums">
+          Shared · Editorial Collection · {itemCount} {itemCount === 1 ? "Item" : "Items"}
         </p>
 
         <h1 className="text-4xl sm:text-5xl font-serif font-normal tracking-tight text-foreground mb-4">

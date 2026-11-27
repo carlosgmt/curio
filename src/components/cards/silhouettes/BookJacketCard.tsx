@@ -59,7 +59,7 @@ export function BookJacketCard({
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-between p-4 bg-[#294A3B] text-[#F2EFE9] text-center">
                 {publisher ? (
-                  <span className="text-[9px] uppercase font-mono tracking-widest text-[#C89572]">
+                  <span className="text-[9px] uppercase font-mono tracking-widest text-[#4CA382]">
                     {publisher}
                   </span>
                 ) : (
@@ -75,14 +75,14 @@ export function BookJacketCard({
                     </p>
                   )}
                 </div>
-                {isbn ? <span className="text-[8px] font-mono tabular-nums text-[#C89572]">{isbn}</span> : <span />}
+                {isbn ? <span className="text-[8px] font-mono tabular-nums text-[#4CA382]">{isbn}</span> : <span />}
               </div>
             )}
 
             {/* Tactile Obi Belly-Band (rendered only when real curator note or obiText exists) */}
             {obiQuote && (
               <div className="absolute inset-x-0 bottom-2 z-10 mx-2 rounded-md bg-neutral-950/90 text-white p-2.5 shadow-md backdrop-blur-xs border border-white/10">
-                <div className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest text-[#C89572] mb-0.5">
+                <div className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest text-[#4CA382] mb-0.5">
                   <Bookmark className="w-2.5 h-2.5 fill-current" aria-hidden="true" />
                   <span>Curator Note</span>
                 </div>

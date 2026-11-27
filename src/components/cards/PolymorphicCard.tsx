@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Link2, FolderPlus, Heart, Loader2 } from "lucide-react";
 import { wishLabel } from "@/lib/wishlist";
+import { canWishlist } from "@/lib/cards/capabilities";
 import { VinylDiscCard } from "./silhouettes/VinylDiscCard";
 import { MoviePosterCard } from "./silhouettes/MoviePosterCard";
 import { VideoGameCard } from "./silhouettes/VideoGameCard";
@@ -639,30 +640,32 @@ export function PolymorphicCard({
             wished ? "!opacity-100 !pointer-events-auto" : ""
           }`}
         >
-          <button
-            type="button"
-            data-testid="wish-toggle"
-            aria-pressed={wished}
-            aria-label={
-              wished
-                ? "On your wishlist (click to remove)"
-                : wishLabel(entity?.typePath || save.typePath, entity?.coreType)
-            }
-            onClick={toggleWish}
-            className={`inline-flex items-center justify-center sm:justify-start gap-1 w-8 h-8 sm:w-auto sm:h-auto sm:px-2 sm:py-1 rounded-full text-[11px] font-medium backdrop-blur-md shadow-sm border transition-colors duration-150 cursor-pointer ${
-              wished
-                ? "bg-[var(--brand)] text-[var(--primary-foreground)] border-[var(--brand)]"
-                : "bg-card/90 text-foreground border-[var(--gallery-hairline)] hover:border-foreground/25"
-            }`}
-            title={
-              wished
-                ? "On your wishlist (click to remove)"
-                : wishLabel(entity?.typePath || save.typePath, entity?.coreType)
-            }
-          >
-            <Heart className={`w-3.5 h-3.5 sm:w-3 sm:h-3 ${wished ? "fill-current" : ""}`} aria-hidden="true" />
-            <span className="hidden sm:inline">{wished ? "Wished" : "Wish"}</span>
-          </button>
+          {canWishlist(item) && (
+            <button
+              type="button"
+              data-testid="wish-toggle"
+              aria-pressed={wished}
+              aria-label={
+                wished
+                  ? "On your wishlist (click to remove)"
+                  : wishLabel(entity?.typePath || save.typePath, entity?.coreType)
+              }
+              onClick={toggleWish}
+              className={`inline-flex items-center justify-center sm:justify-start gap-1 w-8 h-8 sm:w-auto sm:h-auto sm:px-2 sm:py-1 rounded-full text-[11px] font-medium backdrop-blur-md shadow-sm border transition-colors duration-150 cursor-pointer ${
+                wished
+                  ? "bg-[var(--brand)] text-[var(--primary-foreground)] border-[var(--brand)]"
+                  : "bg-card/90 text-foreground border-[var(--gallery-hairline)] hover:border-foreground/25"
+              }`}
+              title={
+                wished
+                  ? "On your wishlist (click to remove)"
+                  : wishLabel(entity?.typePath || save.typePath, entity?.coreType)
+              }
+            >
+              <Heart className={`w-3.5 h-3.5 sm:w-3 sm:h-3 ${wished ? "fill-current" : ""}`} aria-hidden="true" />
+              <span className="hidden sm:inline">{wished ? "Wished" : "Wish"}</span>
+            </button>
+          )}
           {!save.isPrivateMemo && (
             <button
               type="button"

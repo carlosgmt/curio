@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { ArrowLeft, ArrowRight, Film, RefreshCw, Repeat, RotateCcw, Star } from "lucide-react";
 import type { CardData } from "@/components/cards/PolymorphicCard";
 import type { VirtualPosterItem } from "./VirtualPosterWall3D";
+import { HairlineTickRuler } from "@/components/ui/HairlineTickRuler";
 import {
   type PressPalette,
   getDeterministicClothPalette,
@@ -292,7 +293,7 @@ export function PosterWallLayout({
           <button
             type="button"
             onClick={() => setInspectBack((b) => !b)}
-            className="text-[#F2EFE9] hover:text-[#C89572] transition-colors cursor-pointer"
+            className="text-[#F2EFE9] hover:text-[#4CA382] transition-colors cursor-pointer"
           >
             {inspectBack ? "Show Poster" : "Credits"}
           </button>
@@ -385,7 +386,7 @@ export function PosterWallLayout({
                 <button
                   type="button"
                   onClick={() => onSelectDirector(activePoster.director)}
-                  className="text-[#C89572] hover:underline underline-offset-4 cursor-pointer"
+                  className="text-[#4CA382] hover:underline underline-offset-4 cursor-pointer"
                   title={`Filter films by ${activePoster.director}`}
                 >
                   {activePoster.director}
@@ -400,7 +401,7 @@ export function PosterWallLayout({
                 </span>
               )}
               {activePoster.rating && (
-                <span className="inline-flex items-center gap-0.5 font-mono text-[#C89572]">
+                <span className="inline-flex items-center gap-0.5 font-mono text-[#4CA382]">
                   · ★ {activePoster.rating}
                 </span>
               )}
@@ -429,54 +430,19 @@ export function PosterWallLayout({
           <button
             type="button"
             onClick={() => onOpenObject(activeCard, "standard")}
-            className="font-mono text-xs text-[#C89572] hover:underline underline-offset-4 shrink-0 cursor-pointer self-start sm:self-end"
+            className="font-mono text-xs text-[#4CA382] hover:underline underline-offset-4 shrink-0 cursor-pointer self-start sm:self-end"
           >
             Open Film →
           </button>
         </div>
 
-        {items.length > 1 && (
-          <div
-            role="slider"
-            tabIndex={0}
-            aria-label="Scrub movie posters"
-            aria-valuemin={1}
-            aria-valuemax={items.length}
-            aria-valuenow={safeIdx + 1}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
-              setActiveByIndex(Math.round(ratio * (items.length - 1)));
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowRight") setActiveByIndex(safeIdx + 1);
-              if (e.key === "ArrowLeft") setActiveByIndex(safeIdx - 1);
-            }}
-            className="flex items-end justify-between h-5 pt-1 border-t border-white/10 cursor-pointer select-none"
-          >
-            {(() => {
-              const tickCount = Math.min(items.length, 48);
-              const activeTick =
-                items.length <= 1
-                  ? 0
-                  : Math.round((safeIdx / (items.length - 1)) * (tickCount - 1));
-              return Array.from({ length: tickCount }, (_, i) => {
-                const isAct = i === activeTick;
-                return (
-                  <span
-                    key={i}
-                    className="block transition-all duration-150"
-                    style={{
-                      width: "1px",
-                      height: isAct ? "15px" : i % 6 === 0 ? "9px" : "5px",
-                      backgroundColor: isAct ? "#C89572" : "rgba(242, 239, 233, 0.24)",
-                    }}
-                  />
-                );
-              });
-            })()}
-          </div>
-        )}
+        <HairlineTickRuler
+          total={items.length}
+          activeIndex={safeIdx}
+          onChange={setActiveByIndex}
+          ariaLabel="Scrub movie posters"
+          accentColor="#4CA382"
+        />
       </div>
     </section>
   );

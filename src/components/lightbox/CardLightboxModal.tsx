@@ -63,6 +63,7 @@ import {
 } from "lucide-react";
 import { Heart } from "lucide-react";
 import { wishLabel } from "@/lib/wishlist";
+import { canMarkBought, canWishlist } from "@/lib/cards/capabilities";
 import type { CardData } from "../cards/PolymorphicCard";
 import { CinemaCulturalMode } from "./modes/CinemaCulturalMode";
 import { BookCulturalMode } from "./modes/BookCulturalMode";
@@ -1767,7 +1768,8 @@ export function CardLightboxModal({
   );
 
   const isQuote = activeArchetype === "quote";
-  const isPressStage = presentation === "press";
+  const supportsPressStage = ["book", "vinyl", "cinema", "videogame"].includes(activeArchetype);
+  const isPressStage = presentation === "press" && supportsPressStage;
   const pressSpec = getArchetypeSpec(card, activeArchetype);
   const basePressMeta = formatSpineMeta(card);
   const pressMeta = {
@@ -1906,36 +1908,38 @@ export function CardLightboxModal({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-testid="toggle-press-stage"
-              aria-pressed={isPressStage}
-              onClick={() =>
-                setPresentation((prev) => (prev === "press" ? "standard" : "press"))
-              }
-              style={
-                isPressStage
-                  ? {
-                      backgroundColor: pressPalette.accent,
-                      color: pressPalette.surfaceSecondary,
-                    }
-                  : undefined
-              }
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[11px] uppercase tracking-wider font-medium transition cursor-pointer ${
-                isPressStage
-                  ? "hover:opacity-90"
-                  : "text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700"
-              }`}
-              title={isPressStage ? "Return to Standard Card View" : "Inspect in 3D Press Stage"}
-            >
-              <Box className="w-3.5 h-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">
-                {isPressStage ? "Standard View" : "Press Stage"}
-              </span>
-              <span className="sm:hidden">{isPressStage ? "Card" : "3D"}</span>
-            </button>
+            {supportsPressStage && (
+              <button
+                type="button"
+                data-testid="toggle-press-stage"
+                aria-pressed={isPressStage}
+                onClick={() =>
+                  setPresentation((prev) => (prev === "press" ? "standard" : "press"))
+                }
+                style={
+                  isPressStage
+                    ? {
+                        backgroundColor: pressPalette.accent,
+                        color: pressPalette.surfaceSecondary,
+                      }
+                    : undefined
+                }
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[11px] uppercase tracking-wider font-medium transition cursor-pointer ${
+                  isPressStage
+                    ? "hover:opacity-90"
+                    : "text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                }`}
+                title={isPressStage ? "Return to Standard Card View" : "Inspect in 3D Press Stage"}
+              >
+                <Box className="w-3.5 h-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">
+                  {isPressStage ? "Standard View" : "Press Stage"}
+                </span>
+                <span className="sm:hidden">{isPressStage ? "Card" : "3D"}</span>
+              </button>
+            )}
 
-            {!readOnly && wished && (
+            {!readOnly && wished && canMarkBought(card) && (
               <button
                 type="button"
                 data-testid="lightbox-mark-bought"
@@ -1943,14 +1947,14 @@ export function CardLightboxModal({
                   setMarkBoughtError(null);
                   setIsMarkBoughtOpen((prev) => !prev);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-[var(--brand)] text-[var(--brand-foreground)] hover:opacity-90 shadow-xs transition cursor-pointer"
               >
                 <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Bought it</span>
               </button>
             )}
 
-            {!readOnly && (
+            {!readOnly && canWishlist(card) && (
               <button
                 type="button"
                 data-testid="lightbox-wish-toggle"
@@ -1974,7 +1978,7 @@ export function CardLightboxModal({
                 }}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition cursor-pointer ${
                   wished
-                    ? "bg-rose-500 text-white"
+                    ? "bg-[var(--brand)] text-[var(--brand-foreground)]"
                     : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                 }`}
               >

@@ -5,10 +5,9 @@ import { Omnibox } from "@/components/shapeshift/Omnibox";
 import { PolymorphicCard, type CardData } from "@/components/cards/PolymorphicCard";
 import { ImporterModal } from "@/components/importers/ImporterModal";
 import { PairingModal } from "@/components/connections/PairingModal";
-import { ListTabsBar } from "@/components/lists/ListTabsBar";
+import { ListTabsBar, SubBoardsBar, resolveRootBoardForSlug } from "@/components/lists/ListTabsBar";
 import { CreateListModal } from "@/components/lists/CreateListModal";
 import { SectionGroupView } from "@/components/lists/SectionGroupView";
-import { BreadcrumbNav } from "@/components/lists/BreadcrumbNav";
 import { BoardFilterSheet } from "@/components/lists/BoardFilterSheet";
 import { BoardExhibitionModal } from "@/components/lists/BoardExhibitionModal";
 import { CardLightboxModal } from "@/components/lightbox/CardLightboxModal";
@@ -17,6 +16,8 @@ import { TypesSettingsModal } from "@/components/types/TypesSettingsModal";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { UserNav } from "@/components/layout/UserNav";
+import { CurioLogo, CurioMark } from "@/components/layout/CurioLogo";
+import { McpVaultSheet } from "@/components/mcp/McpVaultSheet";
 import { CurioLandingVitrine } from "@/components/landing/CurioLandingVitrine";
 import { PullToRefresh } from "@/components/pwa/PullToRefresh";
 import { apiFetch, getApiUrl } from "@/lib/apiClient";
@@ -29,7 +30,20 @@ import {
   type TypePromptInfo,
 } from "@/lib/lists/promptRules";
 import { MasonryLayout, GridLayout, TimelineLayout, ShelfLayout, PosterWallLayout } from "@/components/layout";
-import { ViewModeSwitcher, type LayoutEngineType } from "@/components/layout/ViewModeSwitcher";
+import { type LayoutEngineType } from "@/components/layout/ViewModeSwitcher";
+import {
+  resolveAutomaticBoardLayout,
+  supportsMediaStageToggle,
+  type MediaPreferredLayout,
+} from "@/lib/layout/boardViews";
+import {
+  DEFAULT_MCP_SCOPES,
+  MCP_DOMAIN_DEFS,
+  resolveBoardMcpDomain,
+  type McpDomainId,
+  type McpScopeMap,
+} from "@/lib/mcp/scopeDefs";
+import { wishLabel } from "@/lib/wishlist";
 import type { SilhouetteDensity } from "@/components/cards/registry";
 import {
   Sparkles,
@@ -51,6 +65,8 @@ import {
   Repeat,
   Maximize2,
   SlidersHorizontal,
+  Lock,
+  Heart,
 } from "lucide-react";
 import { LogBookModal } from "@/components/library/LogBookModal";
 import {
@@ -86,48 +102,6 @@ import {
   sanitizeGoodreadsNote,
 } from "@/lib/books/identity";
 import { computeCinemaStats, toFilmView, type FilmView } from "@/lib/cinema/library";
-
-const VALID_LAYOUT_MODES = new Set<LayoutEngineType>(["masonry", "grid", "timeline", "shelf", "posters"]);
-
-function isShelfDefaultBoard(slug: string | null, wishOnly: boolean, isMyStuffDescendant = false): boolean {
-  if (wishOnly) return true;
-  if (!slug) return false;
-  return (
-    isMyStuffDescendant ||
-    slug === "my-stuff" ||
-    slug.startsWith("my-stuff-") ||
-    slug === "books" ||
-    slug === "music" ||
-    slug === "wishlist"
-  );
-}
-
-function getLayoutPreferenceKey(slug: string | null, wishOnly: boolean): string {
-  if (wishOnly) return "wishlist";
-  return slug || "all";
-}
-
-function resolveBoardLayout(
-  slug: string | null,
-  wishOnly: boolean,
-  dbDefault?: string | null,
-  isMyStuffDescendant = false
-): LayoutEngineType {
-  if (typeof window !== "undefined") {
-    const saved = localStorage.getItem(`curio_board_layout:${getLayoutPreferenceKey(slug, wishOnly)}`);
-    if (saved && VALID_LAYOUT_MODES.has(saved as LayoutEngineType)) {
-      return saved as LayoutEngineType;
-    }
-  }
-  if (slug === "films" && (!dbDefault || dbDefault === "shelf")) {
-    return "posters";
-  }
-  if (dbDefault && VALID_LAYOUT_MODES.has(dbDefault as LayoutEngineType)) {
-    return dbDefault as LayoutEngineType;
-  }
-  if (slug === "films") return "posters";
-  return isShelfDefaultBoard(slug, wishOnly, isMyStuffDescendant) ? "shelf" : "masonry";
-}
 
 function isLetterboxdFilmView(f: FilmView): boolean {
   if (f.letterboxdTags.length > 0) return true;
@@ -255,6 +229,12 @@ export default function Home() {
     { id: "AUTUMN_WINTER", label: "Autumn / Winter" },
   ];
 
+  const [mediaViewByBoard, setMediaViewByBoard] = useState<Record<string, MediaPreferredLayout>>({});
+  const [boardWishOnly, setBoardWishOnly] = useState(false);
+  const [mcpScopes, setMcpScopes] = useState<McpScopeMap>({ ...DEFAULT_MCP_SCOPES });
+  const [isMcpSheetOpen, setIsMcpSheetOpen] = useState(false);
+  const [isSavingMcp, setIsSavingMcp] = useState(false);
+
   // Sync dismissal of "Bring in your collections" banner & stream inventory filter preferences
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -263,8 +243,55 @@ export default function Home() {
       setShowWearLogs(localStorage.getItem("curio_show_wear_logs") === "true");
       setShowCloset(localStorage.getItem("curio_show_closet") === "true");
       setShowMyStuff(localStorage.getItem("curio_show_my_stuff") === "true");
+      try {
+        const rawMedia = localStorage.getItem("curio_media_view_by_board");
+        if (rawMedia) {
+          const parsed = JSON.parse(rawMedia);
+          if (parsed && typeof parsed === "object") {
+            setMediaViewByBoard(parsed);
+          }
+        }
+      } catch {
+        // Ignore malformed preference
+      }
     }
     setPrefsHydrated(true);
+  }, []);
+
+  const handleMediaViewChange = useCallback((boardSlug: string, next: MediaPreferredLayout) => {
+    setMediaViewByBoard((prev) => {
+      const updated = { ...prev, [boardSlug]: next };
+      if (typeof window !== "undefined") {
+        localStorage.setItem("curio_media_view_by_board", JSON.stringify(updated));
+      }
+      return updated;
+    });
+  }, []);
+
+  const handleToggleMcpDomain = useCallback(async (domainId: McpDomainId, nextValue: boolean) => {
+    let previousScopes: McpScopeMap | null = null;
+    setMcpScopes((prev) => {
+      previousScopes = prev;
+      return { ...prev, [domainId]: nextValue };
+    });
+    setIsSavingMcp(true);
+    try {
+      const res = await apiFetch("/api/v1/mcp/scopes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [domainId]: nextValue }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.scopes) setMcpScopes(data.scopes);
+      } else if (previousScopes) {
+        setMcpScopes(previousScopes);
+      }
+    } catch {
+      if (previousScopes) setMcpScopes(previousScopes);
+    } finally {
+      setIsSavingMcp(false);
+    }
   }, []);
 
   const handleToggleWearLogs = () => {
@@ -615,6 +642,23 @@ export default function Home() {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [user, triggerClosetSync, triggerPurchaseHubSync, triggerChefSync]);
 
+  // Load Modular MCP domain scopes when user session initializes
+  useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+    apiFetch("/api/v1/mcp/scopes")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (mounted && data?.scopes) {
+          setMcpScopes(data.scopes);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
+
   // Infinite scroll observer for main feed
   useEffect(() => {
     if (activeListSlug !== null || !nextCursor || loadingMore) return;
@@ -690,46 +734,34 @@ export default function Home() {
           activeListDetails.ancestors?.some((a) => a.slug === "instagram-saves")))
   );
 
-  const activeDbDefaultLayout =
-    activeListSlug === null
-      ? null
-      : activeListDetails?.list.slug === activeListSlug
-      ? activeListDetails.list.defaultLayout
-      : lists.find((l) => l.slug === activeListSlug)?.defaultLayout ?? null;
+  const isClosetDescendant = Boolean(
+    activeListSlug &&
+      (activeListSlug === "closet" ||
+        activeListSlug === "wardrobe" ||
+        activeListSlug === "outfits" ||
+        activeListSlug.startsWith("closet-") ||
+        (activeListDetails?.list.slug === activeListSlug &&
+          activeListDetails.ancestors?.some((a) => a.slug === "closet")))
+  );
+
+  useEffect(() => {
+    setBoardWishOnly(false);
+  }, [activeListSlug]);
 
   useEffect(() => {
     if (!prefsHydrated) return;
+    const preferredMediaView: MediaPreferredLayout =
+      activeListSlug && mediaViewByBoard[activeListSlug] === "grid" ? "grid" : "stage";
     setLayoutEngine(
-      resolveBoardLayout(activeListSlug, wishOnly, activeDbDefaultLayout, isMyStuffDescendant)
+      resolveAutomaticBoardLayout({
+        slug: activeListSlug,
+        wishOnly,
+        isMyStuffDescendant,
+        isClosetDescendant,
+        preferredMediaView,
+      })
     );
-  }, [prefsHydrated, activeListSlug, wishOnly, activeDbDefaultLayout, isMyStuffDescendant]);
-
-  const handleLayoutChange = useCallback(
-    (nextLayout: LayoutEngineType) => {
-      setLayoutEngine(nextLayout);
-      if (typeof window !== "undefined") {
-        localStorage.setItem(
-          `curio_board_layout:${getLayoutPreferenceKey(activeListSlug, wishOnly)}`,
-          nextLayout
-        );
-      }
-      if (!activeListSlug) return;
-      setLists((prev) =>
-        prev.map((l) => (l.slug === activeListSlug ? { ...l, defaultLayout: nextLayout } : l))
-      );
-      setActiveListDetails((prev) =>
-        prev && prev.list.slug === activeListSlug
-          ? { ...prev, list: { ...prev.list, defaultLayout: nextLayout } }
-          : prev
-      );
-      apiFetch(`/api/v1/lists/${activeListSlug}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ defaultLayout: nextLayout }),
-      }).catch(() => {});
-    },
-    [activeListSlug, wishOnly]
-  );
+  }, [prefsHydrated, activeListSlug, wishOnly, isMyStuffDescendant, isClosetDescendant, mediaViewByBoard]);
 
   const handleOptimisticStart = useCallback((tempCard: CardData) => {
     setItems((prev) => [tempCard, ...prev]);
@@ -1065,7 +1097,7 @@ export default function Home() {
     };
   }, [activeListSlug, activeListDetails]);
 
-  const displayedBoardSections = useMemo(() => {
+  const unfilteredBoardSections = useMemo(() => {
     if (!activeListDetails?.sections) return [];
     if (activeListSlug === "books" && booksBoardData) {
       const q = bookSearchQuery.trim().toLowerCase();
@@ -1242,6 +1274,16 @@ export default function Home() {
     filmSearchQuery,
     filmSortBy,
   ]);
+
+  const displayedBoardSections = useMemo(() => {
+    if (!boardWishOnly) return unfilteredBoardSections;
+    return unfilteredBoardSections
+      .map((sec) => ({
+        ...sec,
+        items: sec.items.filter((it) => Boolean(it.save?.wishlist)),
+      }))
+      .filter((sec) => sec.items.length > 0);
+  }, [unfilteredBoardSections, boardWishOnly]);
 
   const orderedBookViews = useMemo(() => {
     if (activeListSlug === "books" && booksBoardData) {
@@ -1451,15 +1493,16 @@ export default function Home() {
         <button
           type="button"
           onClick={() => {
-            if (activeListSlug !== null) {
+            if (activeListSlug !== null || wishOnly) {
               setWishOnly(false);
               setActiveListSlug(null);
             }
           }}
-          className={`flex items-center gap-1.5 min-w-0 text-left ${
-            activeListSlug !== null ? "cursor-pointer" : "cursor-default"
+          className={`flex items-center gap-2 min-w-0 text-left ${
+            activeListSlug !== null || wishOnly ? "cursor-pointer" : "cursor-default"
           }`}
         >
+          <CurioMark size={18} variant="compact" />
           <span className="truncate font-serif text-sm text-foreground">
             {activeListDetails
               ? `← ${activeListDetails.list.title}`
@@ -1495,9 +1538,70 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Header */}
-      <div className="max-w-4xl mx-auto mb-7">
-        <div className="flex items-center justify-end gap-2.5 mb-3">
+      {/* Single Compact Masthead: H1 Framed Folio + Omnibox + MCP Vault + Global Utility Controls */}
+      <header className="max-w-6xl mx-auto mb-6 flex flex-wrap md:flex-nowrap items-center justify-between gap-3 sm:gap-4">
+        <button
+          type="button"
+          onClick={() => {
+            setWishOnly(false);
+            setActiveListSlug(null);
+          }}
+          className="order-1 shrink-0 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] rounded-lg"
+          title="Return to Curio Stream"
+        >
+          <CurioLogo variant="compact" />
+        </button>
+
+        <div className="order-3 md:order-2 w-full md:flex-1 md:max-w-xl">
+          <Omnibox
+            onCaptured={handleCaptured}
+            onOptimisticStart={handleOptimisticStart}
+            onOptimisticSettle={handleOptimisticSettle}
+            onSelectExistingSave={handleSelectExistingSave}
+            activeBoardContext={activeBoardContext}
+            onOpenTypeBuilder={() => setIsTypeBuilderOpen(true)}
+          />
+        </div>
+
+        <div className="order-2 md:order-3 flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            data-testid="mcp-vault-trigger"
+            onClick={() => setIsMcpSheetOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-mono border border-[#1B3B6F]/35 dark:border-[#6B93F5]/35 bg-[#1B3B6F]/[0.07] dark:bg-[#6B93F5]/12 text-[#1B3B6F] dark:text-[#6B93F5] hover:border-[#1B3B6F]/60 dark:hover:border-[#6B93F5]/60 transition-colors duration-150 cursor-pointer tabular-nums"
+            title="Configure Modular MCP Agent Access Scopes"
+          >
+            <Lock className="w-3 h-3" aria-hidden="true" />
+            <span>MCP · {MCP_DOMAIN_DEFS.filter((d) => mcpScopes[d.id]).length} Scopes</span>
+          </button>
+
+          {user && (
+            <button
+              type="button"
+              data-testid="sync-all-sources-btn"
+              onClick={triggerAllSourcesSync}
+              disabled={isSyncingAll}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-card border border-border text-muted-foreground hover:text-foreground transition-colors duration-150 cursor-pointer disabled:opacity-50"
+              title="Sync Closet, Purchase Hub, and external feeds"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAll ? "animate-spin" : ""}`} aria-hidden="true" />
+              <span>{isSyncingAll ? "Syncing..." : "Sync"}</span>
+            </button>
+          )}
+
+          {exhibitionItems.length > 0 && (
+            <button
+              type="button"
+              data-testid="open-exhibition-btn"
+              onClick={() => setIsExhibitionOpen(true)}
+              className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-card border border-border text-muted-foreground hover:text-foreground transition-colors duration-150 cursor-pointer"
+              title="Open full-screen horizontal Exhibition Deck"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-[var(--brand)]" aria-hidden="true" />
+              <span>Immerse</span>
+            </button>
+          )}
+
           <UserNav
             user={user}
             onOpenAuth={(tab = "login") => {
@@ -1518,29 +1622,11 @@ export default function Home() {
             }}
           />
         </div>
-
-        <div className="text-center">
-          <h1 className="text-4xl sm:text-5xl font-normal tracking-tight text-foreground font-serif">
-            Curio
-          </h1>
-        </div>
-      </div>
-
-      {/* Omnibox Universal Capture */}
-      <div className="mb-8 max-w-4xl mx-auto">
-        <Omnibox
-          onCaptured={handleCaptured}
-          onOptimisticStart={handleOptimisticStart}
-          onOptimisticSettle={handleOptimisticSettle}
-          onSelectExistingSave={handleSelectExistingSave}
-          activeBoardContext={activeBoardContext}
-          onOpenTypeBuilder={() => setIsTypeBuilderOpen(true)}
-        />
-      </div>
+      </header>
 
       {/* Optional Onboarding / Bring in your collections Banner */}
       {user && !user.onboardingCompleted && !dismissedOnboarding && (
-        <div className="max-w-4xl mx-auto mb-10 p-4 rounded-xl bg-card border border-[var(--brand)]/25 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-rest">
+        <div className="max-w-6xl mx-auto mb-8 p-4 rounded-xl bg-card border border-[var(--brand)]/25 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-rest">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-[var(--brand-soft)] flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4 text-[var(--brand)]" />
@@ -1574,124 +1660,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* My collections */}
+      {/* 3-Level Navigation Hierarchy: Level A (Root Tabs) · Level B (Sub-Boards) · Level C (Contextual Filters) */}
       <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-3.5 border-b border-border/80">
-          <div>
-            <h2 className="text-xl font-normal font-serif text-foreground">
-              My collections
-            </h2>
-            <p className="text-xs text-muted-foreground tabular-nums">
-              {wishOnly
-                ? `Showing ${visibleItems.length} of ${displayedWishlistCount} wishlisted saves`
-                : hiddenClosetCount === 0 &&
-                  hiddenMyStuffCount === 0 &&
-                  hiddenWearLogCount > 0
-                ? `Showing ${items.length} of ${displayedStreamTotal} saves · ${hiddenWearLogCount} ${
-                    hiddenWearLogCount === 1 ? "wear log" : "wear logs"
-                  } tucked in Outfits`
-                : (() => {
-                    const tucked: string[] = [];
-                    if (hiddenClosetCount > 0) tucked.push(`${hiddenClosetCount} Closet`);
-                    if (hiddenMyStuffCount > 0) tucked.push(`${hiddenMyStuffCount} My Stuff`);
-                    if (hiddenWearLogCount > 0) tucked.push(`${hiddenWearLogCount} wear logs`);
-                    return tucked.length > 0
-                      ? `Showing ${items.length} of ${displayedStreamTotal} saves · Tucked: ${tucked.join(" · ")}`
-                      : `Showing ${items.length} of ${displayedStreamTotal} total saves`;
-                  })()}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0 self-end sm:self-auto">
-            {activeListSlug === null && !wishOnly && ((closetCount ?? 0) > 0 || showCloset) && (
-              <button
-                type="button"
-                data-testid="toggle-closet-stream"
-                aria-pressed={showCloset}
-                onClick={handleToggleCloset}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border transition-colors cursor-pointer ${
-                  showCloset
-                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
-                    : "bg-card border-border text-muted-foreground hover:text-foreground"
-                }`}
-                title={showCloset ? "Hide Closet garments from All stream" : "Include Closet garments in All stream"}
-              >
-                <Shirt className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Closet{typeof closetCount === "number" ? ` (${closetCount})` : ""}</span>
-              </button>
-            )}
-            {activeListSlug === null && !wishOnly && ((myStuffCount ?? 0) > 0 || showMyStuff) && (
-              <button
-                type="button"
-                data-testid="toggle-mystuff-stream"
-                aria-pressed={showMyStuff}
-                onClick={handleToggleMyStuff}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border transition-colors cursor-pointer ${
-                  showMyStuff
-                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
-                    : "bg-card border-border text-muted-foreground hover:text-foreground"
-                }`}
-                title={showMyStuff ? "Hide My Stuff items from All stream" : "Include My Stuff items in All stream"}
-              >
-                <Package className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>My Stuff{typeof myStuffCount === "number" ? ` (${myStuffCount})` : ""}</span>
-              </button>
-            )}
-            {activeListSlug === null && !wishOnly && ((wearLogCount ?? 0) > 0 || showWearLogs) && (
-              <button
-                type="button"
-                data-testid="toggle-wear-logs"
-                aria-pressed={showWearLogs}
-                onClick={handleToggleWearLogs}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono border transition-colors cursor-pointer ${
-                  showWearLogs
-                    ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
-                    : "bg-card border-border text-muted-foreground hover:text-foreground"
-                }`}
-                title={
-                  showWearLogs
-                    ? "Tuck daily wear logs out of All stream"
-                    : "Include daily wear logs in All stream"
-                }
-              >
-                <Shirt className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Wear logs{typeof wearLogCount === "number" ? ` (${wearLogCount})` : ""}</span>
-              </button>
-            )}
-            {user && (
-              <button
-                type="button"
-                data-testid="sync-all-sources-btn"
-                onClick={triggerAllSourcesSync}
-                disabled={isSyncingAll}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-card border border-border text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50"
-                title="Sync Closet, Purchase Hub, and external feeds"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAll ? "animate-spin" : ""}`} aria-hidden="true" />
-                <span className="hidden sm:inline">{isSyncingAll ? "Syncing..." : "Sync"}</span>
-              </button>
-            )}
-            {exhibitionItems.length > 0 && (
-              <button
-                type="button"
-                data-testid="open-exhibition-btn"
-                onClick={() => setIsExhibitionOpen(true)}
-                className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono bg-card border border-border text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                title="Open full-screen horizontal Exhibition Deck"
-              >
-                <Maximize2 className="w-3.5 h-3.5 text-[var(--brand)]" aria-hidden="true" />
-                <span>Immerse</span>
-              </button>
-            )}
-            <ViewModeSwitcher
-              layout={layoutEngine}
-              density={cardDensity}
-              onLayoutChange={handleLayoutChange}
-              onDensityChange={setCardDensity}
-            />
-          </div>
-        </div>
-
-        {/* Curated Boards & Smart Lists Tabs Bar */}
+        {/* Level A: Top-Level Boards + Stream & Wishlist */}
         <ListTabsBar
           lists={lists}
           activeListSlug={activeListSlug}
@@ -1713,353 +1684,517 @@ export default function Home() {
           }}
         />
 
+        {/* Level C (Stream / Wishlist): Contextual Stream Inventory & Quiet Status */}
+        {activeListSlug === null && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-5 border-b border-border/70">
+            <p className="text-xs text-muted-foreground font-mono tabular-nums">
+              {wishOnly
+                ? `${visibleItems.length} of ${displayedWishlistCount} wishlisted saves`
+                : hiddenClosetCount === 0 &&
+                  hiddenMyStuffCount === 0 &&
+                  hiddenWearLogCount > 0
+                ? `${displayedStreamTotal} saves · ${hiddenWearLogCount} ${
+                    hiddenWearLogCount === 1 ? "wear log" : "wear logs"
+                  } tucked in Outfits`
+                : (() => {
+                    const tucked: string[] = [];
+                    if (hiddenClosetCount > 0) tucked.push(`${hiddenClosetCount} Closet`);
+                    if (hiddenMyStuffCount > 0) tucked.push(`${hiddenMyStuffCount} My Stuff`);
+                    if (hiddenWearLogCount > 0) tucked.push(`${hiddenWearLogCount} wear logs`);
+                    return tucked.length > 0
+                      ? `${displayedStreamTotal} saves · Tucked: ${tucked.join(" · ")}`
+                      : `${displayedStreamTotal} saves`;
+                  })()}
+            </p>
+
+            {!wishOnly && (
+              <div className="flex flex-wrap items-center gap-2">
+                {((closetCount ?? 0) > 0 || showCloset) && (
+                  <button
+                    type="button"
+                    data-testid="toggle-closet-stream"
+                    aria-pressed={showCloset}
+                    onClick={handleToggleCloset}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono border transition-colors duration-150 cursor-pointer ${
+                      showCloset
+                        ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                        : "bg-card border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                    title={showCloset ? "Hide Closet garments from Stream" : "Include Closet garments in Stream"}
+                  >
+                    <Shirt className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Closet{typeof closetCount === "number" ? ` (${closetCount})` : ""}</span>
+                  </button>
+                )}
+                {((myStuffCount ?? 0) > 0 || showMyStuff) && (
+                  <button
+                    type="button"
+                    data-testid="toggle-mystuff-stream"
+                    aria-pressed={showMyStuff}
+                    onClick={handleToggleMyStuff}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono border transition-colors duration-150 cursor-pointer ${
+                      showMyStuff
+                        ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                        : "bg-card border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                    title={showMyStuff ? "Hide My Stuff items from Stream" : "Include My Stuff items in Stream"}
+                  >
+                    <Package className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>My Stuff{typeof myStuffCount === "number" ? ` (${myStuffCount})` : ""}</span>
+                  </button>
+                )}
+                {((wearLogCount ?? 0) > 0 || showWearLogs) && (
+                  <button
+                    type="button"
+                    data-testid="toggle-wear-logs"
+                    aria-pressed={showWearLogs}
+                    onClick={handleToggleWearLogs}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono border transition-colors duration-150 cursor-pointer ${
+                      showWearLogs
+                        ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                        : "bg-card border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                    title={
+                      showWearLogs
+                        ? "Tuck daily wear logs out of Stream"
+                        : "Include daily wear logs in Stream"
+                    }
+                  >
+                    <Shirt className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Wear logs{typeof wearLogCount === "number" ? ` (${wearLogCount})` : ""}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Content View: Board View vs Taste Stream Feed */}
         {activeListSlug !== null ? (
           <div>
-            {/* Breadcrumb Navigation when viewing board */}
-            {activeListDetails && (
-              <BreadcrumbNav
-                ancestors={activeListDetails.ancestors || []}
-                currentTitle={activeListDetails.list.title}
-                onSelectBoard={(slug) => {
-                  setWishOnly(false);
-                  setActiveListSlug(slug);
-                }}
-                className="mb-4"
-              />
-            )}
+            {/* Level B: Sub-Boards Bar + Board Controls + 3-State Exposure Cue */}
+            {(() => {
+              const activeRootBoard =
+                resolveRootBoardForSlug(lists, activeListSlug) ||
+                (activeListDetails ? { ...activeListDetails.list, itemCount: activeListDetails.itemCount } : null);
+              const rootSubBoards = activeRootBoard
+                ? lists.filter((l) => l.parentId === activeRootBoard.id)
+                : [];
+              const boardMcpDomain = resolveBoardMcpDomain(activeListSlug);
+              const isBoardMcpExposed = Boolean(boardMcpDomain && mcpScopes[boardMcpDomain]);
+              const mediaMode: MediaPreferredLayout =
+                mediaViewByBoard[activeListSlug] === "grid" ? "grid" : "stage";
+              const activeWishText =
+                activeListSlug === "books"
+                  ? "Want to read"
+                  : activeListSlug === "films"
+                  ? "Want to watch"
+                  : activeListSlug === "music"
+                  ? "Want to listen"
+                  : isRecipesDescendant
+                  ? "Want to cook"
+                  : activeListSlug === "granada"
+                  ? "Want to visit"
+                  : wishLabel(activeBoardContext?.typePathPrefix, activeBoardContext?.coreType);
 
-            {/* Board Header details (unboxed Swiss gallery ledger) */}
-            {activeListDetails && (
-              <div className="mb-8 pb-5 border-b border-border/80">
-                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                  <div>
-                    <h2 className="text-3xl font-normal font-serif tracking-tight text-foreground">
-                      {activeListDetails.list.title}
-                    </h2>
-                    {activeListDetails.list.description && (
-                      <p className="text-sm font-serif italic text-muted-foreground mt-1.5 max-w-xl">
-                        {activeListDetails.list.description}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-                    {(activeListSlug === "closet" ||
-                      activeListSlug === "wardrobe" ||
-                      activeListSlug === "outfits" ||
-                      Boolean(activeListDetails.ancestors?.some((a) => a.slug === "closet"))) && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => triggerClosetSync(true)}
-                          disabled={isSyncingCloset}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloset ? "animate-spin" : ""}`} />
-                          <span>{isSyncingCloset ? "Syncing Closet..." : "Sync Closet"}</span>
-                        </button>
-                        <a
-                          href={`/closet/#${activeListSlug === "outfits" ? "outfits" : "closet"}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
-                        >
-                          <span>Open Closet ↗</span>
-                        </a>
-                      </>
-                    )}
-                    {activeListSlug === "books" && (
-                      <>
-                        {booksBoardData && (booksBoardData.duplicateCount > 0 || booksBoardData.hygieneIssueCount > 0) && (
-                          <button
-                            type="button"
-                            data-testid="fix-book-duplicates-btn"
-                            disabled={isDedupingBooks}
-                            onClick={async () => {
-                              setIsDedupingBooks(true);
-                              setBooksBannerMsg(null);
-                              try {
-                                const res = await apiFetch("/api/v1/library/deduplicate", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({}),
-                                });
-                                const d = await res.json().catch(() => ({}));
-                                if (res.ok) {
-                                  const parts: string[] = [];
-                                  if (d.mergedSavesRemoved > 0) {
-                                    parts.push(`merged ${d.mergedSavesRemoved} duplicates`);
-                                  }
-                                  if (d.cleanedNotesCount > 0) {
-                                    parts.push(`cleaned ${d.cleanedNotesCount} Goodreads notes/tags`);
-                                  }
-                                  if (d.reclassifiedReferenceCount > 0) {
-                                    parts.push(`moved ${d.reclassifiedReferenceCount} travel/study books to My Stuff`);
-                                  }
-                                  setBooksBannerMsg(
-                                    parts.length > 0
-                                      ? `Library cleaned: ${parts.join(", ")}.`
-                                      : "Library is already clean."
-                                  );
-                                  await Promise.all([
-                                    fetchItems({ reset: true }),
-                                    fetchLists(),
-                                    refreshActiveBoard("books"),
-                                  ]);
-                                }
-                              } finally {
-                                setIsDedupingBooks(false);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 hover:border-amber-500 transition cursor-pointer disabled:opacity-50"
-                          >
-                            {isDedupingBooks && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                            <span>
-                              Clean &amp; Deduplicate (
-                              {booksBoardData.duplicateCount + booksBoardData.hygieneIssueCount})
-                            </span>
-                          </button>
-                        )}
-                        {booksBoardData && booksBoardData.missingMetadataCount > 0 && (
-                          <button
-                            type="button"
-                            disabled={isEnrichingBooks}
-                            onClick={async () => {
-                              setIsEnrichingBooks(true);
-                              setBooksBannerMsg(null);
-                              try {
-                                const res = await apiFetch("/api/v1/library/enrich", { method: "POST" });
-                                const d = await res.json().catch(() => ({}));
-                                if (res.ok) {
-                                  setBooksBannerMsg(
-                                    `Enriched ${d.enrichedCount ?? 0} of ${d.totalChecked ?? 0} books with covers, authors, and summaries.`
-                                  );
-                                  await Promise.all([
-                                    fetchItems({ reset: true }),
-                                    refreshActiveBoard("books"),
-                                  ]);
-                                }
-                              } finally {
-                                setIsEnrichingBooks(false);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
-                          >
-                            {isEnrichingBooks ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                            )}
-                            <span>Enrich Covers ({booksBoardData.missingMetadataCount})</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setIsLogBookOpen(true)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Log Read Book</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            apiFetch("/api/v1/library/goodreads-sync")
-                              .then((r) => (r.ok ? r.json() : null))
-                              .then((d) => {
-                                if (d) setGoodreadsStatus(d);
-                              })
-                              .catch(() => {});
-                            setIsGoodreadsSyncOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Sync Goodreads</span>
-                        </button>
-                      </>
-                    )}
-                    {activeListSlug === "films" && (
-                      <>
-                        {filmsBoardData && filmsBoardData.missingFilmMetadataCount > 0 && (
-                          <button
-                            type="button"
-                            disabled={isEnrichingFilms}
-                            onClick={async () => {
-                              setIsEnrichingFilms(true);
-                              setFilmsBannerMsg(null);
-                              try {
-                                const res = await apiFetch("/api/v1/cinema/enrich", { method: "POST" });
-                                const d = await res.json().catch(() => ({}));
-                                if (res.ok) {
-                                  setFilmsBannerMsg(
-                                    `Enriched ${d.enrichedCount ?? 0} of ${d.totalChecked ?? 0} films with directors, genres, and posters.`
-                                  );
-                                  await Promise.all([
-                                    fetchItems({ reset: true }),
-                                    fetchLists(),
-                                    refreshActiveBoard("films"),
-                                  ]);
-                                }
-                              } finally {
-                                setIsEnrichingFilms(false);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
-                          >
-                            {isEnrichingFilms ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                            )}
-                            <span>Enrich Films ({filmsBoardData.missingFilmMetadataCount})</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setIsLogFilmOpen(true)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 hover:opacity-90 transition cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Log Film</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            apiFetch("/api/v1/cinema/letterboxd-sync")
-                              .then((r) => (r.ok ? r.json() : null))
-                              .then((d) => {
-                                if (d) setLetterboxdStatus(d);
-                              })
-                              .catch(() => {});
-                            setIsLetterboxdSyncOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Sync Letterboxd</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            apiFetch("/api/v1/cinema/filmaffinity-sync")
-                              .then((r) => (r.ok ? r.json() : null))
-                              .then((d) => {
-                                if (d) setFilmaffinityStatus(d);
-                              })
-                              .catch(() => {});
-                            setIsFilmAffinitySyncOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
-                        >
-                          <Film className="w-3.5 h-3.5" />
-                          <span>Sync FilmAffinity</span>
-                        </button>
-                      </>
-                    )}
-                    {isMyStuffDescendant && (
-                      <>
-                        <button
-                          type="button"
-                          data-testid="sync-purchase-hub-btn"
-                          onClick={() => triggerPurchaseHubSync(true)}
-                          disabled={isSyncingPurchaseHub}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isSyncingPurchaseHub ? "animate-spin" : ""}`} />
-                          <span>{isSyncingPurchaseHub ? "Syncing My Stuff..." : "Sync My Stuff"}</span>
-                        </button>
-                        <a
-                          href="/my-stuff/"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
-                        >
-                          <span>Open Purchase Hub ↗</span>
-                        </a>
-                      </>
-                    )}
-                    {isRecipesDescendant && (
-                      <>
-                        <button
-                          type="button"
-                          data-testid="sync-chef-btn"
-                          onClick={() => triggerChefSync(true)}
-                          disabled={isSyncingChef}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer disabled:opacity-50"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isSyncingChef ? "animate-spin" : ""}`} />
-                          <span>{isSyncingChef ? "Syncing Chef..." : "Sync Chef"}</span>
-                        </button>
-                        <a
-                          href="/chef/"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
-                        >
-                          <span>Open Chef ↗</span>
-                        </a>
-                      </>
-                    )}
-                    {isInstagramDescendant && (
+              const boardRightActions = activeListDetails ? (
+                <>
+                  {isBoardMcpExposed && (
+                    <button
+                      type="button"
+                      onClick={() => setIsMcpSheetOpen(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono border border-[#1B3B6F]/35 dark:border-[#6B93F5]/35 bg-[#1B3B6F]/[0.07] dark:bg-[#6B93F5]/12 text-[#1B3B6F] dark:text-[#6B93F5] cursor-pointer"
+                      title="Agents can read this board under your current Modular MCP scope"
+                    >
+                      <span>MCP · Scoped</span>
+                    </button>
+                  )}
+                  {(activeListSlug === "closet" ||
+                    activeListSlug === "wardrobe" ||
+                    activeListSlug === "outfits" ||
+                    Boolean(activeListDetails.ancestors?.some((a) => a.slug === "closet"))) && (
+                    <>
                       <button
                         type="button"
-                        data-testid="sync-instagram-btn"
-                        onClick={() => {
-                          apiFetch("/api/v1/sync/instagram")
-                            .then((r) => (r.ok ? r.json() : null))
-                            .then((d) => {
-                              if (d) setInstagramStatus(d);
-                            })
-                            .catch(() => {});
-                          setIsInstagramSyncOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
+                        onClick={() => triggerClosetSync(true)}
+                        disabled={isSyncingCloset}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer disabled:opacity-50"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Sync Instagram</span>
-                        {(instagramStatus?.authStatus === "expired" ||
-                          instagramStatus?.authStatus === "challenge") && (
-                          <span className="w-2 h-2 rounded-full bg-amber-500" title="Session refresh needed" />
-                        )}
+                        <RefreshCw className={`w-3 h-3 ${isSyncingCloset ? "animate-spin" : ""}`} />
+                        <span>{isSyncingCloset ? "Syncing Closet..." : "Sync Closet"}</span>
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingBoard(activeListDetails.list);
-                        setIsCreateListOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      <span>Edit Board</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingBoard(null);
-                        setCreateListParentId(activeListDetails.list.id);
-                        setIsCreateListOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition cursor-pointer"
-                    >
-                      <span>+ Sub-Board</span>
-                    </button>
-                    {activeListDetails.list.visibility === "PUBLIC" && (
                       <a
-                        href={getApiUrl(`/list/${activeListDetails.list.slug}`)}
+                        href={`/closet/#${activeListSlug === "outfits" ? "outfits" : "closet"}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 text-neutral-800 dark:text-neutral-200 transition"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors"
                       >
-                        <span>View Public Board ↗</span>
+                        <span>Open Closet ↗</span>
                       </a>
+                    </>
+                  )}
+                  {activeListSlug === "books" && (
+                    <>
+                      {booksBoardData && (booksBoardData.duplicateCount > 0 || booksBoardData.hygieneIssueCount > 0) && (
+                        <button
+                          type="button"
+                          data-testid="fix-book-duplicates-btn"
+                          disabled={isDedupingBooks}
+                          onClick={async () => {
+                            setIsDedupingBooks(true);
+                            setBooksBannerMsg(null);
+                            try {
+                              const res = await apiFetch("/api/v1/library/deduplicate", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({}),
+                              });
+                              const d = await res.json().catch(() => ({}));
+                              if (res.ok) {
+                                const parts: string[] = [];
+                                if (d.mergedSavesRemoved > 0) {
+                                  parts.push(`merged ${d.mergedSavesRemoved} duplicates`);
+                                }
+                                if (d.cleanedNotesCount > 0) {
+                                  parts.push(`cleaned ${d.cleanedNotesCount} Goodreads notes/tags`);
+                                }
+                                if (d.reclassifiedReferenceCount > 0) {
+                                  parts.push(`moved ${d.reclassifiedReferenceCount} travel/study books to My Stuff`);
+                                }
+                                setBooksBannerMsg(
+                                  parts.length > 0
+                                    ? `Library cleaned: ${parts.join(", ")}.`
+                                    : "Library is already clean."
+                                );
+                                await Promise.all([
+                                  fetchItems({ reset: true }),
+                                  fetchLists(),
+                                  refreshActiveBoard("books"),
+                                ]);
+                              }
+                            } finally {
+                              setIsDedupingBooks(false);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 hover:border-amber-500 transition cursor-pointer disabled:opacity-50"
+                        >
+                          {isDedupingBooks && <Loader2 className="w-3 h-3 animate-spin" />}
+                          <span>
+                            Clean &amp; Deduplicate (
+                            {booksBoardData.duplicateCount + booksBoardData.hygieneIssueCount})
+                          </span>
+                        </button>
+                      )}
+                      {booksBoardData && booksBoardData.missingMetadataCount > 0 && (
+                        <button
+                          type="button"
+                          disabled={isEnrichingBooks}
+                          onClick={async () => {
+                            setIsEnrichingBooks(true);
+                            setBooksBannerMsg(null);
+                            try {
+                              const res = await apiFetch("/api/v1/library/enrich", { method: "POST" });
+                              const d = await res.json().catch(() => ({}));
+                              if (res.ok) {
+                                setBooksBannerMsg(
+                                  `Enriched ${d.enrichedCount ?? 0} of ${d.totalChecked ?? 0} books with covers, authors, and summaries.`
+                                );
+                                await Promise.all([
+                                  fetchItems({ reset: true }),
+                                  refreshActiveBoard("books"),
+                                ]);
+                              }
+                            } finally {
+                              setIsEnrichingBooks(false);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {isEnrichingBooks ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3 h-3 text-[var(--brand)]" />
+                          )}
+                          <span>Enrich Covers ({booksBoardData.missingMetadataCount})</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsLogBookOpen(true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-[var(--brand)] text-[var(--brand-foreground)] hover:opacity-90 transition-opacity cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Log Read Book</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          apiFetch("/api/v1/library/goodreads-sync")
+                            .then((r) => (r.ok ? r.json() : null))
+                            .then((d) => {
+                              if (d) setGoodreadsStatus(d);
+                            })
+                            .catch(() => {});
+                          setIsGoodreadsSyncOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Sync Goodreads</span>
+                      </button>
+                    </>
+                  )}
+                  {activeListSlug === "films" && (
+                    <>
+                      {filmsBoardData && filmsBoardData.missingFilmMetadataCount > 0 && (
+                        <button
+                          type="button"
+                          disabled={isEnrichingFilms}
+                          onClick={async () => {
+                            setIsEnrichingFilms(true);
+                            setFilmsBannerMsg(null);
+                            try {
+                              const res = await apiFetch("/api/v1/cinema/enrich", { method: "POST" });
+                              const d = await res.json().catch(() => ({}));
+                              if (res.ok) {
+                                setFilmsBannerMsg(
+                                  `Enriched ${d.enrichedCount ?? 0} of ${d.totalChecked ?? 0} films with directors, genres, and posters.`
+                                );
+                                await Promise.all([
+                                  fetchItems({ reset: true }),
+                                  fetchLists(),
+                                  refreshActiveBoard("films"),
+                                ]);
+                              }
+                            } finally {
+                              setIsEnrichingFilms(false);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {isEnrichingFilms ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3 h-3 text-[var(--brand)]" />
+                          )}
+                          <span>Enrich Films ({filmsBoardData.missingFilmMetadataCount})</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsLogFilmOpen(true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-[var(--brand)] text-[var(--brand-foreground)] hover:opacity-90 transition-opacity cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Log Film</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          apiFetch("/api/v1/cinema/letterboxd-sync")
+                            .then((r) => (r.ok ? r.json() : null))
+                            .then((d) => {
+                              if (d) setLetterboxdStatus(d);
+                            })
+                            .catch(() => {});
+                          setIsLetterboxdSyncOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Sync Letterboxd</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          apiFetch("/api/v1/cinema/filmaffinity-sync")
+                            .then((r) => (r.ok ? r.json() : null))
+                            .then((d) => {
+                              if (d) setFilmaffinityStatus(d);
+                            })
+                            .catch(() => {});
+                          setIsFilmAffinitySyncOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer"
+                      >
+                        <Film className="w-3 h-3" />
+                        <span>Sync FilmAffinity</span>
+                      </button>
+                    </>
+                  )}
+                  {isMyStuffDescendant && (
+                    <>
+                      <button
+                        type="button"
+                        data-testid="sync-purchase-hub-btn"
+                        onClick={() => triggerPurchaseHubSync(true)}
+                        disabled={isSyncingPurchaseHub}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isSyncingPurchaseHub ? "animate-spin" : ""}`} />
+                        <span>{isSyncingPurchaseHub ? "Syncing My Stuff..." : "Sync My Stuff"}</span>
+                      </button>
+                      <a
+                        href="/my-stuff/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors"
+                      >
+                        <span>Open Purchase Hub ↗</span>
+                      </a>
+                    </>
+                  )}
+                  {isRecipesDescendant && (
+                    <>
+                      <button
+                        type="button"
+                        data-testid="sync-chef-btn"
+                        onClick={() => triggerChefSync(true)}
+                        disabled={isSyncingChef}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isSyncingChef ? "animate-spin" : ""}`} />
+                        <span>{isSyncingChef ? "Syncing Chef..." : "Sync Chef"}</span>
+                      </button>
+                      <a
+                        href="/chef/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors"
+                      >
+                        <span>Open Chef ↗</span>
+                      </a>
+                    </>
+                  )}
+                  {isInstagramDescendant && (
+                    <button
+                      type="button"
+                      data-testid="sync-instagram-btn"
+                      onClick={() => {
+                        apiFetch("/api/v1/sync/instagram")
+                          .then((r) => (r.ok ? r.json() : null))
+                          .then((d) => {
+                            if (d) setInstagramStatus(d);
+                          })
+                          .catch(() => {});
+                        setIsInstagramSyncOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Sync Instagram</span>
+                      {(instagramStatus?.authStatus === "expired" ||
+                        instagramStatus?.authStatus === "challenge") && (
+                        <span className="w-2 h-2 rounded-full bg-amber-500" title="Session refresh needed" />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingBoard(activeListDetails.list);
+                      setIsCreateListOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors cursor-pointer"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    <span>Edit Board</span>
+                  </button>
+                  {activeListDetails.list.visibility === "PUBLIC" && (
+                    <a
+                      href={getApiUrl(`/list/${activeListDetails.list.slug}`)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono bg-card border border-border hover:text-foreground text-muted-foreground transition-colors"
+                    >
+                      <span>View Public Board ↗</span>
+                    </a>
+                  )}
+                </>
+              ) : null;
+
+              return (
+                <>
+                  {activeRootBoard && (
+                    <SubBoardsBar
+                      rootBoard={activeRootBoard}
+                      subBoards={rootSubBoards}
+                      activeListSlug={activeListSlug}
+                      isPublic={activeListDetails?.list.visibility === "PUBLIC"}
+                      onSelectList={(slug) => {
+                        setWishOnly(false);
+                        setActiveListSlug(slug);
+                      }}
+                      onAddSubBoard={() => {
+                        setEditingBoard(null);
+                        setCreateListParentId(activeListDetails?.list.id || activeRootBoard.id);
+                        setIsCreateListOpen(true);
+                      }}
+                      rightActions={boardRightActions}
+                    />
+                  )}
+
+                  {activeListDetails?.list.description && (
+                    <p className="text-xs sm:text-sm font-serif italic text-muted-foreground -mt-1 mb-4 max-w-2xl">
+                      {activeListDetails.list.description}
+                    </p>
+                  )}
+
+                  {/* Level C: Per-Board Filter Strip & Scoped Media Stage Toggle */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <button
+                      type="button"
+                      data-testid="toggle-board-wish"
+                      aria-pressed={boardWishOnly}
+                      onClick={() => setBoardWishOnly((v) => !v)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono border transition-colors duration-150 cursor-pointer ${
+                        boardWishOnly
+                          ? "bg-[var(--brand)] text-[var(--brand-foreground)] border-[var(--brand)]"
+                          : "bg-card border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Heart
+                        className={`w-3 h-3 ${boardWishOnly ? "fill-current" : ""}`}
+                        aria-hidden="true"
+                      />
+                      <span>{activeWishText}</span>
+                    </button>
+
+                    {supportsMediaStageToggle(activeListSlug) && (
+                      <div
+                        data-testid="media-stage-grid-toggle"
+                        className="inline-flex items-center p-0.5 rounded-full bg-card border border-border text-xs font-mono"
+                      >
+                        {(["stage", "grid"] as const).map((mode) => {
+                          const active = mediaMode === mode;
+                          const stageLabel =
+                            activeListSlug === "films"
+                              ? "Poster Wall"
+                              : activeListSlug === "music"
+                              ? "Vinyl Crate"
+                              : "Press Stage";
+                          return (
+                            <button
+                              key={mode}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => handleMediaViewChange(activeListSlug, mode)}
+                              className={`px-3 py-1 rounded-full transition-colors duration-150 cursor-pointer ${
+                                active
+                                  ? "bg-[var(--brand)] text-[var(--brand-foreground)]"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {mode === "stage" ? stageLabel : "2D Grid"}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
-                </div>
-              </div>
-            )}
+                </>
+              );
+            })()}
 
             {/* Books Sub-Board Filter Bar & Telemetry (when on Books board) */}
             {activeListSlug === "books" && booksBoardData && (
@@ -2465,8 +2600,9 @@ export default function Home() {
                   childrenBoards={activeListDetails.children}
                   layout={layoutEngine}
                   density={cardDensity}
+                  hideSubBoardsFooter={true}
                   hideShelfBuckets={
-                    (activeListSlug === "books" || activeListSlug === "films") &&
+                    (activeListSlug === "books" || activeListSlug === "films" || activeListSlug === "music") &&
                     !(activeListDetails.children && activeListDetails.children.length > 0)
                   }
                   shelfLabelOverride={
@@ -2474,6 +2610,8 @@ export default function Home() {
                       ? `AUTHOR · ${bookAuthorFilter.toUpperCase()}`
                       : activeListSlug === "books"
                       ? "PERSONAL LIBRARY"
+                      : activeListSlug === "music"
+                      ? "CURIO VINYL CRATE"
                       : undefined
                   }
                   galleryLabelOverride={
@@ -3079,7 +3217,7 @@ export default function Home() {
       <BoardFilterSheet
         isOpen={isMobileFilterOpen}
         onClose={() => setIsMobileFilterOpen(false)}
-        title={activeListDetails ? activeListDetails.list.title : "Collections & View"}
+        title={activeListDetails ? activeListDetails.list.title : "Collections & Filters"}
         subtitle={
           activeListDetails
             ? `${activeListDetails.itemCount} items`
@@ -3087,19 +3225,38 @@ export default function Home() {
         }
       >
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
-            <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              Layout &amp; Density
-            </span>
-            <ViewModeSwitcher
-              layout={layoutEngine}
-              density={cardDensity}
-              onLayoutChange={(next) => {
-                handleLayoutChange(next);
-              }}
-              onDensityChange={setCardDensity}
-            />
-          </div>
+          {activeListSlug && supportsMediaStageToggle(activeListSlug) && (
+            <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+              <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                Media Display
+              </span>
+              <div className="inline-flex items-center p-0.5 rounded-full bg-card border border-border text-xs font-mono">
+                {(["stage", "grid"] as const).map((mode) => {
+                  const active = (mediaViewByBoard[activeListSlug] ?? "stage") === mode;
+                  const stageText =
+                    activeListSlug === "films"
+                      ? "Poster Wall"
+                      : activeListSlug === "music"
+                      ? "Vinyl Crate"
+                      : "Press Stage";
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => handleMediaViewChange(activeListSlug, mode)}
+                      className={`px-2.5 py-1 rounded-full transition-colors cursor-pointer ${
+                        active
+                          ? "bg-[var(--brand)] text-[var(--brand-foreground)]"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {mode === "stage" ? stageText : "2D Grid"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             {activeListSlug === null && !wishOnly && ((closetCount ?? 0) > 0 || showCloset) && (
@@ -3146,6 +3303,20 @@ export default function Home() {
             )}
           </div>
 
+          <button
+            type="button"
+            onClick={() => {
+              setIsMobileFilterOpen(false);
+              setIsMcpSheetOpen(true);
+            }}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-mono border border-[#1B3B6F]/35 dark:border-[#6B93F5]/35 bg-[#1B3B6F]/[0.07] dark:bg-[#6B93F5]/12 text-[#1B3B6F] dark:text-[#6B93F5] cursor-pointer"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>
+              MCP · {MCP_DOMAIN_DEFS.filter((d) => mcpScopes[d.id]).length} Scopes
+            </span>
+          </button>
+
           {exhibitionItems.length > 0 && (
             <button
               type="button"
@@ -3161,6 +3332,14 @@ export default function Home() {
           )}
         </div>
       </BoardFilterSheet>
+
+      <McpVaultSheet
+        isOpen={isMcpSheetOpen}
+        scopes={mcpScopes}
+        saving={isSavingMcp}
+        onToggleDomain={handleToggleMcpDomain}
+        onClose={() => setIsMcpSheetOpen(false)}
+      />
 
       {/* Immersive Mobile & Desktop Scroll-Snap Exhibition Deck */}
       <BoardExhibitionModal

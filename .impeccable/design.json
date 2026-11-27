@@ -1,20 +1,32 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-26T17:50:00.000Z",
+  "generatedAt": "2026-11-27T17:00:00.000Z",
   "title": "Design System: Curio",
   "extensions": {
     "colorMeta": {
-      "cognac-sienna": {
+      "viridian-library": {
         "role": "primary",
-        "displayName": "Cognac Sienna",
-        "canonical": "#8C5A3C",
-        "tonalRamp": ["#2D1B11", "#462B1C", "#68412A", "#8C5A3C", "#A87454", "#C89572", "#DFBCA3", "#F4E8DF"]
+        "displayName": "Viridian Library",
+        "canonical": "#1B5E46",
+        "tonalRamp": ["#092219", "#10382A", "#154B38", "#1B5E46", "#2B7A5D", "#4CA382", "#86C8AE", "#D9EFE6"]
       },
-      "cognac-sienna-glow": {
+      "viridian-glow": {
         "role": "primary",
-        "displayName": "Cognac Sienna Glow",
-        "canonical": "#C89572",
-        "tonalRamp": ["#3B2619", "#593A27", "#7F5338", "#A36E4E", "#C89572", "#D9B093", "#E9CDB9", "#F7EDE5"]
+        "displayName": "Viridian Library Glow",
+        "canonical": "#4CA382",
+        "tonalRamp": ["#0D2A20", "#174636", "#23644E", "#348469", "#4CA382", "#72BC9E", "#A3D6C0", "#E3F5ED"]
+      },
+      "prussian-mcp": {
+        "role": "secondary",
+        "displayName": "Prussian Ink (MCP)",
+        "canonical": "#1B3B6F",
+        "tonalRamp": ["#0B172C", "#122647", "#18335F", "#1B3B6F", "#2F5696", "#6B93F5", "#9CB9F9", "#E5EEFD"]
+      },
+      "cobalt-mcp-glow": {
+        "role": "secondary",
+        "displayName": "Archival Cobalt Glow (MCP)",
+        "canonical": "#6B93F5",
+        "tonalRamp": ["#111D3B", "#1A2E5C", "#274386", "#3E62B8", "#6B93F5", "#8FAEF7", "#BACDFB", "#EBF1FE"]
       },
       "gallery-wall": {
         "role": "neutral",
@@ -34,84 +46,42 @@
         "canonical": "#1C1A17",
         "tonalRamp": ["#121110", "#1C1A17", "#2E2B26", "#4A453D", "#716B62", "#9D968B", "#CBC5BA", "#EFECE6"]
       },
-      "warm-stone": {
-        "role": "neutral",
-        "displayName": "Warm Stone Muted",
-        "canonical": "#716B62",
-        "tonalRamp": ["#23211E", "#383530", "#545049", "#716B62", "#908A80", "#B2ACA2", "#D4CFC7", "#EEEDE9"]
-      },
       "obsidian-wall": {
         "role": "neutral",
         "displayName": "Obsidian Gallery Wall",
         "canonical": "#121110",
         "tonalRamp": ["#0A0909", "#121110", "#1C1A17", "#2C2925", "#44403A", "#686259", "#9A9387", "#D8D3CA"]
-      },
-      "bindery-stage": {
-        "role": "secondary",
-        "displayName": "Dark Bindery Stage",
-        "canonical": "#201819",
-        "tonalRamp": ["#110C0D", "#201819", "#342628", "#4D393C", "#6E5458", "#96797D", "#C1AAAC", "#EAE0E1"]
       }
     },
     "typographyMeta": {
-      "display": {
-        "displayName": "Display Serif",
-        "purpose": "Primary page mastheads and board hero titles."
-      },
-      "headline": {
-        "displayName": "Editorial Headline",
-        "purpose": "Active board headings and Library/Cinema section headers."
-      },
-      "title": {
-        "displayName": "Artifact Title",
-        "purpose": "Single-object silhouettes and Lightbox/Exhibition titles."
-      },
-      "body": {
-        "displayName": "Gallery UI Sans",
-        "purpose": "Curator notes, descriptions, menus, and form controls."
-      },
-      "label": {
-        "displayName": "Tabular Mono Index",
-        "purpose": "Counts, prices, durations, tick rulers, and compact action chips."
-      },
-      "micro": {
-        "displayName": "Plate & Axis Caption",
-        "purpose": "10px uppercase spine/badge annotations and gallery plate indices."
-      }
+      "display": { "displayName": "Display Serif", "purpose": "Masthead brand lockup and board headlines." },
+      "headline": { "displayName": "Editorial Headline", "purpose": "Active board and specialty archive titles." },
+      "title": { "displayName": "Artifact Title", "purpose": "Single-object cards and inspector sheets." },
+      "body": { "displayName": "Gallery UI Sans", "purpose": "Notes, metadata labels, and navigation controls." },
+      "label": { "displayName": "Tabular Mono Index", "purpose": "Counts, currencies, biometrics, and tick sliders." },
+      "micro": { "displayName": "Plate & Axis Caption", "purpose": "10px uppercase archival annotations." }
     },
     "shadows": [
       {
         "name": "gallery-rest",
-        "value": "inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(28, 26, 23, 0.05), 0 6px 18px -4px rgba(28, 26, 23, 0.06)",
-        "purpose": "Resting gallery card stock lifted softly off Warm Gallery Wall."
+        "value": "inset 0 1px 0 rgb(255 255 255 / 1), 0 1px 2px rgb(24 22 18 / 0.05), 0 10px 26px -6px rgb(24 22 18 / 0.10)",
+        "purpose": "Elevated card stock resting over Warm Gallery plaster."
       },
       {
         "name": "gallery-lift",
-        "value": "inset 0 1px 0 rgba(255, 255, 255, 0.96), 0 4px 10px -2px rgba(28, 26, 23, 0.07), 0 16px 32px -10px rgba(28, 26, 23, 0.13)",
-        "purpose": "Interactive card hover lift at translateY(-2.5px) and 3D stage frame."
+        "value": "inset 0 1px 0 rgb(255 255 255 / 1), 0 4px 12px rgb(24 22 18 / 0.08), 0 22px 42px -10px rgb(24 22 18 / 0.16)",
+        "purpose": "Hover/focus lift at translateY(-2.5px)."
       },
       {
         "name": "gallery-float",
-        "value": "0 20px 44px -12px rgba(28, 26, 23, 0.18), 0 0 0 1px rgba(28, 26, 23, 0.06)",
-        "purpose": "Floating native <dialog> sheets and frosted exhibition overlays."
+        "value": "inset 0 1px 0 rgb(255 255 255 / 1), 0 6px 16px rgb(24 22 18 / 0.08), 0 28px 56px -12px rgb(24 22 18 / 0.20)",
+        "purpose": "Floating native <dialog> panels and MCP vault drawers."
       }
     ],
     "motion": [
-      {
-        "name": "ease-gallery",
-        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
-        "purpose": "Measured decelerated lift on card hover and mobile bar slide transitions."
-      },
-      {
-        "name": "duration-hover",
-        "value": "180ms",
-        "purpose": "Gallery card lift and hover-reveal action fade timing."
-      },
-      {
-        "name": "duration-focus",
-        "value": "150ms",
-        "purpose": "Micro-interactions on filter chips, buttons, and hairline ruler ticks."
-      }
+      { "name": "ease-out", "value": "cubic-bezier(0.23, 1, 0.32, 1)", "purpose": "Measured decelerated lift and modal reveal." },
+      { "name": "duration-hover", "value": "180ms", "purpose": "Card lift and hover chrome fade timing." },
+      { "name": "duration-focus", "value": "150ms", "purpose": "Tab underline, chip press, and ruler transitions." }
     ],
     "breakpoints": [
       { "name": "sm", "value": "640px" },
@@ -122,92 +92,69 @@
   },
   "components": [
     {
+      "name": "H1 Framed Folio Lockup",
+      "kind": "nav",
+      "refersTo": "card-gallery",
+      "description": "H1 Framed Folio mark (corner vault perimeter + sliding Viridian folio) paired with Option B Curio typography.",
+      "html": "<div class=\"ds-brand\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 36 36\" fill=\"none\" aria-hidden=\"true\"><path d=\"M4 11V4H11M25 4H32V11M4 25V32H11M25 32H32V25\" stroke=\"#1C1A17\" stroke-width=\"1.65\" stroke-linecap=\"square\"/><rect x=\"9.5\" y=\"11.4\" width=\"13.2\" height=\"2.2\" rx=\"0.5\" fill=\"#1C1A17\"/><rect x=\"9.5\" y=\"16.1\" width=\"23.5\" height=\"3.8\" rx=\"0.6\" fill=\"#1B5E46\"/><rect x=\"9.5\" y=\"22.4\" width=\"13.2\" height=\"2.2\" rx=\"0.5\" fill=\"#1C1A17\"/></svg><span class=\"ds-wordmark\">Cu<em>r</em>io</span></div>",
+      "css": ".ds-brand { display: inline-flex; align-items: center; gap: 8px; color: #1C1A17; } .ds-wordmark { font-family: Georgia, serif; font-size: 24px; line-height: 1; letter-spacing: -0.025em; } .ds-wordmark em { font-style: italic; }"
+    },
+    {
+      "name": "Viridian Primary Pill",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Human curation primary action (Immerse, Save Board, Open Exhibition).",
+      "html": "<button type=\"button\" class=\"ds-btn-viridian\">Immerse</button>",
+      "css": ".ds-btn-viridian { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 9999px; border: 1px solid #1B5E46; background: #1B5E46; color: #F2EFE9; font-family: ui-monospace, monospace; font-size: 11px; cursor: pointer; transition: opacity 150ms ease, transform 150ms ease; } .ds-btn-viridian:hover { opacity: 0.9; } .ds-btn-viridian:active { transform: scale(0.96); } .ds-btn-viridian:focus-visible { outline: 2px solid #1B5E46; outline-offset: 2px; }"
+    },
+    {
+      "name": "Prussian MCP Scope Trigger",
+      "kind": "chip",
+      "refersTo": "button-mcp",
+      "description": "Dedicated Prussian/Cobalt technical indicator for active AI agent scopes.",
+      "html": "<button type=\"button\" class=\"ds-mcp-pill\">MCP · 5 Scopes</button>",
+      "css": ".ds-mcp-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9999px; border: 1px solid rgba(27, 59, 111, 0.25); background: rgba(27, 59, 111, 0.09); color: #1B3B6F; font-family: ui-monospace, monospace; font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; transition: background 150ms ease; } .ds-mcp-pill:hover { background: rgba(27, 59, 111, 0.15); } .ds-mcp-pill:focus-visible { outline: 2px solid #1B3B6F; outline-offset: 2px; }"
+    },
+    {
       "name": "Gallery Artifact Card",
       "kind": "card",
       "refersTo": "card-gallery",
-      "description": "Elevated gallery card stock with 1px perimeter hairline, top catchlight, and hover-revealed actions.",
-      "html": "<article class=\"ds-card\"><div class=\"ds-card-media\"><span class=\"ds-card-badge\">PLATE 01</span></div><div class=\"ds-card-body\"><h3 class=\"ds-card-title\">Norwegian Wood</h3><p class=\"ds-card-sub\">Haruki Murakami · 1987</p></div></article>",
-      "css": ".ds-card { background: #FFFFFF; color: #1C1A17; border: 1px solid rgba(28, 26, 23, 0.07); border-radius: 12px; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px rgba(28,26,23,0.05), 0 6px 18px -4px rgba(28,26,23,0.06); transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1); max-width: 260px; font-family: system-ui, sans-serif; } .ds-card:hover { transform: translateY(-2.5px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.96), 0 4px 10px -2px rgba(28,26,23,0.07), 0 16px 32px -10px rgba(28,26,23,0.13); } .ds-card-media { height: 140px; background: #E8E3DA; position: relative; padding: 10px; } .ds-card-badge { font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: 0.1em; color: #716B62; } .ds-card-body { padding: 14px 16px; } .ds-card-title { margin: 0; font-family: Georgia, serif; font-size: 18px; font-weight: 400; color: #1C1A17; } .ds-card-sub { margin: 4px 0 0; font-family: ui-monospace, monospace; font-size: 11px; color: #716B62; }"
-    },
-    {
-      "name": "Primary Cognac Action",
-      "kind": "button",
-      "refersTo": "button-primary",
-      "description": "Primary pill trigger for Immerse, Save to My Curio, and onboarding commits.",
-      "html": "<button type=\"button\" class=\"ds-btn-primary\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7\"/></svg><span>Immerse</span></button>",
-      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 9999px; border: 1px solid #8C5A3C; background: #8C5A3C; color: #F2EFE9; font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: 0.04em; cursor: pointer; transition: opacity 150ms ease, transform 150ms ease; } .ds-btn-primary:hover { opacity: 0.9; } .ds-btn-primary:active { transform: scale(0.97); } .ds-btn-primary:focus-visible { outline: 2px solid #8C5A3C; outline-offset: 2px; }"
-    },
-    {
-      "name": "Ghost Gallery Button",
-      "kind": "button",
-      "refersTo": "button-ghost",
-      "description": "Subtle secondary action pill on warm gallery walls.",
-      "html": "<button type=\"button\" class=\"ds-btn-ghost\">Filter</button>",
-      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9999px; border: 1px solid rgba(28, 26, 23, 0.12); background: #FFFFFF; color: #716B62; font-family: ui-monospace, monospace; font-size: 11px; cursor: pointer; transition: color 150ms ease, border-color 150ms ease; } .ds-btn-ghost:hover { color: #1C1A17; border-color: rgba(28, 26, 23, 0.28); } .ds-btn-ghost:focus-visible { outline: 2px solid #8C5A3C; outline-offset: 2px; }"
-    },
-    {
-      "name": "Active Stream Filter Chip",
-      "kind": "chip",
-      "refersTo": "pill-filter-active",
-      "description": "Toggled stream/sub-board chip highlighting active slice in Cognac Sienna.",
-      "html": "<button type=\"button\" class=\"ds-chip-active\" aria-pressed=\"true\">Closet (112)</button>",
-      "css": ".ds-chip-active { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9999px; border: 1px solid #8C5A3C; background: #8C5A3C; color: #F2EFE9; font-family: ui-monospace, monospace; font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; transition: opacity 150ms ease; } .ds-chip-active:hover { opacity: 0.92; } .ds-chip-active:focus-visible { outline: 2px solid #8C5A3C; outline-offset: 2px; }"
+      "description": "Elevated #FFFFFF card stock with 1px stone hairline and top catchlight.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-card-media\"></div><div class=\"ds-card-body\"><h3 class=\"ds-card-title\">The Architecture of Happiness</h3><p class=\"ds-card-sub\">Alain de Botton · 2006</p></div></article>",
+      "css": ".ds-card { background: #FFFFFF; color: #1C1A17; border: 1px solid rgba(28, 26, 23, 0.07); border-radius: 12px; overflow: hidden; box-shadow: inset 0 1px 0 #FFFFFF, 0 1px 2px rgba(24,22,18,0.05), 0 10px 26px -6px rgba(24,22,18,0.10); transition: transform 180ms cubic-bezier(0.23,1,0.32,1); max-width: 260px; } .ds-card:hover { transform: translateY(-2.5px); } .ds-card-media { height: 132px; background: #EAE5DC; } .ds-card-body { padding: 14px 16px; } .ds-card-title { margin: 0; font-family: Georgia, serif; font-size: 17px; font-weight: 400; } .ds-card-sub { margin: 4px 0 0; font-family: ui-monospace, monospace; font-size: 11px; color: #686259; }"
     },
     {
       "name": "Universal Capture Omnibox",
       "kind": "input",
       "refersTo": "input-omnibox",
-      "description": "Elevated capture field for URLs, titles, books, films, and instant search.",
-      "html": "<div class=\"ds-omnibox\"><input type=\"text\" class=\"ds-omnibox-input\" placeholder=\"Paste a URL, book, film, garment, or thought...\" /></div>",
-      "css": ".ds-omnibox { background: #FFFFFF; border: 1px solid rgba(28, 26, 23, 0.09); border-radius: 12px; padding: 4px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px rgba(28,26,23,0.05), 0 6px 18px -4px rgba(28,26,23,0.06); } .ds-omnibox-input { width: 100%; border: none; background: transparent; padding: 10px 12px; color: #1C1A17; font-family: system-ui, sans-serif; font-size: 14px; caret-color: #8C5A3C; } .ds-omnibox-input::placeholder { color: #716B62; } .ds-omnibox-input:focus-visible { outline: 2px solid #8C5A3C; outline-offset: 2px; border-radius: 8px; }"
-    },
-    {
-      "name": "Swiss Board Tab Ledger",
-      "kind": "nav",
-      "refersTo": "card-gallery",
-      "description": "Borderless horizontal tab strip underlined by a 2px Cognac Sienna rule.",
-      "html": "<nav class=\"ds-tabs\"><button type=\"button\" class=\"ds-tab ds-tab-active\">All <span class=\"ds-tab-count\">420</span></button><button type=\"button\" class=\"ds-tab\">Books <span class=\"ds-tab-count\">86</span></button><button type=\"button\" class=\"ds-tab\">Films <span class=\"ds-tab-count\">114</span></button></nav>",
-      "css": ".ds-tabs { display: flex; align-items: center; gap: 20px; border-bottom: 1px solid rgba(28, 26, 23, 0.1); padding: 0 4px; font-family: system-ui, sans-serif; } .ds-tab { position: relative; padding: 10px 2px; border: none; background: transparent; color: #716B62; font-size: 13px; cursor: pointer; transition: color 150ms ease; border-bottom: 2px solid transparent; margin-bottom: -1px; } .ds-tab:hover { color: #1C1A17; } .ds-tab-active { color: #1C1A17; font-weight: 500; border-bottom-color: #8C5A3C; } .ds-tab-count { margin-left: 4px; font-family: ui-monospace, monospace; font-size: 11px; font-variant-numeric: tabular-nums; opacity: 0.7; } .ds-tab:focus-visible { outline: 2px solid #8C5A3C; outline-offset: 2px; }"
+      "description": "Single-row capture bar sitting inline inside the Curio masthead.",
+      "html": "<div class=\"ds-omnibox\"><input type=\"text\" class=\"ds-omnibox-input\" placeholder=\"Paste a URL, book, film, place, or thought...\" /></div>",
+      "css": ".ds-omnibox { background: #FFFFFF; border: 1px solid rgba(28, 26, 23, 0.09); border-radius: 12px; padding: 3px; } .ds-omnibox-input { width: 100%; border: none; background: transparent; padding: 9px 12px; color: #1C1A17; font-size: 14px; caret-color: #1B5E46; } .ds-omnibox-input:focus-visible { outline: 2px solid #1B5E46; outline-offset: 2px; border-radius: 8px; }"
     }
   ],
   "narrative": {
     "northStar": "The Collector's Gallery Wall",
-    "overview": "Curio presents saved cultural objects—books, garments, films, venues, recipes, and notes—like artifacts mounted on warm linen gallery walls and housed inside dark bindery alcoves. Elevated #FFFFFF gallery card stock floats over matte #F2EFE9 warm plaster in light mode and #1C1A17 over #121110 Obsidian in dark mode, with hidden-at-rest chrome and tactile 3D Stripe Press bookshelves.",
+    "overview": "Curio presents saved cultural objects, wardrobe pieces, household gear, private notes, and connected life records like curated artifacts mounted on warm gallery walls and housed inside dark bindery alcoves, unified by the H1 Framed Folio emblem and dual Viridian/Prussian registers.",
     "keyCharacteristics": [
-      "Elevated #FFFFFF gallery card stock floating over matte #F2EFE9 warm plaster (#1C1A17 over #121110 in dark mode).",
-      "1px perimeter hairlines, top catchlights (inset 0 1px 0 #FFFFFF), and layered contact shadows.",
-      "Monochrome ink paired with a single Cognac Sienna accent (#8C5A3C light / #C89572 dark).",
-      "Content-first rest state with action toolbars and merchant waterfalls revealed on hover or focus.",
-      "Tactile 3D Stripe Press bindery stages with overhanging cloth hardcovers, cream page blocks, and hairline tick rulers."
+      "Elevated #FFFFFF gallery card stock over matte #F2EFE9 warm plaster (#1C1A17 over #121110 in dark mode).",
+      "Dual-register color discipline: Viridian Library (#1B5E46/#4CA382) for curation and Prussian/Cobalt (#1B3B6F/#6B93F5) for MCP agent scopes.",
+      "H1 Framed Folio identity mark with Option B Newsreader wordmark (solid o, italic r).",
+      "3-level navigation hierarchy (Top Boards -> Sub-Boards -> Contextual Filters) and automatic domain views."
     ],
     "rules": [
-      {
-        "name": "The One Voice Rule",
-        "body": "Never color-code card categories with saturated semantic pills on gallery cards; reserve semantic colors strictly for sync telemetry and transient alerts.",
-        "section": "colors"
-      },
-      {
-        "name": "The Silent Spec Sheet Rule",
-        "body": "Never invent placeholder metadata, expose internal ingestion keys inside cards, or place uppercase eyebrow kickers above titles.",
-        "section": "typography"
-      },
-      {
-        "name": "The Tactile Stock Rule",
-        "body": "Never nest bordered boxes inside bordered cards; let white card stock against warm gallery plaster establish boundaries cleanly.",
-        "section": "elevation"
-      }
+      { "name": "The One Voice Rule", "body": "Reserve saturated accent strictly for curation (Viridian) and MCP scopes (Prussian/Cobalt); never color-code categories.", "section": "colors" },
+      { "name": "The Silent Spec Sheet Rule", "body": "Never fabricate placeholder specs, dump internal ingestion keys inside cards, or place eyebrow kickers above headings.", "section": "typography" },
+      { "name": "The Tactile Stock Rule", "body": "Never nest bordered boxes inside bordered cards; let white stock over warm plaster establish separation.", "section": "elevation" }
     ],
     "dos": [
-      "Do keep 1px perimeter hairlines (var(--gallery-hairline)), top highlight catchlights, and subtle lift transitions on every interactive object card.",
-      "Do fold Closet WORN_ON and automatic co-wear links into wear counts and collapsed Lightbox drawers, capping visible inline card pills at 2.",
-      "Do use native <dialog> (showModal()), 100dvh units, overscroll-behavior-x: contain, and clamped { passive: true } scroll listeners for mobile navigation and carousels.",
-      "Do render quantitative counts (tabular-nums), years, and runtimes in --font-mono-tech."
+      "Do reserve Viridian (#1B5E46 / #4CA382) for human curation and Prussian/Cobalt (#1B3B6F / #6B93F5) for live MCP agent scopes.",
+      "Do route automatic views through resolveAutomaticBoardLayout() so recipes and purchased inventory never mount as 3D books.",
+      "Do use native <dialog> (showModal()), 100dvh units, overscroll-behavior-x: contain, and clamped { passive: true } scroll listeners."
     ],
     "donts": [
-      "Don't add role=\"dialog\", aria-modal, body overflow: hidden scroll locks, or synthetic Esc traps on native <dialog> elements.",
-      "Don't expand masonry/grid columns past lg:columns-3 / lg:grid-cols-3, or use rounded-3xl bubble containers around stage heroes or board headers.",
-      "Don't place <input type=\"range\"> sliders, gradient rainbow pills, or decorative eyebrow kickers on editorial cards or 3D stages.",
-      "Don't call React Hooks (useMemo, useState, useEffect) after conditional if (...) return statements in view components."
+      "Don't render 'Bought it' or fabricated search footers on recipes, outfits, quotes, or memos.",
+      "Don't surface hidden Closet or Private Memos items when their Modular MCP domain scope is sealed.",
+      "Don't add role=\"dialog\", aria-modal, <input type=\"range\"> scrubbers, or hooks after conditional returns."
     ]
   }
 }

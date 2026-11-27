@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Host LaunchAgent script for daily incremental Instagram Saves sync into Curio.
+Host LaunchAgent & manual backfill script for Instagram Saves sync into Curio.
 Uses Apple-signed /usr/bin/python3 -I (stdlib only, no third-party deps).
 Never logs cookie secrets.
 """
 
+import argparse
 import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -69,7 +71,7 @@ def post_sync(endpoint: str, payload: dict, sync_secret: str) -> tuple[int, dict
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
+        with urllib.request.urlopen(req, timeout=600) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as err:
         raw_err = err.read().decode("utf-8", errors="replace")
@@ -80,7 +82,115 @@ def post_sync(endpoint: str, payload: dict, sync_secret: str) -> tuple[int, dict
         return err.code, parsed
 
 
+def run_backfill(
+    sync_secret: str,
+    base_auth_payload: dict,
+    max_batches: int,
+    pause_seconds: float,
+) -> int:
+    cursor: str | None = None
+    total_created = 0
+    total_updated = 0
+    total_archived = 0
+
+    for batch in range(1, max_batches + 1):
+        ts = datetime.now(timezone.utc).isoformat()
+        payload = {
+            **base_auth_payload,
+            "incremental": False,
+            "maxPages": 1,
+            "maxNewItems": 25,
+            "force": True,
+        }
+        if cursor:
+            payload["startMaxId"] = cursor
+
+        try:
+            code, body = post_sync("/api/v1/sync/instagram", payload, sync_secret)
+        except Exception as err:
+            print(f"[{ts}] Backfill batch {batch} error: {err}", file=sys.stderr, flush=True)
+            emit_heartbeat("fail")
+            return 1
+
+        if code == 400 and body.get("code") == "INSTAGRAM_COOKIE_REQUIRED":
+            print(f"[{ts}] Instagram not configured yet; skipping.", flush=True)
+            emit_heartbeat("ok")
+            return 0
+        if code in (401, 429):
+            print(
+                f"[{ts}] Instagram auth/challenge ({body.get('code')}): {body.get('error', 'refresh required')}",
+                file=sys.stderr,
+                flush=True,
+            )
+            emit_heartbeat("fail")
+            return 1
+        if code != 200:
+            print(
+                f"[{ts}] Backfill batch {batch} HTTP {code}: {body.get('error', 'unknown error')}",
+                file=sys.stderr,
+                flush=True,
+            )
+            emit_heartbeat("fail")
+            return 1
+
+        meta = body.get("meta") or {}
+        created = int(body.get("createdSaves", 0) or 0)
+        updated = int(body.get("updatedSaves", 0) or 0)
+        archived = int(meta.get("mediaArchivedCount", 0) or 0)
+        more_available = bool(meta.get("moreAvailable"))
+        next_cursor = meta.get("nextMaxId")
+
+        total_created += created
+        total_updated += updated
+        total_archived += archived
+
+        print(
+            f"[{ts}] Backfill batch {batch}: "
+            f"processed={body.get('recordsProcessed', 0)} "
+            f"created={created} "
+            f"updated={updated} "
+            f"archived_media={archived} "
+            f"more={more_available}",
+            flush=True,
+        )
+
+        if not more_available or not next_cursor or next_cursor == cursor:
+            break
+        cursor = str(next_cursor)
+        if pause_seconds > 0:
+            time.sleep(pause_seconds)
+
+    ts = datetime.now(timezone.utc).isoformat()
+    print(
+        f"[{ts}] Instagram historical backfill complete: "
+        f"total_created={total_created} total_updated={total_updated} total_archived={total_archived}",
+        flush=True,
+    )
+    emit_heartbeat("ok")
+    return 0
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Curio Instagram Saves sync & backfill runner")
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Walk all historical saved post pages cursor-by-cursor until exhausted.",
+    )
+    parser.add_argument(
+        "--max-batches",
+        type=int,
+        default=60,
+        help="Maximum batches during --backfill (default: 60).",
+    )
+    parser.add_argument(
+        "--pause",
+        type=float,
+        default=4.0,
+        help="Seconds to pause between backfill batches (default: 4.0).",
+    )
+    args = parser.parse_args()
+
     ts = datetime.now(timezone.utc).isoformat()
     if not SYNC_SECRET_PATH.is_file():
         print(f"[{ts}] Sync secret not initialized at {SYNC_SECRET_PATH}; skipping.", file=sys.stderr)
@@ -94,11 +204,27 @@ def main() -> int:
         return 1
 
     ig_env = load_env_file(INSTAGRAM_ENV_PATH)
-    payload: dict = {"incremental": True, "maxPages": 5, "force": True}
+    base_auth_payload: dict = {}
     if ig_env.get("INSTAGRAM_COOKIE"):
-        payload["cookie"] = ig_env["INSTAGRAM_COOKIE"]
+        base_auth_payload["cookie"] = ig_env["INSTAGRAM_COOKIE"]
     if ig_env.get("INSTAGRAM_USERNAME"):
-        payload["igUsername"] = ig_env["INSTAGRAM_USERNAME"]
+        base_auth_payload["igUsername"] = ig_env["INSTAGRAM_USERNAME"]
+
+    if args.backfill:
+        return run_backfill(
+            sync_secret=sync_secret,
+            base_auth_payload=base_auth_payload,
+            max_batches=max(1, args.max_batches),
+            pause_seconds=max(0.0, args.pause),
+        )
+
+    payload: dict = {
+        **base_auth_payload,
+        "incremental": True,
+        "maxPages": 5,
+        "maxNewItems": 15,
+        "force": True,
+    }
 
     try:
         code, body = post_sync("/api/v1/sync/instagram", payload, sync_secret)

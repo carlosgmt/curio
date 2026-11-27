@@ -59,6 +59,7 @@ export interface InstagramSyncOptions extends SyncOptions {
   igUsername?: string;
   incremental?: boolean;
   maxPages?: number;
+  startMaxId?: string | null;
   maxNewItems?: number;
   mediaFetchFn?: SyncFetchFn;
   mediaBaseDir?: string;
@@ -268,6 +269,8 @@ export const instagramSyncAdapter: SyncAdapter<InstagramSyncOptions> = {
     let posts: InstagramSavedPost[];
     let pagesFetched = 0;
     let stoppedEarly = false;
+    let nextMaxId: string | null = null;
+    let moreAvailable = false;
 
     try {
       if (options.preloadedPosts) {
@@ -275,6 +278,7 @@ export const instagramSyncAdapter: SyncAdapter<InstagramSyncOptions> = {
       } else {
         const res = await fetchInstagramSavedPosts(authRec!, {
           maxPages: options.maxPages ?? 5,
+          startMaxId: options.startMaxId,
           knownShortcodes: new Set(existingByShortcode.keys()),
           incremental: options.incremental !== false,
           fetchFn: options.fetchFn,
@@ -289,6 +293,8 @@ export const instagramSyncAdapter: SyncAdapter<InstagramSyncOptions> = {
         posts = res.posts;
         pagesFetched = res.pagesFetched;
         stoppedEarly = res.stoppedEarly;
+        nextMaxId = res.nextMaxId;
+        moreAvailable = res.moreAvailable;
       }
     } catch (err) {
       if (err instanceof InstagramAuthExpiredError) {
@@ -521,6 +527,8 @@ export const instagramSyncAdapter: SyncAdapter<InstagramSyncOptions> = {
           meta: {
             pagesFetched,
             stoppedEarly,
+            nextMaxId,
+            moreAvailable,
             mediaArchivedCount,
             newItemsProcessed,
             hasMoreUnprocessed,

@@ -497,5 +497,56 @@ describe("Instagram Auth, Client, Media, Classifier & SyncAdapter", () => {
     expect(res.collections).toEqual([]);
     expect(res.posts).toHaveLength(1);
     expect(res.posts[0].shortcode).toBe("FALLBACK_POST_1");
+    expect(res.moreAvailable).toBe(false);
+    expect(res.nextMaxId).toBeNull();
+  });
+
+  it("supports startMaxId cursor resumption and exposes nextMaxId/moreAvailable", async () => {
+    const auth = {
+      cookie: "sessionid=1%3Aabc; csrftoken=tok",
+      sessionId: "1%3Aabc",
+      csrfToken: "tok",
+      updatedAt: new Date().toISOString(),
+    };
+
+    let requestedUrl = "";
+    const mockFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v1/collections/list/")) {
+        return new Response("Not Found", { status: 404 });
+      }
+      requestedUrl = url;
+      return new Response(
+        JSON.stringify({
+          more_available: true,
+          next_max_id: "CURSOR_NEXT_99",
+          items: [
+            {
+              media: {
+                code: "CURSOR_POST_1",
+                pk: "888",
+                media_type: 1,
+                caption: { text: "Paged save" },
+                user: { username: "curator" },
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      );
+    };
+
+    const res = await fetchInstagramSavedPosts(auth, {
+      startMaxId: "CURSOR_START_50",
+      maxPages: 1,
+      incremental: false,
+      fetchFn: mockFetch,
+      delayFn: async () => {},
+    });
+
+    expect(requestedUrl).toContain("max_id=CURSOR_START_50");
+    expect(res.pagesFetched).toBe(1);
+    expect(res.moreAvailable).toBe(true);
+    expect(res.nextMaxId).toBe("CURSOR_NEXT_99");
   });
 });

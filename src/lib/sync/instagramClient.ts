@@ -76,6 +76,7 @@ export interface InstagramSavedPost {
 
 export interface FetchInstagramSavedOptions {
   maxPages?: number;
+  startMaxId?: string | null;
   knownShortcodes?: Set<string>;
   incremental?: boolean;
   includePerCollectionFallback?: boolean;
@@ -91,6 +92,8 @@ export interface FetchInstagramSavedResult {
   posts: InstagramSavedPost[];
   pagesFetched: number;
   stoppedEarly: boolean;
+  nextMaxId: string | null;
+  moreAvailable: boolean;
 }
 
 const TRACKING_PARAM_RE = /^(?:utm_|fbclid|gclid|igsh|igshid|ref|mc_)/i;
@@ -511,7 +514,8 @@ export async function fetchInstagramSavedPosts(
   const collectionMap = new Map(collections.map((c) => [c.id, c]));
 
   const postMap = new Map<string, InstagramSavedPost>();
-  let nextMaxId: string | null = null;
+  let nextMaxId: string | null = opts.startMaxId || null;
+  let moreAvailable = false;
   let pagesFetched = 0;
   let stoppedEarly = false;
 
@@ -547,10 +551,14 @@ export async function fetchInstagramSavedPosts(
 
     if (incremental && knownShortcodes.size > 0 && rawItems.length > 0 && !pageHasNew) {
       stoppedEarly = true;
+      moreAvailable = false;
+      nextMaxId = null;
       break;
     }
 
-    if (!data?.more_available || !data?.next_max_id) {
+    moreAvailable = Boolean(data?.more_available && data?.next_max_id);
+    if (!moreAvailable) {
+      nextMaxId = null;
       break;
     }
     nextMaxId = String(data.next_max_id);
@@ -603,6 +611,8 @@ export async function fetchInstagramSavedPosts(
     posts: [...postMap.values()],
     pagesFetched,
     stoppedEarly,
+    nextMaxId,
+    moreAvailable,
   };
 }
 

@@ -22,9 +22,9 @@ try {
   // directory exists
 }
 
-export const sqlite = new Database(DB_PATH);
+export const sqlite = new Database(DB_PATH, { timeout: 15000 });
+sqlite.pragma("busy_timeout = 15000");
 sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("busy_timeout = 5000");
 sqlite.pragma("foreign_keys = ON");
 
 // Helper to safely add column if it doesn't already exist

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { and, eq, like } from "drizzle-orm";
-import { db, globalEntities, smartLists, users, userSaves } from "@/db";
+import { db, globalEntities, smartLists, sqlite, users, userSaves } from "@/db";
 import { releaseLocalLlmModel } from "@/lib/llm/client";
 import {
   ensureHierarchicalBoard,
@@ -545,6 +545,12 @@ export const instagramSyncAdapter: SyncAdapter<InstagramSyncOptions> = {
       instagramLastSyncedAt: syncedAt,
       ...(authRec?.igUsername ? { instagramUsername: authRec.igUsername } : {}),
     });
+
+    try {
+      sqlite.pragma("wal_checkpoint(TRUNCATE)");
+    } catch {
+      // Non-fatal in :memory: or read-only test contexts
+    }
 
     return {
       ...adapterResult,

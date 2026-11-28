@@ -380,10 +380,215 @@ function fromBase64Url(token: string): string {
   return new TextDecoder("utf-8").decode(bytes);
 }
 
+function extractCompactLdAndMeta(obj: Record<string, unknown>): {
+  name?: string;
+  brand?: string;
+  retailer?: string;
+  color?: string;
+  colors?: string[];
+  material?: string;
+  price?: number | string;
+  currency?: string;
+  sku?: string;
+  description?: string;
+  images?: string[];
+  schemaTypes?: string[];
+  recipe?: Record<string, unknown>;
+} {
+  const metaRaw = (obj.meta && typeof obj.meta === "object" ? obj.meta : obj.M && typeof obj.M === "object" ? obj.M : {}) as Record<string, unknown>;
+  const M: Record<string, string> = {};
+  for (const [k, v] of Object.entries(metaRaw)) {
+    if (typeof v === "string" && v.trim()) {
+      M[k.toLowerCase().trim()] = v.trim();
+    }
+  }
+
+  const schemaTypes: string[] = [];
+  const found: {
+    rec: Record<string, any> | null;
+    book: Record<string, any> | null;
+    media: Record<string, any> | null;
+    prod: Record<string, any> | null;
+  } = { rec: null, book: null, media: null, prod: null };
+
+  const scan = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const item of node) scan(item);
+      return;
+    }
+    const rec = node as Record<string, any>;
+    const t = rec["@type"];
+    const ts = Array.isArray(t) ? t : t ? [t] : [];
+    for (const entry of ts) {
+      const s = String(entry);
+      const sl = s.toLowerCase();
+      if (!schemaTypes.includes(s) && schemaTypes.length < 8) schemaTypes.push(s);
+      if (sl.includes("recipe") && !found.rec) found.rec = rec;
+      else if (sl.includes("book") && !found.book) found.book = rec;
+      else if ((sl.includes("movie") || sl.includes("tvseries")) && !found.media) found.media = rec;
+      else if (sl.includes("product") && !found.prod) found.prod = rec;
+    }
+    if (rec["@graph"]) scan(rec["@graph"]);
+  };
+
+  if (Array.isArray(obj.ld)) {
+    scan(obj.ld);
+  } else if (obj.ld && typeof obj.ld === "object") {
+    scan(obj.ld);
+  }
+
+  const REC = found.rec;
+  const PROD = found.prod;
+  const P = REC || found.book || found.media || PROD;
+  const baseUrl = typeof obj.url === "string" ? obj.url : typeof obj.u === "string" ? obj.u : "https://example.com";
+
+  const images: string[] = [];
+  const seenImgs = new Set<string>();
+  const addImg = (u: unknown) => {
+    if (!u) return;
+    if (Array.isArray(u)) {
+      for (const x of u) addImg(x);
+      return;
+    }
+    if (typeof u === "object") {
+      const o = u as Record<string, unknown>;
+      addImg(o.url || o.contentUrl || o.src || o.image);
+      return;
+    }
+    if (typeof u !== "string") return;
+    let clean = u.trim();
+    if (!clean || /^(?:data|blob|javascript):/i.test(clean)) return;
+    try {
+      clean = new URL(clean, baseUrl).href;
+    } catch {
+      return;
+    }
+    if (
+      /\.(?:svg|gif|ico)(?:[?]|$)/i.test(clean) ||
+      /(?:logo|favicon|sprite|icon|avatar|badge|visa|mastercard|paypal|klarna)/i.test(clean)
+    ) {
+      return;
+    }
+    if (!seenImgs.has(clean) && images.length < 12) {
+      seenImgs.add(clean);
+      images.push(clean);
+    }
+  };
+
+  if (P) {
+    addImg(P.image);
+    if (P.hasVariant) addImg(P.hasVariant);
+  }
+  addImg(M["og:image:secure_url"] || M["og:image"] || M["twitter:image"]);
+  if (Array.isArray(obj.images)) addImg(obj.images);
+  if (Array.isArray(obj.i)) addImg(obj.i);
+
+  const colors: string[] = [];
+  const addCol = (c: unknown) => {
+    if (!c) return;
+    if (Array.isArray(c)) {
+      for (const x of c) addCol(x);
+      return;
+    }
+    if (typeof c === "object") {
+      addCol((c as Record<string, unknown>).name);
+      return;
+    }
+    if (typeof c === "string") {
+      const clean = c.trim();
+      if (clean && !colors.includes(clean) && colors.length < 10) colors.push(clean);
+    }
+  };
+  if (PROD) {
+    addCol(PROD.color);
+    if (Array.isArray(PROD.hasVariant)) {
+      for (const v of PROD.hasVariant) {
+        if (v && typeof v === "object") addCol((v as Record<string, unknown>).color);
+      }
+    }
+  }
+  addCol(M["product:color"]);
+
+  const offer = PROD?.offers ? (Array.isArray(PROD.offers) ? PROD.offers[0] : PROD.offers) : null;
+  const price =
+    (offer && (offer.price ?? offer.lowPrice)) ||
+    M["product:price:amount"] ||
+    M["og:price:amount"] ||
+    undefined;
+  const currency =
+    (offer && offer.priceCurrency) ||
+    M["product:price:currency"] ||
+    M["og:price:currency"] ||
+    undefined;
+
+  const brandVal = P?.brand
+    ? typeof P.brand === "string"
+      ? P.brand
+      : P.brand?.name
+    : P?.author
+      ? typeof P.author === "string"
+        ? P.author
+        : Array.isArray(P.author)
+          ? P.author[0]?.name
+          : P.author?.name
+      : "";
+
+  const flattenInstructions = (val: unknown, out: string[] = []): string[] => {
+    if (!val || out.length >= 25) return out;
+    if (Array.isArray(val)) {
+      for (const item of val) flattenInstructions(item, out);
+      return out;
+    }
+    if (typeof val === "string") {
+      const c = val.replace(/\s+/g, " ").trim();
+      if (c) out.push(c);
+      return out;
+    }
+    if (typeof val === "object") {
+      const o = val as Record<string, unknown>;
+      flattenInstructions(o.text ?? o.itemListElement ?? o.name, out);
+    }
+    return out;
+  };
+
+  let recipe: Record<string, unknown> | undefined;
+  if (REC) {
+    recipe = {
+      servings: Array.isArray(REC.recipeYield) ? REC.recipeYield[0] : REC.recipeYield,
+      prepTime: REC.prepTime,
+      cookTime: REC.cookTime,
+      totalTime: REC.totalTime,
+      ingredients: Array.isArray(REC.recipeIngredient) ? REC.recipeIngredient : undefined,
+      instructions: flattenInstructions(REC.recipeInstructions),
+    };
+  }
+
+  return {
+    name:
+      (P && typeof P.name === "string" ? P.name : undefined) ||
+      (P && typeof P.headline === "string" ? P.headline : undefined) ||
+      M["og:title"],
+    brand: (typeof brandVal === "string" && brandVal.trim()) || M["product:brand"] || undefined,
+    retailer: M["og:site_name"] || undefined,
+    color: colors[0],
+    colors: colors.length > 0 ? colors : undefined,
+    material: (PROD && typeof PROD.material === "string" ? PROD.material : undefined) || M["product:material"],
+    price,
+    currency,
+    sku: PROD ? String(PROD.sku || PROD.mpn || PROD.gtin13 || PROD.model || "").trim() || undefined : undefined,
+    description: (P && typeof P.description === "string" ? P.description : undefined) || M["og:description"] || M.description,
+    images: images.length > 0 ? images : undefined,
+    schemaTypes: schemaTypes.length > 0 ? schemaTypes : undefined,
+    recipe,
+  };
+}
+
 export function sanitizeUniversalClipPayload(raw: unknown): UniversalClipPayload | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
-  const rawUrl = typeof obj.url === "string" ? obj.url.trim() : "";
+  const rawUrlVal = obj.url ?? obj.u;
+  const rawUrl = typeof rawUrlVal === "string" ? rawUrlVal.trim() : "";
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(rawUrl);
@@ -393,6 +598,8 @@ export function sanitizeUniversalClipPayload(raw: unknown): UniversalClipPayload
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
     return null;
   }
+
+  const derived = obj.ld || obj.M || obj.meta ? extractCompactLdAndMeta(obj) : {};
 
   const strOrUndef = (val: unknown, maxLen: number): string | undefined => {
     if (typeof val !== "string") return undefined;
@@ -422,8 +629,9 @@ export function sanitizeUniversalClipPayload(raw: unknown): UniversalClipPayload
   };
 
   let recipe: ClippedRecipeData | undefined;
-  if (obj.recipe && typeof obj.recipe === "object") {
-    const r = obj.recipe as Record<string, unknown>;
+  const rawRecipe = (obj.recipe && typeof obj.recipe === "object" ? obj.recipe : derived.recipe) as Record<string, unknown> | undefined;
+  if (rawRecipe && typeof rawRecipe === "object") {
+    const r = rawRecipe;
     const ingredients = strArray(r.ingredients, 30, 220);
     const instructions = strArray(r.instructions, 25, 500);
     const servings =
@@ -436,30 +644,35 @@ export function sanitizeUniversalClipPayload(raw: unknown): UniversalClipPayload
     }
   }
 
+  const rawPrice = obj.price ?? derived.price;
   const price =
-    typeof obj.price === "number" || typeof obj.price === "string" ? obj.price : undefined;
+    typeof rawPrice === "number" || typeof rawPrice === "string" ? rawPrice : undefined;
 
-  const manualRaw = strOrUndef(obj.manualUrl, 800);
+  const manualRaw = strOrUndef(obj.manualUrl ?? obj.p, 800);
   const manualUrl = manualRaw && /^https?:\/\//i.test(manualRaw) ? manualRaw : undefined;
+
+  const colors = strArray(obj.colors ?? derived.colors, 10, 48);
+  const mergedImages = strArray(derived.images ?? obj.images ?? obj.i, 12, 800, true);
+  const schemaTypes = strArray(obj.schemaTypes ?? derived.schemaTypes, 8, 60);
 
   return {
     url: parsedUrl.toString().slice(0, MAX_CLIP_URL),
-    name: strOrUndef(obj.name, 240),
-    brand: strOrUndef(obj.brand, 80),
-    color: strOrUndef(obj.color, 80),
-    colors: strArray(obj.colors, 10, 48),
-    material: strOrUndef(obj.material, 120),
-    materialText: strOrUndef(obj.materialText, 1200),
+    name: strOrUndef(obj.name ?? derived.name ?? obj.n, 240),
+    brand: strOrUndef(obj.brand ?? derived.brand, 80),
+    color: strOrUndef(obj.color ?? derived.color, 80) ?? colors?.[0],
+    colors,
+    material: strOrUndef(obj.material ?? derived.material, 120),
+    materialText: strOrUndef(obj.materialText ?? obj.m, 1200),
     price,
-    currency: strOrUndef(obj.currency, 16),
-    description: strOrUndef(obj.description, 800),
-    images: strArray(obj.images, 12, 800, true),
-    schemaTypes: strArray(obj.schemaTypes, 8, 60),
-    selection: multilineOrUndef(obj.selection, 1500),
-    caption: multilineOrUndef(obj.caption, 3000),
-    sku: strOrUndef(obj.sku, 80),
+    currency: strOrUndef(obj.currency ?? derived.currency, 16),
+    description: strOrUndef(obj.description ?? derived.description, 800),
+    images: mergedImages,
+    schemaTypes,
+    selection: multilineOrUndef(obj.selection ?? obj.s, 1500),
+    caption: multilineOrUndef(obj.caption ?? obj.c, 3000),
+    sku: strOrUndef(obj.sku ?? derived.sku, 80),
     manualUrl,
-    retailer: strOrUndef(obj.retailer, 80),
+    retailer: strOrUndef(obj.retailer ?? derived.retailer, 80),
     recipe,
   };
 }
@@ -506,105 +719,23 @@ export function buildCurioSaveToBookmarkletHref(curioClipUrl: string): string {
     throw new Error("Invalid Curio clip URL");
   }
 
-  // Zero literal '#' and zero bare '%' anywhere; return encodeURI(script) so strict mobile URL parsers (Android/iOS Chrome, Safari) execute cleanly.
-  const q = "'";
+  // Ultra-compact (<2KB encoded) DOM capture; JSON-LD & meta parsing runs server-side in sanitizeUniversalClipPayload.
+  // Zero literal '#' and zero bare '%'; wrapped in encodeURI() for Android/iOS Chrome compatibility.
   const script =
-    `(function(){` +
-    `try{` +
-    `var D=document,L=location;` +
-    `if(!/^https?:$/.test(L.protocol)){alert(${q}Open a web page first.${q});return;}` +
-    `var isS=function(x){return typeof x===${q}string${q};},isA=Array.isArray,` +
-    `Q=function(r){return D.querySelector(r);},QA=function(r){return D.querySelectorAll(r);},` +
-    `G=function(e,k){return(e.getAttribute(k)||${q}${q}).trim();},` +
-    `C=function(v,n){return String(v||${q}${q}).replace(/\\s+/g,${q} ${q}).trim().slice(0,n);},` +
-    `M={},ms=QA(${q}meta${q}),i,k,v;` +
-    `for(i=0;i<ms.length;i++){` +
-    `k=(G(ms[i],${q}property${q})||G(ms[i],${q}name${q})||G(ms[i],${q}itemprop${q})).toLowerCase();` +
-    `v=G(ms[i],${q}content${q});` +
-    `if(k&&v&&!M[k])M[k]=v;` +
-    `}` +
-    `var ST=[],REC=null,PROD=null,BOOK=null,MEDIA=null;` +
-    `function scan(n){` +
-    `if(!n||typeof n!==${q}object${q})return;` +
-    `if(isA(n)){for(var a=0;a<n.length;a++)scan(n[a]);return;}` +
-    `var t=n[${q}@type${q}],ts=isA(t)?t:t?[t]:[];` +
-    `for(var b=0;b<ts.length;b++){` +
-    `var r=String(ts[b]),rl=r.toLowerCase();` +
-    `if(ST.indexOf(r)<0&&ST.length<8)ST.push(r);` +
-    `if(rl.indexOf(${q}recipe${q})>=0&&!REC)REC=n;` +
-    `else if(rl.indexOf(${q}book${q})>=0&&!BOOK)BOOK=n;` +
-    `else if((rl.indexOf(${q}movie${q})>=0||rl.indexOf(${q}tvseries${q})>=0)&&!MEDIA)MEDIA=n;` +
-    `else if(rl.indexOf(${q}product${q})>=0&&!PROD)PROD=n;` +
-    `}` +
-    `if(n[${q}@graph${q}])scan(n[${q}@graph${q}]);` +
-    `}` +
-    `var lds=QA(${q}script[type="application/ld+json"]${q});` +
-    `for(i=0;i<lds.length;i++){try{scan(JSON.parse(lds[i].textContent||${q}${q}));}catch(e){}}` +
-    `var P=REC||BOOK||MEDIA||PROD,imgs=[],seen={};` +
-    `function addImg(u){` +
-    `if(!u)return;` +
-    `if(isA(u)){for(var x=0;x<u.length;x++)addImg(u[x]);return;}` +
-    `if(typeof u===${q}object${q}){addImg(u.url||u.contentUrl||u.src||u.image);return;}` +
-    `if(!isS(u))return;u=u.trim();` +
-    `if(!u||/^(?:data|blob|javascript):/i.test(u))return;` +
-    `try{u=new URL(u,L.href).href;}catch(e){return;}` +
-    `if(u.length>600||(imgs.length>0&&u.length>420))return;` +
-    `if(/\\.(?:svg|gif|ico)(?:[?]|$)/i.test(u)||/(?:logo|favicon|sprite|icon|avatar|badge|visa|mastercard|paypal|klarna)/i.test(u))return;` +
-    `if(!seen[u]&&imgs.length<6){seen[u]=1;imgs.push(u);}` +
-    `}` +
-    `if(P){addImg(P.image);if(P.hasVariant)addImg(P.hasVariant);}` +
-    `addImg(M[${q}og:image:secure_url${q}]||M[${q}og:image${q}]||M[${q}twitter:image${q}]);` +
-    `var els=QA(${q}img${q});` +
-    `for(i=0;i<els.length&&imgs.length<6;i++){` +
-    `var el=els[i],nw=el.naturalWidth||el.width||0,nh=el.naturalHeight||el.height||0;` +
-    `if((nw>=250||nh>=250)||(nw===0&&nh===0&&el.getBoundingClientRect().width>=200))addImg(el.currentSrc||G(el,${q}src${q})||G(el,${q}data-src${q}));` +
-    `}` +
-    `var cols=[];` +
-    `function addCol(c){if(!c)return;if(isA(c)){for(var j=0;j<c.length;j++)addCol(c[j]);return;}if(typeof c===${q}object${q})c=c.name;if(isS(c)){c=c.trim();if(c&&cols.indexOf(c)<0&&cols.length<6)cols.push(c);}}` +
-    `if(PROD){addCol(PROD.color);if(isA(PROD.hasVariant))for(i=0;i<PROD.hasVariant.length;i++)addCol(PROD.hasVariant[i]&&PROD.hasVariant[i].color);}` +
-    `addCol(M[${q}product:color${q}]);` +
-    `var cs=Q(${q}[class*="color" i],[data-testid*="color" i],[aria-label*="color" i]${q});` +
-    `if(cs&&cs.textContent){var cm=cs.textContent.trim().match(/^(?:colou?r|farbe)\\s*[:\\-]\\s*([a-zA-Z\\u00C0-\\u00FF\\s\\/-]{2,28})/i);if(cm)addCol(cm[1]);}` +
-    `var off=PROD&&PROD.offers?(isA(PROD.offers)?PROD.offers[0]:PROD.offers):null;` +
-    `var price=(off&&(off.price||off.lowPrice))||M[${q}product:price:amount${q}]||M[${q}og:price:amount${q}]||${q}${q};` +
-    `var curr=(off&&off.priceCurrency)||M[${q}product:price:currency${q}]||M[${q}og:price:currency${q}]||${q}${q};` +
-    `if(!price){var pe=Q(${q}[itemprop="price"],[data-testid*="price" i],[class*="product-price" i]${q});if(pe)price=(G(pe,${q}content${q})||pe.textContent||${q}${q}).trim().slice(0,32);}` +
-    `var mat=(PROD&&isS(PROD.material)?PROD.material:${q}${q})||M[${q}product:material${q}]||${q}${q};` +
-    `var mRe=/(?:\\x25|cotton|wool|merino|linen|silk|cashmere|polyamide|polyester|elastane|nylon|leather|gore-?tex|water-?(?:proof|repellent))/i;` +
-    `var ml=[],nds=QA(${q}details,[class*="material" i],[class*="composition" i],[class*="fabric" i],[class*="detail" i],[class*="care" i]${q});` +
-    `for(i=0;i<nds.length;i++){var tx=C(nds[i].textContent,300);if(tx.length>4&&mRe.test(tx))ml.push(tx);}` +
-    `var bt=(D.body&&D.body.innerText||${q}${q}).split(/\\r?\\n/);` +
-    `for(i=0;i<bt.length&&ml.length<10;i++){var ln=bt[i].trim();if(ln.length>4&&ln.length<200&&/(?:\\d+\\s*\\x25\\s*[a-zA-Z]|(?:composition|shell|lining|fabric|material)\\s*:|gore-?tex|water-?(?:proof|repellent))/i.test(ln))ml.push(ln);}` +
-    `var manUrl=${q}${q},lks=QA(${q}a[href]${q});` +
-    `for(i=0;i<lks.length;i++){var hr=lks[i].href||${q}${q},lt=(lks[i].textContent||${q}${q}).trim();if(/\\.pdf(?:[?]|$)/i.test(hr)&&/(?:manual|handbook|guide|instruction|datasheet|spec)/i.test(hr+${q} ${q}+lt)){manUrl=hr.slice(0,400);break;}}` +
-    `var rec=null;` +
-    `if(REC){` +
-    `var ings=isA(REC.recipeIngredient)?REC.recipeIngredient.slice(0,25).map(function(x){return C(x,180);}):[];` +
-    `var st=[];` +
-    `function addSt(x){if(!x||st.length>=20)return;if(isA(x)){for(var u=0;u<x.length;u++)addSt(x[u]);return;}if(isS(x)){var c=C(x,320);if(c)st.push(c);return;}if(typeof x===${q}object${q})addSt(x.text||x.itemListElement||x.name);}` +
-    `addSt(REC.recipeInstructions);` +
-    `rec={servings:isA(REC.recipeYield)?REC.recipeYield[0]:(REC.recipeYield||${q}${q}),prepTime:REC.prepTime||${q}${q},cookTime:REC.cookTime||${q}${q},totalTime:REC.totalTime||${q}${q},ingredients:ings,instructions:st};` +
-    `}` +
-    `var sel=${q}${q};try{sel=(window.getSelection&&window.getSelection().toString()||${q}${q}).replace(/\\r\\n?/g,${q}\\n${q}).trim().slice(0,1200);}catch(e){}` +
-    `var soc=/(?:instagram\\.com|tiktok\\.com|youtube\\.com|youtu\\.be|threads\\.net|pinterest\\.)/i.test(L.hostname),cap=${q}${q};` +
-    `if(soc){` +
-    `var cd=[],cels=QA(${q}[data-e2e="browse-video-desc"],[data-e2e="video-desc"],[id="description-inline-expander"],ytd-text-inline-expander,[id="attributed-snippet-text"],article h1,main h1,[role="dialog"] h1,article ul li span[dir="auto"],[role="dialog"] span[dir="auto"]${q});` +
-    `for(i=0;i<cels.length;i++){var cx=(cels[i].innerText||cels[i].textContent||${q}${q}).replace(/\\r\\n?/g,${q}\\n${q}).trim();if(cx.length>=40&&!/(?:log in|sign up|forgot password|create new account)/i.test(cx))cd.push(cx);}` +
-    `cd.sort(function(a,b){return b.length-a.length;});` +
-    `if(cd[0])cap=cd[0].slice(0,2400);` +
-    `}` +
-    `var h1=Q(${q}h1${q});` +
-    `var br=P&&P.brand?(isS(P.brand)?P.brand:P.brand.name):(P&&P.author?(isS(P.author)?P.author:(isA(P.author)?(P.author[0]&&P.author[0].name):P.author.name)):${q}${q});` +
-    `var sku=PROD?(PROD.sku||PROD.mpn||PROD.gtin13||PROD.model||${q}${q}):${q}${q};` +
-    `var pl={url:L.href.slice(0,${MAX_CLIP_URL}),name:C((P&&isS(P.name)?P.name:${q}${q})||(P&&isS(P.headline)?P.headline:${q}${q})||M[${q}og:title${q}]||(h1&&h1.textContent)||D.title,200),brand:C(br||M[${q}product:brand${q}],80),retailer:C(M[${q}og:site_name${q}],60),color:cols[0]||${q}${q},colors:cols,material:C(mat,120),materialText:ml.join(${q} | ${q}).slice(0,700),price:price,currency:String(curr).slice(0,12),sku:String(sku).slice(0,60),manualUrl:manUrl,description:C((P&&P.description)||M[${q}og:description${q}]||M.description,360),images:imgs,schemaTypes:ST,selection:sel,caption:cap,recipe:rec};` +
-    `var u8=new TextEncoder().encode(JSON.stringify(pl)),bin=${q}${q};` +
-    `for(i=0;i<u8.length;i++)bin+=String.fromCharCode(u8[i]);` +
-    `var b64=btoa(bin).replace(/\\+/g,${q}-${q}).replace(/\\//g,${q}_${q}).replace(/=+$/,${q}${q});` +
-    `var dest=${JSON.stringify(normalizedUrl)}+String.fromCharCode(35)+${q}clip=${q}+b64;` +
-    `var mob=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);` +
-    `if(mob||!window.open(dest,${q}_blank${q}))L.href=dest;` +
-    `}catch(err){alert(${q}Save to Curio error: ${q}+(err&&err.message?err.message:err));}` +
-    `})();`;
+    `(()=>{try{` +
+    `var D=document,L=location,M={},A=s=>[...D.querySelectorAll(s)],F=x=>(x??'').replace(/\\s+/g,' ').trim();` +
+    `if(L.protocol[0]!='h')return alert('Open http page');` +
+    `A('meta').map(e=>{var k=(e.getAttribute('property')||e.name||'').toLowerCase(),v=F(e.content);if(/^(og:|product:|desc)/.test(k)&&v&&!M[k])M[k]=v;});` +
+    `var ld=A('script[type*=ld]').map(e=>{var t=e.textContent??'';if(/product|recipe|book|movie|tv/i.test(t)&&!t[18e3])try{var o=JSON.parse(t);o.review=0;return o;}catch{}}).filter(x=>x).slice(0,2),` +
+    `I=[...new Set([M['og:image'],...A('img').filter(e=>Math.max(e.naturalWidth,e.naturalHeight,e.width)>249).map(e=>e.currentSrc||e.src)].filter(u=>u&&/^https?:/.test(u)&&!u[480]&&!/\\.(svg|gif|ico)|logo|icon|sprite|avatar/i.test(u)))].slice(0,6),` +
+    `m=(D.body.innerText??'').split('\\n').map(F).filter(x=>x[4]&&!x[160]&&/\\d ?\\x25|cotton|wool|merino|linen|silk|cashmere|poly|nylon|leather|gore|water/i.test(x)).slice(0,8).join(';'),` +
+    `p=(A('a').find(a=>/\\.pdf\\b/i.test(a.href))?.href??'').slice(0,300),` +
+    `c=(/instag|tiktok|youtu|threads|pinter/i.test(L.host)?A('h1,[data-e2e*=desc],[id*=desc],span[dir=auto]').map(e=>(e.innerText??'').trim()).filter(x=>x[39]&&!/log in|sign up/i.test(x)).sort((a,b)=>b.length-a.length)[0]??'':'').slice(0,2400),` +
+    `pl={u:L.href.slice(0,${MAX_CLIP_URL}),n:F(M['og:title']??A('h1')[0]?.textContent??D.title).slice(0,200),M,ld,i:I,m:m.slice(0,650),p,s:(''+getSelection()).trim().slice(0,900),c},` +
+    `b='';new TextEncoder().encode(JSON.stringify(pl)).forEach(x=>b+=String.fromCharCode(x));` +
+    `var d='${normalizedUrl}\\x23clip='+btoa(b).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');` +
+    `if(/Mobi|Android/i.test(navigator.userAgent)||!open(d))L.href=d;` +
+    `}catch(e){alert('Clip:'+e);}})()`;
 
   return `javascript:${encodeURI(script)}`;
 }

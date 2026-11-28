@@ -14,7 +14,7 @@ describe("Universal Save to Curio Clip Protocol", () => {
     expect(/%(?![0-9A-Fa-f]{2})/.test(href)).toBe(false);
     const decodedScript = decodeURI(href.slice("javascript:".length));
     expect(() => new Function(decodedScript)).not.toThrow();
-    expect(href.length).toBeLessThan(10000);
+    expect(href.length).toBeLessThan(2000);
     expect(decodedScript).toContain("Android");
 
     const payload = {
@@ -114,5 +114,42 @@ describe("Universal Save to Curio Clip Protocol", () => {
     });
     expect(igCasualRoute.destination).toBe("curio");
     expect(igCasualRoute.typePath).toBe("/media/film");
+
+    // Compact bookmarklet raw wire payload hydration ({ u, n, M, ld, i, m, p, s, c })
+    const compactWire = {
+      u: "https://www.cos.com/en-ch/men/coats/wool-coat.html",
+      n: "Fallback Title",
+      M: { "og:site_name": "COS CH", "product:color": "Navy" },
+      ld: [
+        {
+          "@type": "Product",
+          name: "Double-Faced Wool Coat",
+          brand: { "@type": "Brand", name: "COS" },
+          sku: "COS-999",
+          material: "100% Merino Wool",
+          image: ["https://cdn.cos.com/coat-front.jpg"],
+          offers: { price: "290.00", priceCurrency: "CHF" },
+        },
+      ],
+      i: ["https://cdn.cos.com/coat-alt.jpg"],
+      m: "100% Merino Wool",
+      p: "https://www.cos.com/care.pdf",
+      s: "Nice drape",
+    };
+    const wireB64 = btoa(JSON.stringify(compactWire)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const hydrated = decodeUniversalClipFragment(`#clip=${wireB64}`);
+    expect(hydrated?.clip.name).toBe("Double-Faced Wool Coat");
+    expect(hydrated?.clip.brand).toBe("COS");
+    expect(hydrated?.clip.retailer).toBe("COS CH");
+    expect(hydrated?.clip.color).toBe("Navy");
+    expect(hydrated?.clip.material).toBe("100% Merino Wool");
+    expect(hydrated?.clip.price).toBe("290.00");
+    expect(hydrated?.clip.currency).toBe("CHF");
+    expect(hydrated?.clip.sku).toBe("COS-999");
+    expect(hydrated?.clip.images).toEqual([
+      "https://cdn.cos.com/coat-front.jpg",
+      "https://cdn.cos.com/coat-alt.jpg",
+    ]);
+    expect(classifyClipDestination(hydrated!.clip).destination).toBe("closet");
   });
 });

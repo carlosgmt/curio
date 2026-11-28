@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/apiClient";
 import { ClipperBookmarkletBar } from "@/components/clip/ClipperModal";
 import {
   decodeUniversalClipFragment,
+  encodeUniversalClipFragment,
   getClipDestinationTarget,
   type ClipClassification,
   type ClipDestination,
@@ -81,8 +82,9 @@ export default function ClipRouterPage() {
       return;
     }
 
+    const normalizedToken = encodeUniversalClipFragment(decoded.clip);
     setClip(decoded.clip);
-    setRawToken(decoded.rawToken);
+    setRawToken(normalizedToken);
 
     if (window.location.hash.includes("clip=")) {
       window.history.replaceState({}, "", window.location.pathname);
@@ -98,7 +100,7 @@ export default function ClipRouterPage() {
 
         if (res.status === 401) {
           try {
-            window.sessionStorage.setItem(PENDING_CLIP_STORAGE_KEY, decoded.rawToken);
+            window.sessionStorage.setItem(PENDING_CLIP_STORAGE_KEY, normalizedToken);
           } catch {
             // ignore
           }
@@ -124,7 +126,7 @@ export default function ClipRouterPage() {
         const dest = savedResult.routing.destination;
         const delayMs = dest === "curio" ? 950 : 650;
         redirectTimerRef.current = window.setTimeout(() => {
-          navigateToDestination(dest, savedResult.save?.id, decoded.rawToken);
+          navigateToDestination(dest, savedResult.save?.id, normalizedToken);
         }, delayMs);
       } catch (err: any) {
         setErrorMsg(err?.message || "Failed to save clip to Curio");
